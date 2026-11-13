@@ -3,231 +3,293 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MachGraph Cold-Tungsten native binary reverse-engineering, ARM64 CFG, SSA Pseudo-C decompiler, and security plugin audit dossier.">
-  <title>MachGraph Binary Triage Dossier: MachGraphTarget</title>
+  <meta name="description" content="MachGraph v1.1.0 Cold-Tungsten native binary reverse-engineering, ARM64 CFG, SSA Pseudo-C decompiler, and security plugin audit dossier.">
+  <title>MachGraph v1.1.0 Binary Triage Dossier: MachGraphTarget</title>
   <style>
-  /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
-  :root {
-    --bg-chassis: #0F1216;
-    --bg-panel: #141920;
-    --bg-elevated: #1B222C;
-    --bg-code: #0B0E12;
-    --border-seam: #2A3442;
-    --ink-primary: #E6EDF3;
-    --ink-secondary: #8B949E;
-    --ink-muted: #656D76;
-    --accent-sapphire: #58A6FF;
-    --status-info-bg: #13233A;
-    --status-ok-fg: #3FB950;
-    --status-ok-bg: #12261E;
-    --status-warn-fg: #D29922;
-    --status-warn-bg: #2B2111;
-    --status-crit-fg: #F85149;
-    --status-crit-bg: #2D1619;
-    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-    --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-  }
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body {
-    overflow-x: clip;
-  }
-  body {
-    margin: 0;
-    padding: 32px 24px 56px;
-    background: var(--bg-chassis);
-    color: var(--ink-primary);
-    font-family: var(--font-sans);
-    line-height: 1.5;
-    font-size: 14px;
-  }
-  .container {
-    max-width: 1180px;
-    margin: 0 auto;
-  }
-  header.masthead {
-    background: var(--bg-panel);
-    color: var(--ink-primary);
-    border: 1px solid var(--border-seam);
-    border-top: 4px solid var(--accent-sapphire);
-    border-radius: 6px;
-    padding: 24px;
-    margin-bottom: 16px;
-  }
-  .eyebrow {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--accent-sapphire);
-    margin: 0 0 8px;
-  }
-  h1, h2, h3 {
-    text-wrap: balance;
-    color: var(--ink-primary);
-    margin: 0;
-  }
-  h1 {
-    font-size: 24px;
-    line-height: 1.25;
-    margin-bottom: 8px;
-  }
-  h2 {
-    font-size: 16px;
-    line-height: 1.3;
-    margin-bottom: 12px;
-  }
-  .subtitle {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 16px;
-    margin: 0;
-    color: var(--ink-secondary);
-    font-size: 13px;
-  }
-  .kpi-strip {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
-    gap: 12px;
-    margin-bottom: 16px;
-  }
-  .kpi-card {
-    background: var(--bg-panel);
-    color: var(--ink-primary);
-    border: 1px solid var(--border-seam);
-    border-radius: 6px;
-    padding: 16px;
-  }
-  .kpi-label {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--ink-secondary);
-  }
-  .kpi-value {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-size: 20px;
-    font-weight: 700;
-    margin-top: 4px;
-    color: var(--ink-primary);
-  }
-  section.panel {
-    background: var(--bg-panel);
-    color: var(--ink-primary);
-    border: 1px solid var(--border-seam);
-    border-radius: 6px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-  th, td {
-    text-align: left;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border-seam);
-    vertical-align: top;
-  }
-  th {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--ink-secondary);
-    background: var(--bg-elevated);
-  }
-  .mono {
-    font-family: var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    font-size: 13px;
-  }
-  .num { text-align: right; }
-  .muted { color: var(--ink-secondary); }
-  .pill {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-    font-family: var(--font-mono);
-  }
-  .pill-ok { background: var(--status-ok-bg); color: var(--status-ok-fg); }
-  .pill-warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
-  .pill-crit { background: var(--status-crit-bg); color: var(--status-crit-fg); }
-  .pill-info { background: var(--status-info-bg); color: var(--accent-sapphire); }
-  .pill-neutral { background: var(--bg-elevated); color: var(--ink-secondary); }
-  .code-card {
-    border: 1px solid var(--border-seam);
-    border-radius: 6px;
-    margin-bottom: 12px;
-    overflow: hidden;
-  }
-  .code-header {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
-    background: var(--bg-elevated);
-    color: var(--ink-primary);
-    border-bottom: 1px solid var(--border-seam);
-    font-size: 13px;
-  }
-  pre {
-    margin: 0;
-    padding: 12px 16px;
-    background: var(--bg-code);
-    color: var(--ink-primary);
-    overflow-x: auto;
-    font-family: var(--font-mono);
-    font-size: 12px;
-    line-height: 1.5;
-  }
-</style>
+    /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
+    :root {
+      --bg-chassis: #0F1216;
+      --bg-panel: #141920;
+      --bg-elevated: #1B222C;
+      --bg-code: #0B0E12;
+      --border-seam: #2A3442;
+      --ink-primary: #E6EDF3;
+      --ink-secondary: #8B949E;
+      --ink-muted: #656D76;
+      --accent-sapphire: #58A6FF;
+      --status-info-bg: #13233A;
+      --status-ok-fg: #3FB950;
+      --status-ok-bg: #12261E;
+      --status-warn-fg: #D29922;
+      --status-warn-bg: #2B2111;
+      --status-crit-fg: #F85149;
+      --status-crit-bg: #2D1619;
+      --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      overflow-x: clip;
+    }
+    body {
+      margin: 0;
+      padding: 32px 24px 56px;
+      background: var(--bg-chassis);
+      color: var(--ink-primary);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    .container {
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+    header.masthead {
+      background: var(--bg-panel);
+      color: var(--ink-primary);
+      border: 1px solid var(--border-seam);
+      border-top: 4px solid var(--accent-sapphire);
+      border-radius: 6px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .masthead-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .lang-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: var(--bg-chassis);
+      border: 1px solid var(--border-seam);
+      border-radius: 6px;
+    }
+    .lang-btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: transparent;
+      color: var(--ink-secondary);
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      line-height: 1.2;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .lang-btn:hover {
+      color: var(--ink-primary);
+      background: var(--bg-elevated);
+    }
+    .lang-btn:active {
+      color: var(--ink-primary);
+      background: var(--status-info-bg);
+    }
+    .lang-btn:focus-visible {
+      outline: 2px solid var(--accent-sapphire);
+      outline-offset: 2px;
+    }
+    .lang-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .lang-btn.active {
+      color: var(--ink-primary);
+      background: var(--status-info-bg);
+      border-color: var(--accent-sapphire);
+    }
+    .eyebrow {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent-sapphire);
+      margin: 0 0 8px;
+    }
+    h1, h2, h3 {
+      text-wrap: balance;
+      color: var(--ink-primary);
+      margin: 0;
+    }
+    h1 {
+      font-size: 24px;
+      line-height: 1.25;
+      margin-bottom: 8px;
+    }
+    h2 {
+      font-size: 16px;
+      line-height: 1.3;
+      margin-bottom: 12px;
+    }
+    .subtitle {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin: 0;
+      color: var(--ink-secondary);
+      font-size: 13px;
+    }
+    .kpi-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      background: var(--bg-panel);
+      color: var(--ink-primary);
+      border: 1px solid var(--border-seam);
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .kpi-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--ink-secondary);
+    }
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 20px;
+      font-weight: 700;
+      margin-top: 4px;
+      color: var(--ink-primary);
+    }
+    section.panel {
+      background: var(--bg-panel);
+      color: var(--ink-primary);
+      border: 1px solid var(--border-seam);
+      border-radius: 6px;
+      padding: 20px 24px;
+      margin-bottom: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-seam);
+      vertical-align: top;
+    }
+    th {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      background: var(--bg-elevated);
+    }
+    .mono {
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
+      font-size: 13px;
+    }
+    .num { text-align: right; }
+    .muted { color: var(--ink-secondary); }
+    .pill {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font-mono);
+    }
+    .pill-ok { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+    .pill-warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+    .pill-crit { background: var(--status-crit-bg); color: var(--status-crit-fg); }
+    .pill-info { background: var(--status-info-bg); color: var(--accent-sapphire); }
+    .pill-neutral { background: var(--bg-elevated); color: var(--ink-secondary); }
+    .code-card {
+      border: 1px solid var(--border-seam);
+      border-radius: 6px;
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .code-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--bg-elevated);
+      color: var(--ink-primary);
+      border-bottom: 1px solid var(--border-seam);
+      font-size: 13px;
+    }
+    pre {
+      margin: 0;
+      padding: 12px 16px;
+      background: var(--bg-code);
+      color: var(--ink-primary);
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
     <header class="masthead">
-      <p class="eyebrow">MachGraph v1.0.0 · Cold-Tungsten Binary Triage Dossier</p>
-      <h1>MachGraphTarget (Mach-O 64 / arm64e (PAC))</h1>
-      <p class="subtitle"><span>SHA-256: <span class="mono">f3bca400420d48a4f07167c7d950af607429f6422dfc456926204dc08cc3eab2</span></span><span>Entry: <span class="mono">0x00000001000010fc</span></span><span>CDHash: <span class="mono">598ccc1528cc5a3d07b6bd98a977e6136a1e9a622b80c295704c17d0db6c1257</span></span></p>
+      <div class="masthead-top">
+        <div>
+          <p class="eyebrow" data-en="MachGraph v1.1.0 · Cold-Tungsten Binary Triage Dossier" data-zh="MachGraph v1.1.0 · 冷钨钢二进制逆向分诊报告">MachGraph v1.1.0 · Cold-Tungsten Binary Triage Dossier</p>
+          <h1 data-en="MachGraphTarget (Mach-O 64 / arm64e (PAC))" data-zh="MachGraphTarget (Mach-O 64 / arm64e (PAC))">MachGraphTarget (Mach-O 64 / arm64e (PAC))</h1>
+        </div>
+        <div class="lang-toggle" role="group" aria-label="Language Switcher">
+          <button type="button" class="lang-btn" data-set-lang="zh" aria-pressed="false">中文</button>
+          <button type="button" class="lang-btn active" data-set-lang="en" aria-pressed="true">EN</button>
+        </div>
+      </div>
+      <p class="subtitle">
+        <span>SHA-256: <span class="mono">f3bca400420d48a4f07167c7d950af607429f6422dfc456926204dc08cc3eab2</span></span>
+        <span><span data-en="Entry:" data-zh="入口地址:">Entry:</span> <span class="mono">0x00000001000010fc</span></span>
+        <span>CDHash: <span class="mono" data-en="598ccc1528cc5a3d07b6bd98a977e6136a1e9a622b80c295704c17d0db6c1257" data-zh="598ccc1528cc5a3d07b6bd98a977e6136a1e9a622b80c295704c17d0db6c1257">598ccc1528cc5a3d07b6bd98a977e6136a1e9a622b80c295704c17d0db6c1257</span></span>
+      </p>
     </header>
 
     <div class="kpi-strip">
       <div class="kpi-card">
-        <div class="kpi-label">Recovered Functions</div>
+        <div class="kpi-label" data-en="Recovered Functions" data-zh="已恢复函数">Recovered Functions</div>
         <div class="kpi-value">9</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Decoded A64 Insns</div>
+        <div class="kpi-label" data-en="Decoded A64 Insns" data-zh="已解码 A64 指令">Decoded A64 Insns</div>
         <div class="kpi-value">86</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Cross-References</div>
+        <div class="kpi-label" data-en="Cross-References" data-zh="交叉引用总数">Cross-References</div>
         <div class="kpi-value">54</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Shannon Entropy</div>
+        <div class="kpi-label" data-en="Shannon Entropy" data-zh="香农信息熵">Shannon Entropy</div>
         <div class="kpi-value">0.621 b/B</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">Security Findings</div>
+        <div class="kpi-label" data-en="Security Findings" data-zh="安全审计发现">Security Findings</div>
         <div class="kpi-value">10</div>
       </div>
     </div>
 
     <section class="panel">
-      <h2>Memory Segments &amp; Protection Matrix</h2>
+      <h2 data-en="Memory Segments &amp; Protection Matrix" data-zh="内存段映射与 RWX 权限矩阵">Memory Segments &amp; Protection Matrix</h2>
       <table>
         <thead>
           <tr>
-            <th>Segment</th>
-            <th>VM Address</th>
-            <th class="num">VM Size</th>
-            <th>File Offset</th>
-            <th>Init / Max Prot</th>
-            <th class="num">Sections</th>
+            <th data-en="Segment" data-zh="内存段">Segment</th>
+            <th data-en="VM Address" data-zh="虚拟地址">VM Address</th>
+            <th class="num" data-en="VM Size" data-zh="虚拟大小">VM Size</th>
+            <th data-en="File Offset" data-zh="文件偏移">File Offset</th>
+            <th data-en="Init / Max Prot" data-zh="初始 / 最大权限">Init / Max Prot</th>
+            <th class="num" data-en="Sections" data-zh="节区数">Sections</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-  <td class="mono">Segment pagezero</td>
+  <td class="mono" data-en="Segment pagezero" data-zh="零页段 pagezero">Segment pagezero</td>
   <td class="mono">0x0000000000000000</td>
   <td class="mono num">0x100000000</td>
   <td class="mono">0x0</td>
@@ -235,7 +297,7 @@
   <td class="mono num">0</td>
 </tr>
 <tr>
-  <td class="mono">Segment text</td>
+  <td class="mono" data-en="Segment text" data-zh="代码段 text">Segment text</td>
   <td class="mono">0x0000000100000000</td>
   <td class="mono num">0x4000</td>
   <td class="mono">0x0</td>
@@ -243,7 +305,7 @@
   <td class="mono num">11</td>
 </tr>
 <tr>
-  <td class="mono">Segment data_const</td>
+  <td class="mono" data-en="Segment data_const" data-zh="只读数据段 data_const">Segment data_const</td>
   <td class="mono">0x0000000100004000</td>
   <td class="mono num">0x4000</td>
   <td class="mono">0x4000</td>
@@ -251,7 +313,7 @@
   <td class="mono num">3</td>
 </tr>
 <tr>
-  <td class="mono">Segment data</td>
+  <td class="mono" data-en="Segment data" data-zh="数据段 data">Segment data</td>
   <td class="mono">0x0000000100008000</td>
   <td class="mono num">0x4000</td>
   <td class="mono">0x8000</td>
@@ -259,7 +321,7 @@
   <td class="mono num">3</td>
 </tr>
 <tr>
-  <td class="mono">Segment linkedit</td>
+  <td class="mono" data-en="Segment linkedit" data-zh="链接编辑段 linkedit">Segment linkedit</td>
   <td class="mono">0x000000010000c000</td>
   <td class="mono num">0x4000</td>
   <td class="mono">0xc000</td>
@@ -271,16 +333,16 @@
     </section>
 
     <section class="panel">
-      <h2>Recovered Control-Flow Functions &amp; Loop Complexity</h2>
+      <h2 data-en="Recovered Control-Flow Functions &amp; Loop Complexity" data-zh="已恢复控制流函数与循环复杂度">Recovered Control-Flow Functions &amp; Loop Complexity</h2>
       <table>
         <thead>
           <tr>
-            <th>Entry</th>
-            <th>Symbol</th>
-            <th class="num">Blocks</th>
-            <th class="num">Cyclomatic</th>
-            <th class="num">Loops</th>
-            <th>ISA Mode</th>
+            <th data-en="Entry" data-zh="入口地址">Entry</th>
+            <th data-en="Symbol" data-zh="函数符号">Symbol</th>
+            <th class="num" data-en="Blocks" data-zh="基本块">Blocks</th>
+            <th class="num" data-en="Cyclomatic" data-zh="圈复杂度">Cyclomatic</th>
+            <th class="num" data-en="Loops" data-zh="自然循环">Loops</th>
+            <th data-en="ISA Mode" data-zh="指令集特征">ISA Mode</th>
           </tr>
         </thead>
         <tbody>
@@ -290,7 +352,7 @@
   <td class="mono num">4</td>
   <td class="mono num">2</td>
   <td class="mono num">1</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x0000000100001028</td>
@@ -298,7 +360,7 @@
   <td class="mono num">5</td>
   <td class="mono num">3</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-info">arm64e-pac</span></td>
+  <td><span class="pill pill-info" data-en="arm64e-pac" data-zh="arm64e-pac">arm64e-pac</span></td>
 </tr>
 <tr>
   <td class="mono">0x000000010000108c</td>
@@ -306,7 +368,7 @@
   <td class="mono num">8</td>
   <td class="mono num">5</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x00000001000010d8</td>
@@ -314,7 +376,7 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x00000001000010f0</td>
@@ -322,7 +384,7 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x00000001000010fc</td>
@@ -330,7 +392,7 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-info">arm64e-pac</span></td>
+  <td><span class="pill pill-info" data-en="arm64e-pac" data-zh="arm64e-pac">arm64e-pac</span></td>
 </tr>
 <tr>
   <td class="mono">0x0000000100001400</td>
@@ -338,7 +400,7 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x000000010000140c</td>
@@ -346,7 +408,7 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
 <tr>
   <td class="mono">0x0000000100001418</td>
@@ -354,19 +416,19 @@
   <td class="mono num">1</td>
   <td class="mono num">1</td>
   <td class="mono num">0</td>
-  <td><span class="pill pill-neutral">std-a64</span></td>
+  <td><span class="pill pill-neutral" data-en="std-a64" data-zh="标准-a64">std-a64</span></td>
 </tr>
         </tbody>
       </table>
     </section>
 
     <section class="panel">
-      <h2>SSA Micro-IR Structured Pseudo-C Decompilation</h2>
+      <h2 data-en="SSA Micro-IR Structured Pseudo-C Decompilation" data-zh="SSA 微IR 结构化伪C反编译输出">SSA Micro-IR Structured Pseudo-C Decompilation</h2>
       <div class="code-card">
   <div class="code-header">
     <span class="mono">0x0000000100001000</span>
     <span>uint32_t compute_checksum(uint8_t *arg0, uint64_t arg1)</span>
-    <span class="mono muted">SSA vars: 13 · DSE: 1</span>
+    <span class="mono muted" data-en="SSA vars: 13 · DSE: 1" data-zh="SSA 变量: 13 · 死存储消除: 1">SSA vars: 13 · DSE: 1</span>
   </div>
   <pre><code>uint32_t compute_checksum(uint8_t *arg0, uint64_t arg1) {
     uint32_t result = 90;
@@ -382,12 +444,12 @@
   <div class="code-header">
     <span class="mono">0x0000000100001028</span>
     <span>int32_t verify_license(const char *arg0)</span>
-    <span class="mono muted">SSA vars: 13 · DSE: 6</span>
+    <span class="mono muted" data-en="SSA vars: 13 · DSE: 6" data-zh="SSA 变量: 13 · 死存储消除: 6">SSA vars: 13 · DSE: 6</span>
   </div>
-  <pre><code>// ARM64e PAC-protected license gate; checks token prefix &amp; rolling XOR digest
+  <pre><code>// 受 ARM64e PAC 保护的授权校验入口；校验令牌前缀与滚动 XOR 摘要
 int32_t verify_license(const char *arg0) {
     int32_t result;
-    // ARM64e PAC-protected license gate; checks token prefix &amp; rolling XOR digest
+    // 受 ARM64e PAC 保护的授权校验入口；校验令牌前缀与滚动 XOR 摘要
     if (arg0 != NULL &amp;&amp; strcmp(arg0, &quot;MACHGRAPH-PRO-2026&quot;) == 0) {
         compute_checksum(arg0, 18);
         puts(&quot;License verified: %s&quot;);
@@ -403,12 +465,12 @@ int32_t verify_license(const char *arg0) {
   <div class="code-header">
     <span class="mono">0x000000010000108c</span>
     <span>uint32_t dispatch_command(uint32_t arg0)</span>
-    <span class="mono muted">SSA vars: 7 · DSE: 0</span>
+    <span class="mono muted" data-en="SSA vars: 7 · DSE: 0" data-zh="SSA 变量: 7 · 死存储消除: 0">SSA vars: 7 · DSE: 0</span>
   </div>
-  <pre><code>// Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)
+  <pre><code>// 带边界检查的 __TEXT,__const 四分支跳转表 (操作码 0..3)
 uint32_t dispatch_command(uint32_t arg0) {
     uint32_t result;
-    // Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)
+    // 带边界检查的 __TEXT,__const 四分支跳转表 (操作码 0..3)
     switch (arg0) {
     case 0:
         result = 100;
@@ -433,7 +495,7 @@ uint32_t dispatch_command(uint32_t arg0) {
   <div class="code-header">
     <span class="mono">0x00000001000010d8</span>
     <span>bool -[MGAuthController validateToken:](MGAuthController *self, const char *_cmd, id token)</span>
-    <span class="mono muted">SSA vars: 5 · DSE: 1</span>
+    <span class="mono muted" data-en="SSA vars: 5 · DSE: 1" data-zh="SSA 变量: 5 · 死存储消除: 1">SSA vars: 5 · DSE: 1</span>
   </div>
   <pre><code>bool -[MGAuthController validateToken:](MGAuthController *self, const char *_cmd, id token) {
     return verify_license(token);
@@ -442,7 +504,7 @@ uint32_t dispatch_command(uint32_t arg0) {
     </section>
 
     <section class="panel">
-      <h2>Sliding-Window Shannon Entropy Profile</h2>
+      <h2 data-en="Sliding-Window Shannon Entropy Profile" data-zh="滑动窗口香农熵分布谱">Sliding-Window Shannon Entropy Profile</h2>
       <svg viewBox="0 0 960 140" width="100%" height="140" role="img" aria-label="Sliding window Shannon entropy profile">
   <rect x="0" y="0" width="960" height="140" fill="#0B0E12" rx="4" />
   <rect x="10.0" y="90.1" width="12.7" height="33.9" fill="#58A6FF" rx="1.5" />
@@ -513,80 +575,130 @@ uint32_t dispatch_command(uint32_t arg0) {
     </section>
 
     <section class="panel">
-      <h2>JavaScriptCore Security Audit Ledger</h2>
+      <h2 data-en="JavaScriptCore Security Audit Ledger" data-zh="JavaScriptCore 安全审计台账">JavaScriptCore Security Audit Ledger</h2>
       <table>
         <thead>
           <tr>
-            <th>Severity</th>
-            <th>Address</th>
-            <th>Finding</th>
-            <th>Evidence &amp; Reachability Detail</th>
+            <th data-en="Severity" data-zh="严重等级">Severity</th>
+            <th data-en="Address" data-zh="虚拟地址">Address</th>
+            <th data-en="Finding" data-zh="审计发现">Finding</th>
+            <th data-en="Evidence &amp; Reachability Detail" data-zh="静态证据与可达性详情">Evidence &amp; Reachability Detail</th>
           </tr>
         </thead>
         <tbody>
           <tr>
-  <td><span class="pill pill-crit">High</span></td>
-  <td class="mono">0x0000000100001044</td>
-  <td>Hardcoded Static Verification / Entitlement Token in Binary (verify_license)</td>
-  <td>Referenced by verify_license, main. String literal at 0x100002000 (__TEXT,__cstring, 18 bytes). Xref trace: verify_license @ 0x100001044 [STRING_REF], main @ 0x10000110c [STRING_REF]. Remediation: Comparing against a static plaintext token embedded in __cstring exposes the secret to trivial string extraction. Use asymmetric cryptographic signature verification (Ed25519 / ECDSA) instead.</td>
+  <td><span class="pill pill-crit" data-en="High" data-zh="高危">High</span></td>
+  <td class="mono" data-en="0x0000000100001044" data-zh="0x0000000100001044">0x0000000100001044</td>
+  <td data-en="Hardcoded Static Verification / Entitlement Token in Binary (verify_license)" data-zh="二进制内硬编码静态授权/校验令牌 (verify_license)">Hardcoded Static Verification / Entitlement Token in Binary (verify_license)</td>
+  <td data-en="Referenced by verify_license, main. String literal at 0x100002000 (__TEXT,__cstring, 18 bytes). Xref trace: verify_license @ 0x100001044 [STRING_REF], main @ 0x10000110c [STRING_REF]. Remediation: Comparing against a static plaintext token embedded in __cstring exposes the secret to trivial string extraction. Use asymmetric cryptographic signature verification (Ed25519 / ECDSA) instead." data-zh="引用函数: verify_license, main。字符串常量位于 0x100002000 (__TEXT,__cstring, 18 字节)。交叉引用轨迹: verify_license @ 0x100001044 [STRING_REF], main @ 0x10000110c [STRING_REF]. 修复建议: 与 __cstring 节内嵌静态明文令牌直接比对极易被字符串提取绕过；建议改用非对称签名校验 (Ed25519 / ECDSA)。">Referenced by verify_license, main. String literal at 0x100002000 (__TEXT,__cstring, 18 bytes). Xref trace: verify_license @ 0x100001044 [STRING_REF], main @ 0x10000110c [STRING_REF]. Remediation: Comparing against a static plaintext token embedded in __cstring exposes the secret to trivial string extraction. Use asymmetric cryptographic signature verification (Ed25519 / ECDSA) instead.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-crit">High</span></td>
-  <td class="mono">0x0000000100001048</td>
-  <td>Early-Exit String/Memory Comparison `strcmp` in Security-Sensitive Function `verify_license`</td>
-  <td>Function invokes `_strcmp` (1 call site(s)). Shortest call path: verify_license -&gt; strcmp (1 hop(s)). Standard `strcmp` terminates on the first mismatched byte, leaking prefix match timing and exposing secret material in registers. Remediation: Use `timingsafe_bcmp` / `CCDigest` HMAC verification or asymmetric signature validation.</td>
+  <td><span class="pill pill-crit" data-en="High" data-zh="高危">High</span></td>
+  <td class="mono" data-en="0x0000000100001048" data-zh="0x0000000100001048">0x0000000100001048</td>
+  <td data-en="Early-Exit String/Memory Comparison `strcmp` in Security-Sensitive Function `verify_license`" data-zh="可提前退出的字符串/内存比较 `strcmp` (位于安全敏感函数 `verify_license`)">Early-Exit String/Memory Comparison `strcmp` in Security-Sensitive Function `verify_license`</td>
+  <td data-en="Function invokes `_strcmp` (1 call site(s)). Shortest call path: verify_license -&gt; strcmp (1 hop(s)). Standard `strcmp` terminates on the first mismatched byte, leaking prefix match timing and exposing secret material in registers. Remediation: Use `timingsafe_bcmp` / `CCDigest` HMAC verification or asymmetric signature validation." data-zh="函数调用了 `_strcmp` (1 处调用点)。最短调用链: verify_license -&gt; strcmp (1 跳)。标准库 `strcmp` 在遇到首个不匹配字节时立即返回，会泄漏前缀比对时序侧信道并在寄存器中暴露明文凭证。修复建议: 改用常量时间比较 `timingsafe_bcmp`、HMAC 摘要校验或非对称签名验证。">Function invokes `_strcmp` (1 call site(s)). Shortest call path: verify_license -&gt; strcmp (1 hop(s)). Standard `strcmp` terminates on the first mismatched byte, leaking prefix match timing and exposing secret material in registers. Remediation: Use `timingsafe_bcmp` / `CCDigest` HMAC verification or asymmetric signature validation.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-crit">High</span></td>
-  <td class="mono">0x00000001000010fc</td>
-  <td>Debuggable Task Port Entitlement (`get-task-allow`)</td>
-  <td>Grants `task_for_pid` / debugger attachment rights to same-UID processes, allowing runtime memory inspection, register modification, and credential extraction if left enabled in release builds. Remove `com.apple.security.get-task-allow` from release `.entitlements` plists unless strictly required.</td>
+  <td><span class="pill pill-crit" data-en="High" data-zh="高危">High</span></td>
+  <td class="mono" data-en="0x00000001000010fc" data-zh="0x00000001000010fc">0x00000001000010fc</td>
+  <td data-en="Debuggable Task Port Entitlement (`get-task-allow`)" data-zh="已开启调试任务端口权限 (`get-task-allow`)">Debuggable Task Port Entitlement (`get-task-allow`)</td>
+  <td data-en="Grants `task_for_pid` / debugger attachment rights to same-UID processes, allowing runtime memory inspection, register modification, and credential extraction if left enabled in release builds. Remove `com.apple.security.get-task-allow` from release `.entitlements` plists unless strictly required." data-zh="授予同 UID 进程 `task_for_pid` 调试附加权限；若保留在发布版中，将允许运行时内存读取、寄存器篡改与凭证提取。 若非必需，请从发布版 `.entitlements` 配置中移除 `com.apple.security.get-task-allow`。">Grants `task_for_pid` / debugger attachment rights to same-UID processes, allowing runtime memory inspection, register modification, and credential extraction if left enabled in release builds. Remove `com.apple.security.get-task-allow` from release `.entitlements` plists unless strictly required.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-warn">Medium</span></td>
-  <td class="mono">0x000000010000108c</td>
-  <td>Non-PAC `ret` Epilogues in Stack-Frame Functions on `arm64e` Image</td>
-  <td>Binary slice is tagged `arm64e`, yet 2 non-leaf / stack-allocating function(s) return via unsigned `ret` without `paciasp`/`retaa`: dispatch_command (0x10000108c, frame=16B), -[MGAuthController validateToken:] (0x1000010d8, frame=16B). Remediation: Enable `-mbranch-protection=pac-ret+leaf` across all translation units and static archives.</td>
+  <td><span class="pill pill-warn" data-en="Medium" data-zh="中危">Medium</span></td>
+  <td class="mono" data-en="0x000000010000108c" data-zh="0x000000010000108c">0x000000010000108c</td>
+  <td data-en="Non-PAC `ret` Epilogues in Stack-Frame Functions on `arm64e` Image" data-zh="`arm64e` 镜像栈帧函数存在未启用 PAC 的 `ret` 返回序列">Non-PAC `ret` Epilogues in Stack-Frame Functions on `arm64e` Image</td>
+  <td data-en="Binary slice is tagged `arm64e`, yet 2 non-leaf / stack-allocating function(s) return via unsigned `ret` without `paciasp`/`retaa`: dispatch_command (0x10000108c, frame=16B), -[MGAuthController validateToken:] (0x1000010d8, frame=16B). Remediation: Enable `-mbranch-protection=pac-ret+leaf` across all translation units and static archives." data-zh="当前架构切片标记为 `arm64e`，但仍有 2 个非叶子/栈帧分配函数使用未签名的 `ret` 指令返回 (未配对 `paciasp`/`retaa`): dispatch_command (0x10000108c, frame=16B), -[MGAuthController validateToken:] (0x1000010d8, frame=16B). 修复建议: 在所有编译单元与静态库中统一开启 `-mbranch-protection=pac-ret+leaf`。">Binary slice is tagged `arm64e`, yet 2 non-leaf / stack-allocating function(s) return via unsigned `ret` without `paciasp`/`retaa`: dispatch_command (0x10000108c, frame=16B), -[MGAuthController validateToken:] (0x1000010d8, frame=16B). Remediation: Enable `-mbranch-protection=pac-ret+leaf` across all translation units and static archives.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-warn">Medium</span></td>
-  <td class="mono">0x00000001000010a8</td>
-  <td>Unsigned Switch Jump-Table Dispatch (`br x8`) in `dispatch_command`</td>
-  <td>Instruction `br x8` at 0x1000010a8 inside `dispatch_command` transfers control through register `x8` without Pointer Authentication (`braa`/`blraa`). Jump table at 0x100001500 (4 case targets). Remediation: Compile with `-arch arm64e` or `-mbranch-protection=standard` so indirect call/vtable targets are cryptographically authenticated.</td>
+  <td><span class="pill pill-warn" data-en="Medium" data-zh="中危">Medium</span></td>
+  <td class="mono" data-en="0x00000001000010a8" data-zh="0x00000001000010a8">0x00000001000010a8</td>
+  <td data-en="Unsigned Switch Jump-Table Dispatch (`br x8`) in `dispatch_command`" data-zh="未签名 Switch 跳转表分发 (`br x8`) · 位于 `dispatch_command`">Unsigned Switch Jump-Table Dispatch (`br x8`) in `dispatch_command`</td>
+  <td data-en="Instruction `br x8` at 0x1000010a8 inside `dispatch_command` transfers control through register `x8` without Pointer Authentication (`braa`/`blraa`). Jump table at 0x100001500 (4 case targets). Remediation: Compile with `-arch arm64e` or `-mbranch-protection=standard` so indirect call/vtable targets are cryptographically authenticated." data-zh="指令 `br x8` 位于 0x1000010a8 (所属函数 `dispatch_command`) 通过寄存器 `x8` 进行间接控制流转移，未启用 PAC 指针认证 (`braa`/`blraa`)。 关联跳转表基址 0x100001500 (4 个分支目标)。 修复建议: 使用 `-arch arm64e` 或 `-mbranch-protection=standard` 编译，对间接跳转与虚表目标启用硬件指针签名验证。">Instruction `br x8` at 0x1000010a8 inside `dispatch_command` transfers control through register `x8` without Pointer Authentication (`braa`/`blraa`). Jump table at 0x100001500 (4 case targets). Remediation: Compile with `-arch arm64e` or `-mbranch-protection=standard` so indirect call/vtable targets are cryptographically authenticated.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-warn">Medium</span></td>
-  <td class="mono">0x00000001000010fc</td>
-  <td>Ad-Hoc Signed Mach-O Binary (`CS_ADHOC`)</td>
-  <td>Binary `MachGraphTarget` (identifier `com.machgraph.demo.target`) is ad-hoc signed without an Apple Developer ID CMS certificate chain (`cdhash=598ccc1528cc5a3d07b6bd98`). Suitable for local testing, but lacks Team ID isolation for production distribution.</td>
+  <td><span class="pill pill-warn" data-en="Medium" data-zh="中危">Medium</span></td>
+  <td class="mono" data-en="0x00000001000010fc" data-zh="0x00000001000010fc">0x00000001000010fc</td>
+  <td data-en="Ad-Hoc Signed Mach-O Binary (`CS_ADHOC`)" data-zh="Mach-O 二进制采用临时签名 (`CS_ADHOC`)">Ad-Hoc Signed Mach-O Binary (`CS_ADHOC`)</td>
+  <td data-en="Binary `MachGraphTarget` (identifier `com.machgraph.demo.target`) is ad-hoc signed without an Apple Developer ID CMS certificate chain (`cdhash=598ccc1528cc5a3d07b6bd98`). Suitable for local testing, but lacks Team ID isolation for production distribution." data-zh="Binary `MachGraphTarget` (identifier `com.machgraph.demo.target`) is ad-hoc signed without an Apple Developer ID CMS certificate chain (`cdhash=598ccc1528cc5a3d07b6bd98`). Suitable for local testing, but lacks Team ID isolation for production distribution.">Binary `MachGraphTarget` (identifier `com.machgraph.demo.target`) is ad-hoc signed without an Apple Developer ID CMS certificate chain (`cdhash=598ccc1528cc5a3d07b6bd98`). Suitable for local testing, but lacks Team ID isolation for production distribution.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-warn">Medium</span></td>
-  <td class="mono">0x00000001000010fc</td>
-  <td>Hardened Runtime (`CS_RUNTIME` 0x00010000) Not Enabled</td>
-  <td>CodeDirectory flags (`0x00020002`) do not set `CS_RUNTIME` (`0x00010000`). Without Hardened Runtime, macOS notarization is unavailable and default protections against dylib injection and unsigned executable pages are relaxed. Remediation: Sign with `codesign --options runtime`.</td>
+  <td><span class="pill pill-warn" data-en="Medium" data-zh="中危">Medium</span></td>
+  <td class="mono" data-en="0x00000001000010fc" data-zh="0x00000001000010fc">0x00000001000010fc</td>
+  <td data-en="Hardened Runtime (`CS_RUNTIME` 0x00010000) Not Enabled" data-zh="未启用 macOS 强化运行时 (`CS_RUNTIME` 0x00010000)">Hardened Runtime (`CS_RUNTIME` 0x00010000) Not Enabled</td>
+  <td data-en="CodeDirectory flags (`0x00020002`) do not set `CS_RUNTIME` (`0x00010000`). Without Hardened Runtime, macOS notarization is unavailable and default protections against dylib injection and unsigned executable pages are relaxed. Remediation: Sign with `codesign --options runtime`." data-zh="CodeDirectory flags (`0x00020002`) do not set `CS_RUNTIME` (`0x00010000`). Without Hardened Runtime, macOS notarization is unavailable and default protections against dylib injection and unsigned executable pages are relaxed. 修复建议: Sign with `codesign --options runtime`.">CodeDirectory flags (`0x00020002`) do not set `CS_RUNTIME` (`0x00010000`). Without Hardened Runtime, macOS notarization is unavailable and default protections against dylib injection and unsigned executable pages are relaxed. Remediation: Sign with `codesign --options runtime`.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-warn">Medium</span></td>
-  <td class="mono">0x00000001000010fc</td>
-  <td>MAP_JIT Executable Memory Entitlement (`cs.allow-jit`)</td>
-  <td>Enables `MAP_JIT` dynamic code generation pages (`pthread_jit_write_protect_np`). Confirm the binary actually embeds a hardened JS/Wasm JIT runtime; remove if unused. Remove `com.apple.security.cs.allow-jit` from release `.entitlements` plists unless strictly required.</td>
+  <td><span class="pill pill-warn" data-en="Medium" data-zh="中危">Medium</span></td>
+  <td class="mono" data-en="0x00000001000010fc" data-zh="0x00000001000010fc">0x00000001000010fc</td>
+  <td data-en="MAP_JIT Executable Memory Entitlement (`cs.allow-jit`)" data-zh="已开启 MAP_JIT 动态代码内存权限 (`cs.allow-jit`)">MAP_JIT Executable Memory Entitlement (`cs.allow-jit`)</td>
+  <td data-en="Enables `MAP_JIT` dynamic code generation pages (`pthread_jit_write_protect_np`). Confirm the binary actually embeds a hardened JS/Wasm JIT runtime; remove if unused. Remove `com.apple.security.cs.allow-jit` from release `.entitlements` plists unless strictly required." data-zh="允许分配 `MAP_JIT` 动态代码生成页 (`pthread_jit_write_protect_np`)。请确认目标确实内嵌受加固的 JS/Wasm JIT 引擎，否则应在发布版中移除。 若非必需，请从发布版 `.entitlements` 配置中移除 `com.apple.security.cs.allow-jit`。">Enables `MAP_JIT` dynamic code generation pages (`pthread_jit_write_protect_np`). Confirm the binary actually embeds a hardened JS/Wasm JIT runtime; remove if unused. Remove `com.apple.security.cs.allow-jit` from release `.entitlements` plists unless strictly required.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-ok">Low</span></td>
-  <td class="mono">0x0000000100001124</td>
-  <td>Variadic Format Output Sink `printf` Call Site Audited</td>
-  <td>Audited 1 call site(s) to `_printf`. Shortest call path: main -&gt; printf (1 hop(s)). Format argument appears PC-relative (`adrp`/`add`), which mitigates format-string injection; confirm format specifiers match variadic operand widths.</td>
+  <td><span class="pill pill-ok" data-en="Low" data-zh="低危">Low</span></td>
+  <td class="mono" data-en="0x0000000100001124" data-zh="0x0000000100001124">0x0000000100001124</td>
+  <td data-en="Variadic Format Output Sink `printf` Call Site Audited" data-zh="Variadic Format Output Sink `printf` Call Site Audited">Variadic Format Output Sink `printf` Call Site Audited</td>
+  <td data-en="Audited 1 call site(s) to `_printf`. Shortest call path: main -&gt; printf (1 hop(s)). Format argument appears PC-relative (`adrp`/`add`), which mitigates format-string injection; confirm format specifiers match variadic operand widths." data-zh="Audited 1 call site(s) to `_printf`. Shortest call path: main -&gt; printf (1 hop(s)). Format argument appears PC-relative (`adrp`/`add`), which mitigates format-string injection; confirm format specifiers match variadic operand widths.">Audited 1 call site(s) to `_printf`. Shortest call path: main -&gt; printf (1 hop(s)). Format argument appears PC-relative (`adrp`/`add`), which mitigates format-string injection; confirm format specifiers match variadic operand widths.</td>
 </tr>
 <tr>
-  <td><span class="pill pill-ok">Low</span></td>
-  <td class="mono">0x000000010000205a</td>
-  <td>Internal Corporate or Non-TLS Endpoint URL in Binary</td>
-  <td>Located in __TEXT,__cstring (ASCII). String literal at 0x10000205a (__TEXT,__cstring, 49 bytes). Xref trace: No direct instruction Xrefs resolved (unreferenced or table-indexed literal). Remediation: Audit internal staging/telemetry hostnames before release to prevent internal infrastructure reconnaissance.</td>
+  <td><span class="pill pill-ok" data-en="Low" data-zh="低危">Low</span></td>
+  <td class="mono" data-en="0x000000010000205a" data-zh="0x000000010000205a">0x000000010000205a</td>
+  <td data-en="Internal Corporate or Non-TLS Endpoint URL in Binary" data-zh="内嵌内部域名或明文 HTTP 端点 URL">Internal Corporate or Non-TLS Endpoint URL in Binary</td>
+  <td data-en="Located in __TEXT,__cstring (ASCII). String literal at 0x10000205a (__TEXT,__cstring, 49 bytes). Xref trace: No direct instruction Xrefs resolved (unreferenced or table-indexed literal). Remediation: Audit internal staging/telemetry hostnames before release to prevent internal infrastructure reconnaissance." data-zh="位于节区 __TEXT,__cstring (ASCII)。字符串常量位于 0x10000205a (__TEXT,__cstring, 49 字节)。交叉引用轨迹: No direct instruction Xrefs resolved (unreferenced or table-indexed literal). 修复建议: 发版前请清理测试环境与内部遥测域名，防止内网基础设施暴露。">Located in __TEXT,__cstring (ASCII). String literal at 0x10000205a (__TEXT,__cstring, 49 bytes). Xref trace: No direct instruction Xrefs resolved (unreferenced or table-indexed literal). Remediation: Audit internal staging/telemetry hostnames before release to prevent internal infrastructure reconnaissance.</td>
 </tr>
         </tbody>
       </table>
     </section>
   </div>
+  <script>
+    (function () {
+      var storageKey = 'machgraph-report-lang';
+      function detectLanguage() {
+        try {
+          var saved = window.localStorage.getItem(storageKey);
+          if (saved === 'zh' || saved === 'en') {
+            return saved;
+          }
+        } catch (err) {}
+        var nav = (navigator.language || '').toLowerCase();
+        return nav.startsWith('zh') ? 'zh' : 'en';
+      }
+      function applyLanguage(lang, persist) {
+        var activeLang = lang === 'zh' ? 'zh' : 'en';
+        document.documentElement.lang = activeLang === 'zh' ? 'zh-CN' : 'en';
+        var elements = document.querySelectorAll('[data-en][data-zh]');
+        for (var i = 0; i < elements.length; i++) {
+          var node = elements[i];
+          var translated = activeLang === 'zh' ? node.getAttribute('data-zh') : node.getAttribute('data-en');
+          if (translated !== null) {
+            node.textContent = translated;
+          }
+        }
+        var buttons = document.querySelectorAll('.lang-btn[data-set-lang]');
+        for (var j = 0; j < buttons.length; j++) {
+          var button = buttons[j];
+          var isCurrent = button.getAttribute('data-set-lang') === activeLang;
+          if (isCurrent) {
+            button.classList.add('active');
+          } else {
+            button.classList.remove('active');
+          }
+          button.setAttribute('aria-pressed', isCurrent ? 'true' : 'false');
+        }
+        if (persist) {
+          try {
+            window.localStorage.setItem(storageKey, activeLang);
+          } catch (err) {}
+        }
+      }
+      var toggles = document.querySelectorAll('.lang-btn[data-set-lang]');
+      for (var k = 0; k < toggles.length; k++) {
+        toggles[k].addEventListener('click', function () {
+          applyLanguage(this.getAttribute('data-set-lang'), true);
+        });
+      }
+      applyLanguage(detectLanguage(), false);
+    })();
+  </script>
 </body>
 </html>

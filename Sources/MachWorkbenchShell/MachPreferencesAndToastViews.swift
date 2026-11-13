@@ -21,6 +21,19 @@ public enum MachPreferencesTab: String, Sendable, Codable, Hashable, CaseIterabl
         case .securityJSPlugins: return "checkmark.shield"
         }
     }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .disassemblyAndABI:
+            return language.select("Disassembly & ABI", "反汇编与ABI")
+        case .cfgLayoutAndEdges:
+            return language.select("CFG Layout & Edges", "控制流图与边路由")
+        case .decompilerAndGhidra:
+            return language.select("Decompiler & Ghidra Path", "反编译器与Ghidra")
+        case .securityJSPlugins:
+            return language.select("Security JS Plugins", "JS安全插件")
+        }
+    }
 }
 
 public struct MachWorkbenchPreferences: Sendable, Codable, Hashable {
@@ -69,7 +82,9 @@ public struct MachWorkbenchPreferences: Sendable, Codable, Hashable {
         enableDeadStoreElimination: Bool = true,
         preferStructuredWhileAndSwitch: Bool = true,
         emitExplicitTypeCasts: Bool = true,
-        ghidraInstallPath: String = "/Users/xu/Applications/ghidra_12.1.4_PUBLIC",
+        ghidraInstallPath: String = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications/ghidra_12.1.4_PUBLIC")
+            .path,
         javaHomePath: String = "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home",
         enableSideBySideGhidraDiff: Bool = false,
         pluginTimeoutMilliseconds: Double = 5_000.0,
@@ -205,6 +220,7 @@ public final class MachWorkbenchPreferencesStore: ObservableObject {
 
 @MainActor
 public struct MachPreferencesWindowView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var store: MachWorkbenchPreferencesStore
     public let onClose: (() -> Void)?
 
@@ -218,15 +234,51 @@ public struct MachPreferencesWindowView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TungstenPanelHeaderBar(title: "MachGraph Workbench Preferences", sfSymbol: "slider.horizontal.3") {
+            TungstenPanelHeaderBar(
+                title: localizer.L("MachGraph Workbench Preferences", "MachGraph 工作台偏好设置"),
+                sfSymbol: "slider.horizontal.3"
+            ) {
                 HStack(spacing: 8) {
                     TungstenKeycapBadge("⌘,")
                     if let onClose {
-                        Button("Done") { onClose() }
+                        Button(localizer.L("Done", "完成")) { onClose() }
                             .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
                     }
                 }
             }
+
+            // Live Bilingual Language Picker Bar (`中文 | EN`)
+            HStack(spacing: 12) {
+                Image(systemName: "globe")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(localizer.L("Interface Language / 界面语言", "界面语言 / Interface Language"))
+                        .font(ColdTungstenTypography.controlLabel)
+                        .foregroundStyle(ColdTungstenPalette.steelWhite)
+                    Text(
+                        localizer.L(
+                            "Live switch across all views, menus, palettes, and shortcuts (persisted in UserDefaults).",
+                            "即时切换工作台全部视图、菜单栏、命令面板与快捷键说明 (自动保存至 UserDefaults)。"
+                        )
+                    )
+                        .font(ColdTungstenTypography.secondaryCaption)
+                        .foregroundStyle(ColdTungstenPalette.coolPewter)
+                }
+
+                Spacer()
+
+                TungstenKeycapBadge("⇧⌘L")
+                TungstenLanguageTogglePill(localizer: localizer, compact: false)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(ColdTungstenPalette.gunmetalSlate)
+
+            Rectangle()
+                .fill(ColdTungstenPalette.tungstenSeam)
+                .frame(height: ColdTungstenMetrics.borderHairline)
 
             // 4-Tab Bar
             HStack(spacing: 6) {
@@ -238,7 +290,7 @@ public struct MachPreferencesWindowView: View {
                         HStack(spacing: 6) {
                             Image(systemName: tab.sfSymbolName)
                                 .font(.system(size: 11.5, weight: .semibold))
-                            Text(tab.rawValue)
+                            Text(tab.localizedTitle(in: localizer.language))
                                 .font(ColdTungstenTypography.controlLabel)
                         }
                     }
@@ -281,11 +333,16 @@ public struct MachPreferencesWindowView: View {
                 .frame(height: ColdTungstenMetrics.borderHairline)
 
             HStack {
-                Text("Cold Tungsten Steel Engineering Profile · SQLite WAL Synced")
+                Text(
+                    localizer.L(
+                        "Cold Tungsten Steel Engineering Profile · SQLite WAL Synced",
+                        "冷钨钢工程主题配置 · SQLite WAL 实时同步"
+                    )
+                )
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                 Spacer()
-                Button("Restore Defaults") {
+                Button(localizer.L("Restore Defaults", "恢复默认")) {
                     store.resetToDefaults()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(compact: true))
@@ -294,7 +351,7 @@ public struct MachPreferencesWindowView: View {
             .padding(.vertical, 9)
             .background(ColdTungstenPalette.brushedSteel)
         }
-        .frame(width: 720, height: 480)
+        .frame(width: 720, height: 520)
         .background(ColdTungstenPalette.chassisBackground)
         .overlay(
             RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusPanel)
@@ -306,27 +363,51 @@ public struct MachPreferencesWindowView: View {
     private var disassemblyTabContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             preferenceToggleRow(
-                title: "Display Apple ARM64 ABI Register Aliases (fp, lr, sp, xzr)",
-                subtitle: "Maps x29 -> fp and x30 -> lr across linear disassembly and CFG basic-block nodes",
+                title: localizer.L(
+                    "Display Apple ARM64 ABI Register Aliases (fp, lr, sp, xzr)",
+                    "显示 Apple ARM64 ABI 寄存器别名 (fp, lr, sp, xzr)"
+                ),
+                subtitle: localizer.L(
+                    "Maps x29 -> fp and x30 -> lr across linear disassembly and CFG basic-block nodes",
+                    "在线性反汇编与控制流图基本块节点中将 x29 映射为 fp、x30 映射为 lr"
+                ),
                 isOn: $store.preferences.useABIRegisterNames
             )
             preferenceToggleRow(
-                title: "Show Raw 32-Bit Little-Endian Instruction Bytes Column",
-                subtitle: "Renders hex opcode bytes alongside virtual addresses for rapid patch verification",
+                title: localizer.L(
+                    "Show Raw 32-Bit Little-Endian Instruction Bytes Column",
+                    "显示 32 位小端原始机器码字节列"
+                ),
+                subtitle: localizer.L(
+                    "Renders hex opcode bytes alongside virtual addresses for rapid patch verification",
+                    "在虚拟地址旁渲染十六进制机器码，便于快速核对指令补丁"
+                ),
                 isOn: $store.preferences.showRawInstructionBytes
             )
             preferenceToggleRow(
-                title: "Synthesize Inline ADRP+ADD / Chained Fixup / Literal Comments",
-                subtitle: "Annotates PC-relative string, selector, and PAC diversity targets automatically",
+                title: localizer.L(
+                    "Synthesize Inline ADRP+ADD / Chained Fixup / Literal Comments",
+                    "自动合成内联 ADRP+ADD / 链式修复 / 字符串字面量注释"
+                ),
+                subtitle: localizer.L(
+                    "Annotates PC-relative string, selector, and PAC diversity targets automatically",
+                    "自动标注 PC 相对字符串、ObjC 选择器与 PAC 多样性修饰符目标"
+                ),
                 isOn: $store.preferences.showAutoComments
             )
             preferenceToggleRow(
-                title: "Demangle Swift ($s...) and Itanium C++ (_Z...) Symbol Names",
-                subtitle: "Applies symbol demangling in Navigator, CFG headers, and Xref quick-jump tables",
+                title: localizer.L(
+                    "Demangle Swift ($s...) and Itanium C++ (_Z...) Symbol Names",
+                    "反修饰 Swift ($s...) 与 Itanium C++ (_Z...) 符号名称"
+                ),
+                subtitle: localizer.L(
+                    "Applies symbol demangling in Navigator, CFG headers, and Xref quick-jump tables",
+                    "在二进制导航、控制流图标题与交叉引用跳转表中自动反修饰符号"
+                ),
                 isOn: $store.preferences.demangleSwiftAndCppSymbols
             )
             preferenceSliderRow(
-                title: "Monospaced Disassembly Font Size",
+                title: localizer.L("Monospaced Disassembly Font Size", "等宽反汇编字号"),
                 valueText: String(format: "%.1f pt", store.preferences.disassemblyFontSize),
                 value: $store.preferences.disassemblyFontSize,
                 range: 10.5...17.0
@@ -337,33 +418,57 @@ public struct MachPreferencesWindowView: View {
     private var cfgLayoutTabContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             preferenceToggleRow(
-                title: "Orthogonal Sugiyama Layered Edge Routing",
-                subtitle: "Routes True (#3FB950), False (#F85149), and Unconditional (#D29922) edges along crisp right-angle channels",
+                title: localizer.L(
+                    "Orthogonal Sugiyama Layered Edge Routing",
+                    "Sugiyama 分层正交边路由"
+                ),
+                subtitle: localizer.L(
+                    "Routes True (#3FB950), False (#F85149), and Unconditional (#D29922) edges along crisp right-angle channels",
+                    "沿正交直角通道绘制真分支 (#3FB950)、假分支 (#F85149) 与无条件跳转边 (#D29922)"
+                ),
                 isOn: $store.preferences.orthogonalSugiyamaRouting
             )
             preferenceToggleRow(
-                title: "Highlight Natural Loop Back-Edges in Tungsten Amber",
-                subtitle: "Emphasizes dominator-tree loop latches for rapid control-flow comprehension",
+                title: localizer.L(
+                    "Highlight Natural Loop Back-Edges in Tungsten Amber",
+                    "以钨琥珀色高亮自然循环回边"
+                ),
+                subtitle: localizer.L(
+                    "Emphasizes dominator-tree loop latches for rapid control-flow comprehension",
+                    "突出显示支配树循环回边，加速循环控制流结构辨识"
+                ),
                 isOn: $store.preferences.highlightLoopBackEdges
             )
             preferenceToggleRow(
-                title: "Show Dominator Tree Depth & Loop Header Badges on Basic Blocks",
-                subtitle: "Displays structural dominance metadata inside each basic block header bar",
+                title: localizer.L(
+                    "Show Dominator Tree Depth & Loop Header Badges on Basic Blocks",
+                    "在基本块标题栏显示支配树深度与循环头徽标"
+                ),
+                subtitle: localizer.L(
+                    "Displays structural dominance metadata inside each basic block header bar",
+                    "在每个基本块顶部展示支配深度与循环嵌套元数据"
+                ),
                 isOn: $store.preferences.showDominatorDepthBadges
             )
             preferenceToggleRow(
-                title: "Show Interactive Viewport Minimap Overlay",
-                subtitle: "Renders live overview viewport frame in the corner of large CFGs",
+                title: localizer.L(
+                    "Show Interactive Viewport Minimap Overlay",
+                    "显示交互式缩略雷达视口浮层"
+                ),
+                subtitle: localizer.L(
+                    "Renders live overview viewport frame in the corner of large CFGs",
+                    "在大型控制流图角落渲染实时全局缩略雷达"
+                ),
                 isOn: $store.preferences.showCFGOverviewMinimap
             )
             preferenceSliderRow(
-                title: "Vertical Rank Layer Spacing",
+                title: localizer.L("Vertical Rank Layer Spacing", "分层垂直间距"),
                 valueText: "\(Int(store.preferences.cfgVerticalLayerSpacing)) pt",
                 value: $store.preferences.cfgVerticalLayerSpacing,
                 range: 28.0...110.0
             )
             preferenceSliderRow(
-                title: "Horizontal Sibling Block Spacing",
+                title: localizer.L("Horizontal Sibling Block Spacing", "同层基本块水平间距"),
                 valueText: "\(Int(store.preferences.cfgHorizontalNodeSpacing)) pt",
                 value: $store.preferences.cfgHorizontalNodeSpacing,
                 range: 18.0...88.0
@@ -374,25 +479,41 @@ public struct MachPreferencesWindowView: View {
     private var decompilerAndGhidraTabContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             preferenceToggleRow(
-                title: "Run Dead-Store & Flag Elimination Pass on Micro-IR",
-                subtitle: "Folds transient NZCV condition flags into structured C relational expressions",
+                title: localizer.L(
+                    "Run Dead-Store & Flag Elimination Pass on Micro-IR",
+                    "在微IR上执行死存储与条件标志消除优化"
+                ),
+                subtitle: localizer.L(
+                    "Folds transient NZCV condition flags into structured C relational expressions",
+                    "将瞬态 NZCV 条件标志折叠为结构化 C 关系表达式"
+                ),
                 isOn: $store.preferences.enableDeadStoreElimination
             )
             preferenceToggleRow(
-                title: "Recover Structured if / else, while Loops, and switch Tables",
-                subtitle: "Collapses unstructured goto edges into indented C control-flow AST blocks",
+                title: localizer.L(
+                    "Recover Structured if / else, while Loops, and switch Tables",
+                    "恢复结构化 if / else、while 循环与 switch 跳转表"
+                ),
+                subtitle: localizer.L(
+                    "Collapses unstructured goto edges into indented C control-flow AST blocks",
+                    "将非结构化跳转收敛为缩进清晰的 C 控制流语法树块"
+                ),
                 isOn: $store.preferences.preferStructuredWhileAndSwitch
             )
             preferencePathRow(
-                title: "Ghidra 12.1.4 Installation Directory",
+                title: localizer.L("Ghidra 12.1.4 Installation Directory", "Ghidra 12.1.4 安装目录"),
                 path: $store.preferences.ghidraInstallPath,
-                statusText: store.isGhidraInstallationDetected ? "Detected" : "Not Found",
+                statusText: store.isGhidraInstallationDetected
+                    ? localizer.L("Detected", "已检测")
+                    : localizer.L("Not Found", "未找到"),
                 statusColor: store.isGhidraInstallationDetected ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber
             )
             preferencePathRow(
-                title: "OpenJDK 21 JAVA_HOME Path",
+                title: localizer.L("OpenJDK 21 JAVA_HOME Path", "OpenJDK 21 JAVA_HOME 路径"),
                 path: $store.preferences.javaHomePath,
-                statusText: FileManager.default.fileExists(atPath: store.preferences.javaHomePath) ? "Detected" : "Custom",
+                statusText: FileManager.default.fileExists(atPath: store.preferences.javaHomePath)
+                    ? localizer.L("Detected", "已检测")
+                    : localizer.L("Custom", "自定义"),
                 statusColor: FileManager.default.fileExists(atPath: store.preferences.javaHomePath)
                     ? ColdTungstenPalette.signalEmerald
                     : ColdTungstenPalette.coolPewter
@@ -403,12 +524,18 @@ public struct MachPreferencesWindowView: View {
     private var securityPluginsTabContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             preferenceToggleRow(
-                title: "Enforce Strict Manifest Capability Sandbox Gates",
-                subtitle: "Blocks undeclared mach.* bridge calls (binary.read, symbols.read, cfg.read, findings.emit)",
+                title: localizer.L(
+                    "Enforce Strict Manifest Capability Sandbox Gates",
+                    "强制执行严格的插件清单权限沙箱门禁"
+                ),
+                subtitle: localizer.L(
+                    "Blocks undeclared mach.* bridge calls (binary.read, symbols.read, cfg.read, findings.emit)",
+                    "拦截未声明权限的 mach.* 桥接调用 (binary.read, symbols.read, cfg.read, findings.emit)"
+                ),
                 isOn: $store.preferences.enforcePluginCapabilityGates
             )
             preferenceSliderRow(
-                title: "Per-Plugin Execution Timeout Budget",
+                title: localizer.L("Per-Plugin Execution Timeout Budget", "单插件执行超时预算"),
                 valueText: "\(Int(store.preferences.pluginTimeoutMilliseconds)) ms",
                 value: $store.preferences.pluginTimeoutMilliseconds,
                 range: 500.0...15_000.0
@@ -425,7 +552,7 @@ public struct MachPreferencesWindowView: View {
                         .toggleStyle(.switch)
                         .controlSize(.small)
 
-                        Text(manifest.name)
+                        Text(manifest.localizedName(in: localizer.language))
                             .font(ColdTungstenTypography.controlLabel)
                             .foregroundStyle(ColdTungstenPalette.steelWhite)
 
@@ -435,12 +562,12 @@ public struct MachPreferencesWindowView: View {
 
                         Spacer()
 
-                        Text(manifest.isBuiltIn ? "BUILT-IN" : "CUSTOM")
+                        Text(manifest.isBuiltIn ? localizer.L("BUILT-IN", "内置") : localizer.L("CUSTOM", "自定义"))
                             .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .semibold))
                             .foregroundStyle(manifest.isBuiltIn ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
                     }
 
-                    Text(manifest.summary)
+                    Text(manifest.localizedSummary(in: localizer.language))
                         .font(ColdTungstenTypography.secondaryCaption)
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                         .fixedSize(horizontal: false, vertical: true)
@@ -747,93 +874,153 @@ public struct MachKeyboardShortcutDescriptor: Sendable, Hashable, Identifiable {
         self.summary = summary
     }
 
-    public static let allShortcuts: [MachKeyboardShortcutDescriptor] = [
-        MachKeyboardShortcutDescriptor(
-            category: "Navigation & Inspection",
-            keys: "G",
-            actionTitle: "Go to Address / Offset / Symbol",
-            summary: "Jump to hex VA (0x100001000), relative delta (+0x400), file offset (off:0x1000), or symbol"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Navigation & Inspection",
-            keys: "X",
-            actionTitle: "Cross-References at Cursor",
-            summary: "Open incoming/outgoing call, branch, ADRP+ADD, and string Xref quick-jump popover"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Navigation & Inspection",
-            keys: "Space",
-            actionTitle: "Toggle CFG Graph / Linear Disassembly",
-            summary: "Switch instantaneously between Sugiyama layered CFG and linear ARM64 disassembly"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Navigation & Inspection",
-            keys: "⌥⌘S",
-            actionTitle: "Toggle Split CFG + Pseudo-C Decompiler",
-            summary: "Display synchronized Control Flow Graph and structured Pseudo-C side-by-side"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Navigation & Inspection",
-            keys: "[ / ]",
-            actionTitle: "Navigate Cursor Back / Forward",
-            summary: "Traverse synchronized address jump history across panes"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Analyst Annotations & Patching",
-            keys: "N",
-            actionTitle: "Rename Function or Symbol",
-            summary: "Commit persistent custom symbol name and optional C signature into .machproj"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Analyst Annotations & Patching",
-            keys: ";",
-            actionTitle: "Add / Edit Inline Comment",
-            summary: "Attach analyst comment to the current virtual address with Undo/Redo journaling"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Analyst Annotations & Patching",
-            keys: "B",
-            actionTitle: "Toggle Analyst Bookmark",
-            summary: "Bookmark or unbookmark the active cursor address with color/category tag"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Analyst Annotations & Patching",
-            keys: "⌘Z / ⇧⌘Z",
-            actionTitle: "Undo / Redo SQLite Mutation",
-            summary: "Atomically roll back or replay renames, comments, bookmarks, structs, and patches"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Workbench & Security Audit",
-            keys: "⌘K",
-            actionTitle: "Fuzzy Command & Symbol Palette",
-            summary: "Zero-latency subsequence search across commands, functions, symbols, strings, and findings"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Workbench & Security Audit",
-            keys: "⇧⌘A",
-            actionTitle: "Run JavaScriptCore Security Audit",
-            summary: "Execute all enabled static security and PAC gadget plugins against active binary"
-        ),
-        MachKeyboardShortcutDescriptor(
-            category: "Workbench & Security Audit",
-            keys: "⌘,",
-            actionTitle: "Open Workbench Preferences",
-            summary: "Configure ARM64 ABI registers, CFG routing, Ghidra 12.1.4 path, and JS sandboxes"
-        )
-    ]
+    public static var allShortcuts: [MachKeyboardShortcutDescriptor] {
+        shortcuts(in: .en)
+    }
+
+    public static func shortcuts(in language: MachLanguage) -> [MachKeyboardShortcutDescriptor] {
+        let navCat = language.select("Navigation & Inspection", "导航与视图审查")
+        let editCat = language.select("Analyst Annotations & Patching", "分析标注与二进制补丁")
+        let appCat = language.select("Workbench & Security Audit", "工作台、双语与安全审计")
+
+        return [
+            MachKeyboardShortcutDescriptor(
+                category: navCat,
+                keys: "G",
+                actionTitle: language.select("Go to Address / Offset / Symbol", "跳转至地址 / 偏移 / 符号"),
+                summary: language.select(
+                    "Jump to hex VA (0x100001000), relative delta (+0x400), file offset (off:0x1000), or symbol",
+                    "跳转至十六进制虚拟地址 (0x100001000)、相对偏移 (+0x400)、文件偏移 (off:0x1000) 或符号"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: navCat,
+                keys: "X",
+                actionTitle: language.select("Cross-References at Cursor", "光标处交叉引用"),
+                summary: language.select(
+                    "Open incoming/outgoing call, branch, ADRP+ADD, and string Xref quick-jump popover",
+                    "打开当前地址的调用、分支、ADRP+ADD 与字符串交叉引用快速跳转浮窗"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: navCat,
+                keys: "Space",
+                actionTitle: language.select("Toggle CFG Graph / Linear Disassembly", "切换控制流图 / 线性反汇编"),
+                summary: language.select(
+                    "Switch instantaneously between Sugiyama layered CFG and linear ARM64 disassembly",
+                    "在 Sugiyama 分层控制流图与线性 ARM64 反汇编视图间即时切换"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: navCat,
+                keys: "⌥⌘S",
+                actionTitle: language.select("Toggle Split CFG + Pseudo-C Decompiler", "切换并排分屏 (控制流图 + 伪C)"),
+                summary: language.select(
+                    "Display synchronized Control Flow Graph and structured Pseudo-C side-by-side",
+                    "并排同步展示控制流图与结构化 SSA 伪C反编译代码"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: navCat,
+                keys: "[ / ]",
+                actionTitle: language.select("Navigate Cursor Back / Forward", "光标历史后退 / 前进"),
+                summary: language.select(
+                    "Traverse synchronized address jump history across panes",
+                    "在跨视图同步地址跳转历史栈中后退或前进"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: editCat,
+                keys: "N",
+                actionTitle: language.select("Rename Function or Symbol", "重命名函数或符号"),
+                summary: language.select(
+                    "Commit persistent custom symbol name and optional C signature into .machproj",
+                    "将自定义符号名与可选 C 函数签名持久化保存至 .machproj"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: editCat,
+                keys: ";",
+                actionTitle: language.select("Add / Edit Inline Comment", "添加 / 编辑内联注释"),
+                summary: language.select(
+                    "Attach analyst comment to the current virtual address with Undo/Redo journaling",
+                    "在当前虚拟地址附加分析注释并写入撤销/重做日志"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: editCat,
+                keys: "B",
+                actionTitle: language.select("Toggle Analyst Bookmark", "切换分析书签"),
+                summary: language.select(
+                    "Bookmark or unbookmark the active cursor address with color/category tag",
+                    "为当前光标地址添加或移除带分类颜色标记的分析书签"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: editCat,
+                keys: "⌘Z / ⇧⌘Z",
+                actionTitle: language.select("Undo / Redo SQLite Mutation", "撤销 / 重做 SQLite 修改"),
+                summary: language.select(
+                    "Atomically roll back or replay renames, comments, bookmarks, structs, and patches",
+                    "原子回滚或重放重命名、注释、书签、C 结构体与字节补丁"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: appCat,
+                keys: "⌘K",
+                actionTitle: language.select("Fuzzy Command & Symbol Palette", "模糊命令与符号面板"),
+                summary: language.select(
+                    "Zero-latency subsequence search across commands, functions, symbols, strings, and findings",
+                    "零延迟模糊检索全部命令、恢复函数、符号、字符串与安全审计发现"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: appCat,
+                keys: "⇧⌘L",
+                actionTitle: language.select("Toggle Interface Language (中文 / EN)", "切换界面语言 (中文 / EN)"),
+                summary: language.select(
+                    "Switch the entire MachGraph workbench live between Simplified Chinese and English",
+                    "在简体中文与英文工作台界面之间实时无刷新切换"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: appCat,
+                keys: "⇧⌘A",
+                actionTitle: language.select("Run JavaScriptCore Security Audit", "运行 JavaScriptCore 安全审计"),
+                summary: language.select(
+                    "Execute all enabled static security and PAC gadget plugins against active binary",
+                    "对当前二进制运行全部已启用的静态安全与 PAC Gadget 审计插件"
+                )
+            ),
+            MachKeyboardShortcutDescriptor(
+                category: appCat,
+                keys: "⌘,",
+                actionTitle: language.select("Open Workbench Preferences", "打开工作台偏好设置"),
+                summary: language.select(
+                    "Configure language, ARM64 ABI registers, CFG routing, Ghidra 12.1.4 path, and JS sandboxes",
+                    "配置界面语言、ARM64 ABI 寄存器、控制流图路由、Ghidra 12.1.4 路径与 JS 沙箱"
+                )
+            )
+        ]
+    }
 }
 
 @MainActor
 public struct MachKeyboardShortcutsCheatsheetView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     public let onClose: (() -> Void)?
 
     public init(onClose: (() -> Void)? = nil) {
         self.onClose = onClose
     }
 
+    private var activeShortcuts: [MachKeyboardShortcutDescriptor] {
+        MachKeyboardShortcutDescriptor.shortcuts(in: localizer.language)
+    }
+
     private var categories: [String] {
         var seen: [String] = []
-        for item in MachKeyboardShortcutDescriptor.allShortcuts where !seen.contains(item.category) {
+        for item in activeShortcuts where !seen.contains(item.category) {
             seen.append(item.category)
         }
         return seen
@@ -841,9 +1028,12 @@ public struct MachKeyboardShortcutsCheatsheetView: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            TungstenPanelHeaderBar(title: "Reverse-Engineering Keyboard Shortcuts", sfSymbol: "keyboard") {
+            TungstenPanelHeaderBar(
+                title: localizer.L("Reverse-Engineering Keyboard Shortcuts", "逆向分析键盘快捷键速查表"),
+                sfSymbol: "keyboard"
+            ) {
                 if let onClose {
-                    Button("Close") { onClose() }
+                    Button(localizer.L("Close", "关闭")) { onClose() }
                         .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                 }
             }
@@ -856,7 +1046,7 @@ public struct MachKeyboardShortcutsCheatsheetView: View {
                                 .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .bold))
                                 .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                            ForEach(MachKeyboardShortcutDescriptor.allShortcuts.filter { $0.category == category }) { item in
+                            ForEach(activeShortcuts.filter { $0.category == category }) { item in
                                 HStack(spacing: 12) {
                                     TungstenKeycapBadge(item.keys)
                                         .frame(width: 78, alignment: .leading)

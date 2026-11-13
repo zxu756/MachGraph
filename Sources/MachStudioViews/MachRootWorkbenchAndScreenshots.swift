@@ -16,6 +16,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 public struct MachWorkbenchRootView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var viewModel: MachStudioViewModel
     @ObservedObject private var cursorBus: SynchronizedAddressCursorBus
     @ObservedObject private var paletteController: MachCommandPaletteController
@@ -333,12 +334,20 @@ public struct MachWorkbenchRootView: View {
                 if image.slices.count > 1 {
                     Menu {
                         ForEach(image.slices) { slice in
-                            Button("Slice #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))") {
+                            Button(
+                                localizer.L(
+                                    "Slice #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))",
+                                    "切片 #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))"
+                                )
+                            ) {
                                 viewModel.selectUniversalSlice(index: slice.index)
                             }
                         }
                     } label: {
-                        Label("Slice #\(image.selectedSliceIndex)", systemImage: "square.stack.3d.up")
+                        Label(
+                            localizer.L("Slice #\(image.selectedSliceIndex)", "切片 #\(image.selectedSliceIndex)"),
+                            systemImage: "square.stack.3d.up"
+                        )
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, compact: true))
                     .fixedSize(horizontal: true, vertical: false)
@@ -349,11 +358,15 @@ public struct MachWorkbenchRootView: View {
 
             Spacer(minLength: 6)
 
+            TungstenLanguageTogglePill(localizer: localizer, compact: true)
+
             Button {
                 cursorBus.toggleSplitView(defaultSecondary: .pseudoC)
             } label: {
                 Label(
-                    cursorBus.isSplitViewActive ? "Split: Active" : "Split View",
+                    cursorBus.isSplitViewActive
+                        ? localizer.L("Split: Active", "分屏: 开启")
+                        : localizer.L("Split View", "分屏视图"),
                     systemImage: "rectangle.split.2x1"
                 )
             }
@@ -369,7 +382,7 @@ public struct MachWorkbenchRootView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "command")
-                    Text("Palette")
+                    Text(localizer.L("Palette", "命令面板"))
                     TungstenKeycapBadge("⌘K")
                 }
             }
@@ -381,7 +394,7 @@ public struct MachWorkbenchRootView: View {
                 cursorBus.disableSplitView()
                 cursorBus.activePane = .pluginFindings
             } label: {
-                Label("Audit", systemImage: "checkmark.shield")
+                Label(localizer.L("Audit", "安全审计"), systemImage: "checkmark.shield")
             }
             .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, compact: true))
             .fixedSize(horizontal: true, vertical: false)
@@ -389,7 +402,7 @@ public struct MachWorkbenchRootView: View {
             Button {
                 viewModel.captureSnapshotCheckpoint()
             } label: {
-                Label("Snapshot", systemImage: "camera.aperture")
+                Label(localizer.L("Snapshot", "快照"), systemImage: "camera.aperture")
             }
             .buttonStyle(TungstenToolbarButtonStyle(compact: true))
             .fixedSize(horizontal: true, vertical: false)
@@ -397,7 +410,7 @@ public struct MachWorkbenchRootView: View {
             Button {
                 viewModel.reSignActiveMachOBinary()
             } label: {
-                Label("Re-Sign", systemImage: "signature")
+                Label(localizer.L("Re-Sign", "重签名"), systemImage: "signature")
             }
             .buttonStyle(TungstenToolbarButtonStyle(role: .positiveEmerald, compact: true))
             .fixedSize(horizontal: true, vertical: false)
@@ -421,7 +434,7 @@ public struct MachWorkbenchRootView: View {
             viewModel.isGoToModalPresented = true
         } label: {
             HStack(spacing: 5) {
-                Text(viewModel.loadedImage?.fileName ?? "No Binary")
+                Text(viewModel.loadedImage?.fileName ?? localizer.L("No Binary", "未加载二进制"))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
 
@@ -477,7 +490,7 @@ public struct MachWorkbenchRootView: View {
             Button {
                 viewModel.isFileImporterPresented = true
             } label: {
-                Label("Open", systemImage: "folder")
+                Label(localizer.L("Open", "打开"), systemImage: "folder")
             }
             .buttonStyle(TungstenToolbarButtonStyle(compact: true))
             .fixedSize(horizontal: true, vertical: false)
@@ -485,7 +498,7 @@ public struct MachWorkbenchRootView: View {
             // Built-in Multi-Format Binary Target Switcher
             Menu {
                 ForEach(MachDemoFixturePreset.allCases) { preset in
-                    Button(preset.rawValue) {
+                    Button(preset.localizedTitle(in: localizer.language)) {
                         viewModel.loadPreset(preset, seedDemoState: preset == .arm64eMachO, emitToast: true)
                     }
                 }
@@ -493,7 +506,7 @@ public struct MachWorkbenchRootView: View {
                 HStack(spacing: 4) {
                     Image(systemName: "cpu.fill")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Target: \(shortPresetLabel(viewModel.activeFixturePreset))")
+                    Text(localizer.L("Target: \(shortPresetLabel(viewModel.activeFixturePreset))", "目标: \(shortPresetLabel(viewModel.activeFixturePreset))"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
                     Image(systemName: "chevron.down")
                         .font(.system(size: 8, weight: .bold))
@@ -515,7 +528,7 @@ public struct MachWorkbenchRootView: View {
                 viewModel.presentXrefsPopoverAtCursor()
             } label: {
                 HStack(spacing: 4) {
-                    Text("Xrefs")
+                    Text(localizer.L("Xrefs", "引用"))
                     TungstenKeycapBadge("X")
                 }
             }
@@ -526,7 +539,7 @@ public struct MachWorkbenchRootView: View {
                 viewModel.presentRenameModalForCursor()
             } label: {
                 HStack(spacing: 4) {
-                    Text("Rename")
+                    Text(localizer.L("Rename", "重命名"))
                     TungstenKeycapBadge("N")
                 }
             }
@@ -537,7 +550,7 @@ public struct MachWorkbenchRootView: View {
                 Button {
                     viewModel.showRightContextualInspector.toggle()
                 } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
+                    Label(localizer.L("Inspector", "检查器"), systemImage: "sidebar.right")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(
                     role: viewModel.showRightContextualInspector ? .accentSapphire : .standard,
@@ -602,15 +615,7 @@ public struct MachWorkbenchRootView: View {
     }
 
     private func compactTabLabel(_ tab: WorkbenchPaneTab) -> String {
-        switch tab {
-        case .cfgGraph: return "CFG Graph"
-        case .disassembly: return "Disassembly"
-        case .pseudoC: return "Pseudo-C"
-        case .hexPatcher: return "Hex & Patch"
-        case .stringsAndObjC: return "Strings & ObjC"
-        case .entropyAndSign: return "Entropy & Sign"
-        case .pluginFindings: return "Plugin Audit"
-        }
+        tab.localizedTitle(in: localizer.language)
     }
 
     private func shortPresetLabel(_ preset: MachDemoFixturePreset) -> String {
@@ -665,7 +670,7 @@ public struct MachWorkbenchRootView: View {
                 Circle()
                     .fill(ColdTungstenPalette.signalEmerald)
                     .frame(width: 6, height: 6)
-                Text(".machproj WAL Ready")
+                Text(localizer.L(".machproj WAL Ready", ".machproj WAL 就绪"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
             }
@@ -676,26 +681,38 @@ public struct MachWorkbenchRootView: View {
                 .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                 .fixedSize(horizontal: true, vertical: false)
 
-            Text("\(viewModel.functions.count) funcs · \(insnCount) insns · \(viewModel.xrefCount) xrefs")
-                .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
-                .foregroundStyle(ColdTungstenPalette.coolPewter)
-                .fixedSize(horizontal: true, vertical: false)
+            Text(
+                localizer.language == .zhHans
+                    ? "\(viewModel.functions.count) 函数 · \(insnCount) 指令 · \(viewModel.xrefCount) 引用"
+                    : "\(viewModel.functions.count) funcs · \(insnCount) insns · \(viewModel.xrefCount) xrefs"
+            )
+            .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
+            .foregroundStyle(ColdTungstenPalette.coolPewter)
+            .fixedSize(horizontal: true, vertical: false)
 
             if dirtyBytes > 0 {
-                Text("CoW Overlay: \(dirtyBytes) B modified")
-                    .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
-                    .foregroundStyle(ColdTungstenPalette.warmCopper)
-                    .fixedSize(horizontal: true, vertical: false)
+                Text(
+                    localizer.language == .zhHans
+                        ? "CoW 覆写: \(dirtyBytes) B 已修改"
+                        : "CoW Overlay: \(dirtyBytes) B modified"
+                )
+                .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
+                .foregroundStyle(ColdTungstenPalette.warmCopper)
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             Spacer(minLength: 8)
 
-            Text("Undo \(viewModel.undoStackRecords.count) · Redo \(viewModel.redoStackRecords.count) · Snapshots \(viewModel.checkpoints.count)")
-                .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
-                .foregroundStyle(ColdTungstenPalette.coolPewter)
-                .fixedSize(horizontal: true, vertical: false)
+            Text(
+                localizer.language == .zhHans
+                    ? "撤销 \(viewModel.undoStackRecords.count) · 重做 \(viewModel.redoStackRecords.count) · 快照 \(viewModel.checkpoints.count)"
+                    : "Undo \(viewModel.undoStackRecords.count) · Redo \(viewModel.redoStackRecords.count) · Snapshots \(viewModel.checkpoints.count)"
+            )
+            .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
+            .foregroundStyle(ColdTungstenPalette.coolPewter)
+            .fixedSize(horizontal: true, vertical: false)
 
-            Text("Zero-Wrapper Pure Swift Engine")
+            Text(localizer.L("Zero-Wrapper Pure Swift Engine", "零封装纯 Swift 逆向引擎"))
                 .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                 .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
                 .fixedSize(horizontal: true, vertical: false)
@@ -719,16 +736,23 @@ public struct MachWorkbenchRootView: View {
                 .onTapGesture { viewModel.isRenameModalPresented = false }
 
             VStack(alignment: .leading, spacing: 0) {
-                TungstenPanelHeaderBar(title: "Rename Function / Symbol", sfSymbol: "character.cursor.ibeam") {
+                TungstenPanelHeaderBar(
+                    title: localizer.L("Rename Function / Symbol", "重命名函数 / 符号"),
+                    sfSymbol: "character.cursor.ibeam"
+                ) {
                     TungstenKeycapBadge("N")
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Address: \(viewModel.pendingRenameAddress.hexString) (Original: \(viewModel.pendingRenameOriginal))")
-                        .font(ColdTungstenTypography.addressMono(size: 11.0))
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "地址: \(viewModel.pendingRenameAddress.hexString) (原名: \(viewModel.pendingRenameOriginal))"
+                            : "Address: \(viewModel.pendingRenameAddress.hexString) (Original: \(viewModel.pendingRenameOriginal))"
+                    )
+                    .font(ColdTungstenTypography.addressMono(size: 11.0))
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
 
-                    TextField("Custom identifier name...", text: $viewModel.pendingRenameInput)
+                    TextField(localizer.L("Custom identifier name...", "输入自定义标识符名称..."), text: $viewModel.pendingRenameInput)
                         .textFieldStyle(.plain)
                         .font(ColdTungstenTypography.disassemblyMono(size: 12.5, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -742,22 +766,28 @@ public struct MachWorkbenchRootView: View {
                             viewModel.commitPendingRename()
                         }
 
-                    TextField("Optional C prototype override (e.g. bool verify_license(uint64_t token))", text: $viewModel.pendingRenameSignature)
-                        .textFieldStyle(.plain)
-                        .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                        .padding(8)
-                        .background(ColdTungstenPalette.chassisBackground)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
-                                .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
-                        )
+                    TextField(
+                        localizer.L(
+                            "Optional C prototype override (e.g. bool verify_license(uint64_t token))",
+                            "可选 C 函数原型覆写 (例如 bool verify_license(uint64_t token))"
+                        ),
+                        text: $viewModel.pendingRenameSignature
+                    )
+                    .textFieldStyle(.plain)
+                    .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    .padding(8)
+                    .background(ColdTungstenPalette.chassisBackground)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
+                            .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
+                    )
 
                     HStack {
                         Spacer()
-                        Button("Cancel") { viewModel.isRenameModalPresented = false }
+                        Button(localizer.L("Cancel", "取消")) { viewModel.isRenameModalPresented = false }
                             .buttonStyle(TungstenToolbarButtonStyle(compact: true))
-                        Button("Save Rename") { viewModel.commitPendingRename() }
+                        Button(localizer.L("Save Rename", "保存重命名")) { viewModel.commitPendingRename() }
                             .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, isActive: true, compact: true))
                     }
                 }
@@ -780,16 +810,23 @@ public struct MachWorkbenchRootView: View {
                 .onTapGesture { viewModel.isCommentModalPresented = false }
 
             VStack(alignment: .leading, spacing: 0) {
-                TungstenPanelHeaderBar(title: "Inline Disassembly & Pseudo-C Comment", sfSymbol: "text.bubble") {
+                TungstenPanelHeaderBar(
+                    title: localizer.L("Inline Disassembly & Pseudo-C Comment", "反汇编与伪C行内注释"),
+                    sfSymbol: "text.bubble"
+                ) {
                     TungstenKeycapBadge(";")
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("Instruction Address: \(viewModel.pendingCommentAddress.hexString)")
-                        .font(ColdTungstenTypography.addressMono(size: 11.0))
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "指令地址: \(viewModel.pendingCommentAddress.hexString)"
+                            : "Instruction Address: \(viewModel.pendingCommentAddress.hexString)"
+                    )
+                    .font(ColdTungstenTypography.addressMono(size: 11.0))
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
 
-                    TextField("Analyst annotation...", text: $viewModel.pendingCommentInput)
+                    TextField(localizer.L("Analyst annotation...", "输入逆向分析批注..."), text: $viewModel.pendingCommentInput)
                         .textFieldStyle(.plain)
                         .font(ColdTungstenTypography.disassemblyMono(size: 12.0))
                         .foregroundStyle(ColdTungstenPalette.signalEmerald)
@@ -803,16 +840,19 @@ public struct MachWorkbenchRootView: View {
                             viewModel.commitPendingComment()
                         }
 
-                    Toggle("Repeatable comment across incoming Xrefs", isOn: $viewModel.pendingCommentRepeatable)
-                        .toggleStyle(.checkbox)
-                        .font(ColdTungstenTypography.secondaryCaption)
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    Toggle(
+                        localizer.L("Repeatable comment across incoming Xrefs", "在所有传入交叉引用处同步显示此注释"),
+                        isOn: $viewModel.pendingCommentRepeatable
+                    )
+                    .toggleStyle(.checkbox)
+                    .font(ColdTungstenTypography.secondaryCaption)
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
 
                     HStack {
                         Spacer()
-                        Button("Cancel") { viewModel.isCommentModalPresented = false }
+                        Button(localizer.L("Cancel", "取消")) { viewModel.isCommentModalPresented = false }
                             .buttonStyle(TungstenToolbarButtonStyle(compact: true))
-                        Button("Save Comment") { viewModel.commitPendingComment() }
+                        Button(localizer.L("Save Comment", "保存注释")) { viewModel.commitPendingComment() }
                             .buttonStyle(TungstenToolbarButtonStyle(role: .positiveEmerald, isActive: true, compact: true))
                     }
                 }
@@ -843,11 +883,18 @@ public enum MachRetinaScreenshotExporter {
     }
 
     @discardableResult
-    public static func exportAllAssets(to outputDirectoryURL: URL) throws -> ExportSummary {
+    public static func exportAllAssets(
+        to outputDirectoryURL: URL,
+        language: MachLanguage? = nil
+    ) throws -> ExportSummary {
         try FileManager.default.createDirectory(
             at: outputDirectoryURL,
             withIntermediateDirectories: true
         )
+
+        let activeLanguage = language ?? MachLocalizer.shared.language
+        MachLocalizer.shared.setLanguage(activeLanguage, persist: false)
+        let langSuffix = (activeLanguage == .zhHans) ? "-zh" : ""
 
         let app = NSApplication.shared
         app.setActivationPolicy(.prohibited)
@@ -879,10 +926,10 @@ public enum MachRetinaScreenshotExporter {
         window.orderBack(nil)
 
         let scenes: [(fileName: String, configure: () -> Void)] = [
-            ("screenshot-cfg-canvas.png", { viewModel.configureForCFGCanvasScreenshot() }),
-            ("screenshot-decompiler-split.png", { viewModel.configureForDecompilerSplitScreenshot() }),
-            ("screenshot-hex-patcher.png", { viewModel.configureForHexPatcherScreenshot() }),
-            ("screenshot-entropy-audit.png", { viewModel.configureForEntropyAuditScreenshot() })
+            ("screenshot-cfg-canvas\(langSuffix).png", { viewModel.configureForCFGCanvasScreenshot() }),
+            ("screenshot-decompiler-split\(langSuffix).png", { viewModel.configureForDecompilerSplitScreenshot() }),
+            ("screenshot-hex-patcher\(langSuffix).png", { viewModel.configureForHexPatcherScreenshot() }),
+            ("screenshot-entropy-audit\(langSuffix).png", { viewModel.configureForEntropyAuditScreenshot() })
         ]
 
         var writtenPaths: [String] = []
@@ -897,18 +944,17 @@ public enum MachRetinaScreenshotExporter {
         window.orderOut(nil)
         window.close()
 
-        // Export standalone offline Cold Tungsten HTML Triage Report (`demo-mach-triage.html`)
+        // Export standalone offline Cold Tungsten Bilingual HTML Triage Report (`demo-mach-triage.html`)
         guard let index = viewModel.analysisIndex else {
             throw MachGraphError.ioFailure("BinaryAnalysisIndex unavailable during HTML export")
         }
         let orderedDecompiled = index.functions.compactMap { viewModel.decompiledByFunction[$0.address] }
-        let rawHTML = try ColdTungstenHTMLReportExporter().exportHTMLReport(
+        let htmlString = try ColdTungstenHTMLReportExporter().exportHTMLReport(
             analysisIndex: index,
             binaryData: viewModel.overlayBuffer.materializedData(),
             decompiledFunctions: orderedDecompiled,
             auditFindings: viewModel.securityFindings
         )
-        let htmlString = normalizeColdTungstenHTMLForHallmark(rawHTML)
         let htmlURL = outputDirectoryURL.appendingPathComponent("demo-mach-triage.html")
         try htmlString.write(to: htmlURL, atomically: true, encoding: .utf8)
 
@@ -916,226 +962,6 @@ public enum MachRetinaScreenshotExporter {
             screenshotPaths: writtenPaths,
             htmlReportPath: htmlURL.path
         )
-    }
-
-    private static func normalizeColdTungstenHTMLForHallmark(_ raw: String) -> String {
-        var html = raw
-
-        // 1. Replace <style>...</style> with Hallmark-clean Cold Tungsten token & 4px grid stylesheet
-        if let styleStart = html.range(of: "<style>"),
-           let styleEnd = html.range(of: "</style>") {
-            let cleanStyle = """
-            <style>
-              /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
-              :root {
-                --bg-chassis: #0F1216;
-                --bg-panel: #141920;
-                --bg-elevated: #1B222C;
-                --bg-code: #0B0E12;
-                --border-seam: #2A3442;
-                --ink-primary: #E6EDF3;
-                --ink-secondary: #8B949E;
-                --ink-muted: #656D76;
-                --accent-sapphire: #58A6FF;
-                --status-info-bg: #13233A;
-                --status-ok-fg: #3FB950;
-                --status-ok-bg: #12261E;
-                --status-warn-fg: #D29922;
-                --status-warn-bg: #2B2111;
-                --status-crit-fg: #F85149;
-                --status-crit-bg: #2D1619;
-                --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-                --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
-              }
-              *, *::before, *::after { box-sizing: border-box; }
-              html, body {
-                overflow-x: clip;
-              }
-              body {
-                margin: 0;
-                padding: 32px 24px 56px;
-                background: var(--bg-chassis);
-                color: var(--ink-primary);
-                font-family: var(--font-sans);
-                line-height: 1.5;
-                font-size: 14px;
-              }
-              .container {
-                max-width: 1180px;
-                margin: 0 auto;
-              }
-              header.masthead {
-                background: var(--bg-panel);
-                color: var(--ink-primary);
-                border: 1px solid var(--border-seam);
-                border-top: 4px solid var(--accent-sapphire);
-                border-radius: 6px;
-                padding: 24px;
-                margin-bottom: 16px;
-              }
-              .eyebrow {
-                font-size: 12px;
-                font-weight: 600;
-                color: var(--accent-sapphire);
-                margin: 0 0 8px;
-              }
-              h1, h2, h3 {
-                text-wrap: balance;
-                color: var(--ink-primary);
-                margin: 0;
-              }
-              h1 {
-                font-size: 24px;
-                line-height: 1.25;
-                margin-bottom: 8px;
-              }
-              h2 {
-                font-size: 16px;
-                line-height: 1.3;
-                margin-bottom: 12px;
-              }
-              .subtitle {
-                display: flex;
-                flex-wrap: wrap;
-                gap: 8px 16px;
-                margin: 0;
-                color: var(--ink-secondary);
-                font-size: 13px;
-              }
-              .kpi-strip {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
-                gap: 12px;
-                margin-bottom: 16px;
-              }
-              .kpi-card {
-                background: var(--bg-panel);
-                color: var(--ink-primary);
-                border: 1px solid var(--border-seam);
-                border-radius: 6px;
-                padding: 16px;
-              }
-              .kpi-label {
-                font-size: 12px;
-                font-weight: 500;
-                color: var(--ink-secondary);
-              }
-              .kpi-value {
-                font-family: var(--font-mono);
-                font-variant-numeric: tabular-nums;
-                font-size: 20px;
-                font-weight: 700;
-                margin-top: 4px;
-                color: var(--ink-primary);
-              }
-              section.panel {
-                background: var(--bg-panel);
-                color: var(--ink-primary);
-                border: 1px solid var(--border-seam);
-                border-radius: 6px;
-                padding: 20px 24px;
-                margin-bottom: 16px;
-              }
-              table {
-                width: 100%;
-                border-collapse: collapse;
-                font-size: 13px;
-              }
-              th, td {
-                text-align: left;
-                padding: 8px 12px;
-                border-bottom: 1px solid var(--border-seam);
-                vertical-align: top;
-              }
-              th {
-                font-size: 12px;
-                font-weight: 600;
-                color: var(--ink-secondary);
-                background: var(--bg-elevated);
-              }
-              .mono {
-                font-family: var(--font-mono);
-                font-variant-numeric: tabular-nums;
-                font-size: 13px;
-              }
-              .num { text-align: right; }
-              .muted { color: var(--ink-secondary); }
-              .pill {
-                display: inline-block;
-                padding: 4px 8px;
-                border-radius: 4px;
-                font-size: 12px;
-                font-weight: 600;
-                font-family: var(--font-mono);
-              }
-              .pill-ok { background: var(--status-ok-bg); color: var(--status-ok-fg); }
-              .pill-warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
-              .pill-crit { background: var(--status-crit-bg); color: var(--status-crit-fg); }
-              .pill-info { background: var(--status-info-bg); color: var(--accent-sapphire); }
-              .pill-neutral { background: var(--bg-elevated); color: var(--ink-secondary); }
-              .code-card {
-                border: 1px solid var(--border-seam);
-                border-radius: 6px;
-                margin-bottom: 12px;
-                overflow: hidden;
-              }
-              .code-header {
-                display: flex;
-                justify-content: space-between;
-                gap: 12px;
-                padding: 8px 12px;
-                background: var(--bg-elevated);
-                color: var(--ink-primary);
-                border-bottom: 1px solid var(--border-seam);
-                font-size: 13px;
-              }
-              pre {
-                margin: 0;
-                padding: 12px 16px;
-                background: var(--bg-code);
-                color: var(--ink-primary);
-                overflow-x: auto;
-                font-family: var(--font-mono);
-                font-size: 12px;
-                line-height: 1.5;
-              }
-            </style>
-            """
-            html.replaceSubrange(styleStart.lowerBound..<styleEnd.upperBound, with: cleanStyle)
-        }
-
-        // 2. Replace multi-middle-dot meta chains & sentence-case small badges/identifiers
-        html = html.replacingOccurrences(of: " · Entry:", with: "</span><span>Entry:")
-        html = html.replacingOccurrences(of: " · CDHash:", with: "</span><span>CDHash:")
-        html = html.replacingOccurrences(
-            of: "<p class=\"subtitle\">SHA-256:",
-            with: "<p class=\"subtitle\"><span>SHA-256:"
-        )
-        html = html.replacingOccurrences(
-            of: "</span></p>\n    </header>",
-            with: "</span></span></p>\n    </header>"
-        )
-
-        let labelReplacements: [(String, String)] = [
-            (">ARM64E-PAC<", ">arm64e-pac<"),
-            (">STD-A64<", ">std-a64<"),
-            (">CRITICAL<", ">Critical<"),
-            (">HIGH<", ">High<"),
-            (">MEDIUM<", ">Medium<"),
-            (">LOW<", ">Low<"),
-            (">INFO<", ">Info<"),
-            (">__PAGEZERO<", ">Segment pagezero<"),
-            (">__TEXT<", ">Segment text<"),
-            (">__DATA_CONST<", ">Segment data_const<"),
-            (">__DATA<", ">Segment data<"),
-            (">__LINKEDIT<", ">Segment linkedit<"),
-            ("...", "")
-        ]
-        for (oldStr, newStr) in labelReplacements {
-            html = html.replacingOccurrences(of: oldStr, with: newStr)
-        }
-
-        return html + "\n"
     }
 
     private static func settleLayoutAndRenderPass(window: NSWindow, hostingView: NSHostingView<some View>) {

@@ -138,6 +138,18 @@ public enum MachPaletteEntryKind: String, Sendable, Codable, Hashable, CaseItera
         case .finding: return ColdTungstenPalette.anodizedCrimson
         }
     }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .command: return language.select("Command", "命令")
+        case .function: return language.select("Function", "函数")
+        case .symbol: return language.select("Symbol", "符号")
+        case .stringLiteral: return language.select("String", "字符串")
+        case .objcOrSwift: return language.select("ObjC / Swift", "ObjC / Swift")
+        case .bookmark: return language.select("Bookmark", "书签")
+        case .finding: return language.select("Finding", "审计发现")
+        }
+    }
 }
 
 public enum MachWorkbenchActionID: String, Sendable, Codable, Hashable, CaseIterable {
@@ -157,6 +169,7 @@ public enum MachWorkbenchActionID: String, Sendable, Codable, Hashable, CaseIter
     case undoLastMutation = "edit.undo"
     case redoLastMutation = "edit.redo"
     case toggleBookmarkAtCursor = "edit.toggle_bookmark"
+    case toggleLanguage = "app.toggle_language"
     case openPreferences = "app.preferences"
     case openShortcutsSheet = "app.shortcuts"
 }
@@ -242,14 +255,16 @@ public final class MachCommandPaletteController: ObservableObject {
         functions: [RecoveredFunction] = [],
         renames: [UserSymbolRename] = [],
         bookmarks: [UserBookmark] = [],
-        findings: [SecurityAuditFinding] = []
+        findings: [SecurityAuditFinding] = [],
+        language: MachLanguage? = nil
     ) {
+        let lang = language ?? MachLocalizer.shared.language
         var renameByAddr: [VirtualAddress: String] = [:]
         for r in renames {
             renameByAddr[r.address] = r.customName
         }
 
-        var entries: [MachPaletteEntry] = Self.builtInCommandEntries()
+        var entries: [MachPaletteEntry] = Self.builtInCommandEntries(language: lang)
         entries.reserveCapacity(
             entries.count + functions.count + (image?.symbols.count ?? 0) + bookmarks.count + findings.count
         )
@@ -261,7 +276,10 @@ public final class MachCommandPaletteController: ObservableObject {
                 id: "fn:\(fn.address.hexString)",
                 kind: .function,
                 title: name,
-                subtitle: "\(fn.address.compactHexString) · \(fn.blocks.count) BBs · CC \(fn.cyclomaticComplexity)\(pacNote)",
+                subtitle: lang.select(
+                    "\(fn.address.compactHexString) · \(fn.blocks.count) BBs · CC \(fn.cyclomaticComplexity)\(pacNote)",
+                    "\(fn.address.compactHexString) · \(fn.blocks.count) 基本块 · 复杂度 \(fn.cyclomaticComplexity)\(pacNote)"
+                ),
                 address: fn.address,
                 targetPane: .cfgGraph
             ))
@@ -284,7 +302,10 @@ public final class MachCommandPaletteController: ObservableObject {
                     id: "objc:\(cls.id)",
                     kind: .objcOrSwift,
                     title: "@interface \(cls.name)",
-                    subtitle: "\(cls.address.compactHexString) · \(cls.methods.count) methods · \(cls.ivars.count) ivars",
+                    subtitle: lang.select(
+                        "\(cls.address.compactHexString) · \(cls.methods.count) methods · \(cls.ivars.count) ivars",
+                        "\(cls.address.compactHexString) · \(cls.methods.count) 方法 · \(cls.ivars.count) 实例变量"
+                    ),
                     address: cls.address,
                     targetPane: .stringsAndObjC
                 ))
@@ -306,7 +327,10 @@ public final class MachCommandPaletteController: ObservableObject {
                     id: "swift:\(st.id)",
                     kind: .objcOrSwift,
                     title: "\(st.kind.rawValue) \(st.demangledName)",
-                    subtitle: "\(st.address.compactHexString) · \(st.fieldNames.count) fields",
+                    subtitle: lang.select(
+                        "\(st.address.compactHexString) · \(st.fieldNames.count) fields",
+                        "\(st.address.compactHexString) · \(st.fieldNames.count) 字段"
+                    ),
                     address: st.address,
                     targetPane: .stringsAndObjC
                 ))
@@ -339,11 +363,11 @@ public final class MachCommandPaletteController: ObservableObject {
         }
 
         for finding in findings {
-            let loc = finding.address?.compactHexString ?? "Image-Level"
+            let loc = finding.address?.compactHexString ?? lang.select("Image-Level", "镜像级")
             entries.append(MachPaletteEntry(
                 id: "finding:\(finding.id.uuidString)",
                 kind: .finding,
-                title: "[\(finding.severity.rawValue)] \(finding.title)",
+                title: "[\(finding.severity.localizedBadge(in: lang))] \(finding.title)",
                 subtitle: "\(loc) · \(finding.pluginName)",
                 address: finding.address,
                 targetPane: .pluginFindings
@@ -416,45 +440,54 @@ public final class MachCommandPaletteController: ObservableObject {
         selectedIndex = 0
     }
 
-    public static func builtInCommandEntries() -> [MachPaletteEntry] {
-        [
+    public static func builtInCommandEntries(language: MachLanguage? = nil) -> [MachPaletteEntry] {
+        let lang = language ?? MachLocalizer.shared.language
+        return [
+            MachPaletteEntry(
+                id: "cmd:toggle_language",
+                kind: .command,
+                title: lang.select("Toggle Interface Language (中文 / EN)", "切换界面语言 (中文 / EN)"),
+                subtitle: lang.select("Switch between Simplified Chinese and English instantaneously", "在简体中文与英文界面之间即时切换"),
+                actionID: .toggleLanguage,
+                shortcutDisplay: "⇧⌘L"
+            ),
             MachPaletteEntry(
                 id: "cmd:split_cfg_pseudoc",
                 kind: .command,
-                title: "Toggle Side-by-Side CFG Graph + Pseudo-C Decompiler",
-                subtitle: "Split Inspection Bay",
+                title: lang.select("Toggle Side-by-Side CFG Graph + Pseudo-C Decompiler", "切换并排分屏视图 (控制流图 + 伪C反编译)"),
+                subtitle: lang.select("Split Inspection Bay", "同步分屏审查台"),
                 actionID: .toggleSideBySideSplit,
                 shortcutDisplay: "⌥⌘S"
             ),
             MachPaletteEntry(
                 id: "cmd:goto_addr",
                 kind: .command,
-                title: "Go to Virtual Address, File Offset, or Symbol...",
-                subtitle: "Jump to hex VA, +offset, or symbol expression",
+                title: lang.select("Go to Virtual Address, File Offset, or Symbol...", "跳转至虚拟地址、文件偏移或符号..."),
+                subtitle: lang.select("Jump to hex VA, +offset, or symbol expression", "解析十六进制 VA、相对偏移 +offset 或符号表达式"),
                 actionID: .openGoToAddress,
                 shortcutDisplay: "G"
             ),
             MachPaletteEntry(
                 id: "cmd:xrefs_cursor",
                 kind: .command,
-                title: "Inspect Cross-References (Xrefs To / From) at Cursor",
-                subtitle: "Open quick-jump Xref popover",
+                title: lang.select("Inspect Cross-References (Xrefs To / From) at Cursor", "检查当前光标处的交叉引用 (引用至此 / 发出引用)"),
+                subtitle: lang.select("Open quick-jump Xref popover", "打开交叉引用快速跳转浮窗"),
                 actionID: .openXrefsAtCursor,
                 shortcutDisplay: "X"
             ),
             MachPaletteEntry(
                 id: "cmd:run_plugins",
                 kind: .command,
-                title: "Run JavaScriptCore Security Audit Plugins",
-                subtitle: "Execute all enabled static reverse-engineering & security plugins",
+                title: lang.select("Run JavaScriptCore Security Audit Plugins", "运行 JavaScriptCore 安全审计插件套件"),
+                subtitle: lang.select("Execute all enabled static reverse-engineering & security plugins", "对当前二进制执行全部已启用的静态安全审计规则"),
                 actionID: .runSecurityAuditPlugins,
                 shortcutDisplay: "⇧⌘A"
             ),
             MachPaletteEntry(
                 id: "cmd:pane_cfg",
                 kind: .command,
-                title: "Switch Pane: Control Flow Graph (Sugiyama Layered CFG)",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Control Flow Graph (Sugiyama Layered CFG)", "切换视图: 控制流图 (Sugiyama 分层控制流图)"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .cfgGraph,
                 actionID: .openCFGGraph,
                 shortcutDisplay: "⌘1"
@@ -462,8 +495,8 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:pane_disasm",
                 kind: .command,
-                title: "Switch Pane: Linear ARM64 Disassembly",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Linear ARM64 Disassembly", "切换视图: 线性 ARM64 反汇编"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .disassembly,
                 actionID: .openLinearDisassembly,
                 shortcutDisplay: "⌘2"
@@ -471,8 +504,8 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:pane_pseudoc",
                 kind: .command,
-                title: "Switch Pane: Structured Pseudo-C Decompiler",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Structured Pseudo-C Decompiler", "切换视图: SSA 结构化伪C反编译"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .pseudoC,
                 actionID: .openPseudoCDecompiler,
                 shortcutDisplay: "⌘3"
@@ -480,8 +513,8 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:pane_hex",
                 kind: .command,
-                title: "Switch Pane: Sparse CoW Hex & Inline ARM64 Patcher",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Sparse CoW Hex & Inline ARM64 Patcher", "切换视图: 稀疏CoW十六进制与内联ARM64补丁"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .hexPatcher,
                 actionID: .openHexPatcher,
                 shortcutDisplay: "⌘4"
@@ -489,8 +522,8 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:pane_strings",
                 kind: .command,
-                title: "Switch Pane: Strings, Objective-C & Swift Runtime Metadata",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Strings, Objective-C & Swift Runtime Metadata", "切换视图: 字符串、ObjC 与 Swift 运行时元数据"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .stringsAndObjC,
                 actionID: .openStringsAndRuntime,
                 shortcutDisplay: "⌘5"
@@ -498,8 +531,8 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:pane_entropy",
                 kind: .command,
-                title: "Switch Pane: Shannon Entropy & Mach-O Code Signature",
-                subtitle: "Workbench Primary View",
+                title: lang.select("Switch Pane: Shannon Entropy & Mach-O Code Signature", "切换视图: 香农熵谱与 Mach-O 代码签名"),
+                subtitle: lang.select("Workbench Primary View", "工作台主视图"),
                 targetPane: .entropyAndSign,
                 actionID: .openEntropyAndCodeSign,
                 shortcutDisplay: "⌘6"
@@ -507,40 +540,40 @@ public final class MachCommandPaletteController: ObservableObject {
             MachPaletteEntry(
                 id: "cmd:create_snapshot",
                 kind: .command,
-                title: "Capture Analysis Checkpoint Snapshot (.machproj)",
-                subtitle: "Save atomic SQLite WAL snapshot of renames, comments, bookmarks & patches",
+                title: lang.select("Capture Analysis Checkpoint Snapshot (.machproj)", "创建分析检查点快照 (.machproj)"),
+                subtitle: lang.select("Save atomic SQLite WAL snapshot of renames, comments, bookmarks & patches", "保存包含重命名、注释、书签与补丁的 SQLite WAL 原子快照"),
                 actionID: .createAnalysisSnapshot,
                 shortcutDisplay: "⇧⌘S"
             ),
             MachPaletteEntry(
                 id: "cmd:resign_adhoc",
                 kind: .command,
-                title: "Re-Sign Patched Mach-O Binary (Ad-Hoc SHA-256 CodeDirectory)",
-                subtitle: "Rebuild CS_SuperBlob page hashes over modified slices",
+                title: lang.select("Re-Sign Patched Mach-O Binary (Ad-Hoc SHA-256 CodeDirectory)", "重签名补丁后 Mach-O 二进制 (临时 SHA-256 CodeDirectory)"),
+                subtitle: lang.select("Rebuild CS_SuperBlob page hashes over modified slices", "重新计算已修改切片上的 CS_SuperBlob 4KB 页哈希"),
                 actionID: .resignMachOAdHoc,
                 shortcutDisplay: "⇧⌘R"
             ),
             MachPaletteEntry(
                 id: "cmd:toggle_bookmark",
                 kind: .command,
-                title: "Toggle Analyst Bookmark at Current Cursor Address",
-                subtitle: "Persist triage bookmark in .machproj",
+                title: lang.select("Toggle Analyst Bookmark at Current Cursor Address", "在当前光标地址处切换分析书签"),
+                subtitle: lang.select("Persist triage bookmark in .machproj", "将书签持久化写入 .machproj 数据库"),
                 actionID: .toggleBookmarkAtCursor,
                 shortcutDisplay: "B"
             ),
             MachPaletteEntry(
                 id: "cmd:shortcuts",
                 kind: .command,
-                title: "Show Reverse-Engineering Keyboard Shortcuts Reference",
-                subtitle: "View G, X, N, ;, B, Space, ⌘K cheatsheet",
+                title: lang.select("Show Reverse-Engineering Keyboard Shortcuts Reference", "显示逆向分析键盘快捷键速查表"),
+                subtitle: lang.select("View G, X, N, ;, B, Space, ⌘K, ⇧⌘L cheatsheet", "查看 G、X、N、;、B、Space、⌘K、⇧⌘L 快捷键指南"),
                 actionID: .openShortcutsSheet,
                 shortcutDisplay: "?"
             ),
             MachPaletteEntry(
                 id: "cmd:preferences",
                 kind: .command,
-                title: "Open Workbench Preferences & Ghidra / Plugin Settings",
-                subtitle: "Configure ABI registers, CFG spacing, Ghidra path & JS sandboxes",
+                title: lang.select("Open Workbench Preferences & Ghidra / Plugin Settings", "打开工作台偏好设置与语言 / Ghidra / 插件配置"),
+                subtitle: lang.select("Configure language, ABI registers, CFG spacing, Ghidra path & JS sandboxes", "配置界面语言、ARM64 ABI 寄存器、CFG 间距、Ghidra 路径与 JS 沙箱"),
                 actionID: .openPreferences,
                 shortcutDisplay: "⌘,"
             )
@@ -552,6 +585,7 @@ public final class MachCommandPaletteController: ObservableObject {
 
 @MainActor
 public struct MachCommandPaletteOverlayView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var controller: MachCommandPaletteController
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
     public let image: LoadedBinaryImage?
@@ -589,7 +623,13 @@ public struct MachCommandPaletteOverlayView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                    TextField("Search commands, functions, symbols, strings, ObjC selectors...", text: $controller.query)
+                    TextField(
+                        localizer.L(
+                            "Search commands, functions, symbols, strings, ObjC selectors...",
+                            "搜索命令、函数、符号、字符串、ObjC 选择器..."
+                        ),
+                        text: $controller.query
+                    )
                         .textFieldStyle(.plain)
                         .font(ColdTungstenTypography.disassemblyMono(size: 13.0))
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -621,9 +661,9 @@ public struct MachCommandPaletteOverlayView: View {
                 // Scope Filter Strip
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
-                        scopeFilterButton(label: "All", kind: nil)
+                        scopeFilterButton(label: localizer.L("All", "全部"), kind: nil)
                         ForEach(MachPaletteEntryKind.allCases) { kind in
-                            scopeFilterButton(label: kind.rawValue, kind: kind)
+                            scopeFilterButton(label: kind.localizedTitle(in: localizer.language), kind: kind)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -638,10 +678,15 @@ public struct MachCommandPaletteOverlayView: View {
                 // Results List
                 if controller.filteredResults.isEmpty {
                     VStack(spacing: 6) {
-                        Text("No matching commands or binary entities")
+                        Text(localizer.L("No matching commands or binary entities", "未找到匹配的命令或二进制实体"))
                             .font(ColdTungstenTypography.controlLabel)
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
-                        Text("Tip: Press G to evaluate hex address offsets such as +0x400 or _verify_license+0x14")
+                        Text(
+                            localizer.L(
+                                "Tip: Press G to evaluate hex address offsets such as +0x400 or _verify_license+0x14",
+                                "提示: 按 G 键可直接计算十六进制地址偏移 (例如 +0x400 或 _verify_license+0x14)"
+                            )
+                        )
                             .font(ColdTungstenTypography.secondaryCaption)
                             .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     }
@@ -681,18 +726,23 @@ public struct MachCommandPaletteOverlayView: View {
                 HStack(spacing: 14) {
                     HStack(spacing: 4) {
                         TungstenKeycapBadge("↑↓")
-                        Text("Navigate")
+                        Text(localizer.L("Navigate", "上下导航"))
                             .font(ColdTungstenTypography.secondaryCaption)
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
                     }
                     HStack(spacing: 4) {
                         TungstenKeycapBadge("↩")
-                        Text("Execute / Jump")
+                        Text(localizer.L("Execute / Jump", "执行 / 跳转"))
                             .font(ColdTungstenTypography.secondaryCaption)
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
                     }
                     Spacer()
-                    Text("\(controller.filteredResults.count) result(s)")
+                    Text(
+                        localizer.L(
+                            "\(controller.filteredResults.count) result(s)",
+                            "共 \(controller.filteredResults.count) 条结果"
+                        )
+                    )
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.5))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                 }
@@ -761,7 +811,7 @@ public struct MachCommandPaletteOverlayView: View {
 
             Spacer(minLength: 8)
 
-            Text(entry.kind.rawValue.uppercased())
+            Text(entry.kind.localizedTitle(in: localizer.language).uppercased())
                 .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .semibold))
                 .foregroundStyle(entry.kind.accentColor)
                 .padding(.horizontal, 6)
@@ -804,6 +854,7 @@ public struct MachCommandPaletteOverlayView: View {
 
 @MainActor
 public struct MachGoToAddressModalView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @Binding public var isPresented: Bool
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
     public let image: LoadedBinaryImage?
@@ -847,18 +898,27 @@ public struct MachGoToAddressModalView: View {
                 .onTapGesture { isPresented = false }
 
             VStack(alignment: .leading, spacing: 0) {
-                TungstenPanelHeaderBar(title: "Go to Address / Offset / Symbol", sfSymbol: "arrow.right.to.line") {
+                TungstenPanelHeaderBar(
+                    title: localizer.L("Go to Address / Offset / Symbol", "跳转至地址 / 偏移 / 符号"),
+                    sfSymbol: "arrow.right.to.line"
+                ) {
                     TungstenKeycapBadge("G")
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 8) {
-                        Text("Target:")
+                        Text(localizer.L("Target:", "目标:"))
                             .font(ColdTungstenTypography.controlLabel)
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
                             .fixedSize()
 
-                        TextField("0x100001000, +0x400, off:0x1000, or _verify_license+0x14", text: $expressionText)
+                        TextField(
+                            localizer.L(
+                                "0x100001000, +0x400, off:0x1000, or _verify_license+0x14",
+                                "0x100001000、+0x400、off:0x1000 或 _verify_license+0x14"
+                            ),
+                            text: $expressionText
+                        )
                             .textFieldStyle(.plain)
                             .font(ColdTungstenTypography.addressMono(size: 13.0))
                             .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -881,13 +941,13 @@ public struct MachGoToAddressModalView: View {
 
                     // Quick Anchor Buttons
                     HStack(spacing: 8) {
-                        Text("Anchors:")
+                        Text(localizer.L("Anchors:", "锚点:"))
                             .font(ColdTungstenTypography.secondaryCaption)
                             .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                             .fixedSize()
 
                         if let entry = image?.entryPoint {
-                            Button("Entry (\(entry.compactHexString))") {
+                            Button(localizer.L("Entry (\(entry.compactHexString))", "入口 (\(entry.compactHexString))")) {
                                 expressionText = entry.compactHexString
                                 executeJumpIfValid()
                             }
@@ -895,7 +955,7 @@ public struct MachGoToAddressModalView: View {
                         }
 
                         if let base = image?.imageBase {
-                            Button("Image Base (\(base.compactHexString))") {
+                            Button(localizer.L("Image Base (\(base.compactHexString))", "镜像基址 (\(base.compactHexString))")) {
                                 expressionText = base.compactHexString
                                 executeJumpIfValid()
                             }
@@ -921,16 +981,21 @@ public struct MachGoToAddressModalView: View {
                     .frame(height: ColdTungstenMetrics.borderHairline)
 
                 HStack {
-                    Text("Current cursor: \(cursorBus.currentLocation.virtualAddress.hexString)")
+                    Text(
+                        localizer.L(
+                            "Current cursor: \(cursorBus.currentLocation.virtualAddress.hexString)",
+                            "当前光标: \(cursorBus.currentLocation.virtualAddress.hexString)"
+                        )
+                    )
                         .font(ColdTungstenTypography.offsetGutterMono(size: 11.0))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     Spacer()
-                    Button("Cancel") {
+                    Button(localizer.L("Cancel", "取消")) {
                         isPresented = false
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
 
-                    Button("Jump to Target") {
+                    Button(localizer.L("Jump to Target", "跳转至目标")) {
                         executeJumpIfValid()
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
@@ -959,7 +1024,7 @@ public struct MachGoToAddressModalView: View {
         case .success(let target):
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("RESOLVED VIRTUAL ADDRESS")
+                    Text(localizer.L("RESOLVED VIRTUAL ADDRESS", "解析虚拟地址"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     Text(target.virtualAddress.hexString)
@@ -968,16 +1033,16 @@ public struct MachGoToAddressModalView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("FILE OFFSET")
+                    Text(localizer.L("FILE OFFSET", "文件偏移"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
-                    Text(target.fileOffset?.hexString ?? "unmapped")
+                    Text(target.fileOffset?.hexString ?? localizer.L("unmapped", "未映射"))
                         .font(ColdTungstenTypography.addressMono(size: 12.0))
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("SYMBOL / SECTION")
+                    Text(localizer.L("SYMBOL / SECTION", "符号 / 节区"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     Text(
@@ -1003,7 +1068,7 @@ public struct MachGoToAddressModalView: View {
             HStack(spacing: 8) {
                 Image(systemName: expressionText.isEmpty ? "info.circle" : "exclamationmark.triangle")
                     .foregroundStyle(expressionText.isEmpty ? ColdTungstenPalette.coolPewter : ColdTungstenPalette.tungstenAmber)
-                Text(err.localizedDescription)
+                Text(err.localizedDescription(in: localizer.language))
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(expressionText.isEmpty ? ColdTungstenPalette.coolPewter : ColdTungstenPalette.tungstenAmber)
                 Spacer()
@@ -1040,6 +1105,17 @@ public enum XrefPopoverDirectionFilter: String, Sendable, CaseIterable, Identifi
     case all = "All Xrefs"
 
     public var id: String { rawValue }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .incomingTo:
+            return language.select("Xrefs To Target", "引用至此目标")
+        case .outgoingFrom:
+            return language.select("Xrefs From Target", "此目标发出引用")
+        case .all:
+            return language.select("All Xrefs", "全部引用")
+        }
+    }
 }
 
 @MainActor
@@ -1136,6 +1212,7 @@ public final class MachXrefQuickJumpModel: ObservableObject {
 
 @MainActor
 public struct MachXrefQuickJumpPopoverView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var model: MachXrefQuickJumpModel
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
     public let image: LoadedBinaryImage?
@@ -1157,7 +1234,7 @@ public struct MachXrefQuickJumpPopoverView: View {
         let records = model.visibleRecords
         VStack(alignment: .leading, spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Cross-References — \(model.targetDisplayName)",
+                title: localizer.L("Cross-References: \(model.targetDisplayName)", "交叉引用: \(model.targetDisplayName)"),
                 sfSymbol: "arrow.triangle.branch",
                 countBadge: records.count
             ) {
@@ -1166,7 +1243,7 @@ public struct MachXrefQuickJumpPopoverView: View {
 
             HStack(spacing: 8) {
                 ForEach(XrefPopoverDirectionFilter.allCases) { mode in
-                    Button(mode.rawValue) {
+                    Button(mode.localizedTitle(in: localizer.language)) {
                         model.directionFilter = mode
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
@@ -1178,7 +1255,7 @@ public struct MachXrefQuickJumpPopoverView: View {
 
                 Spacer(minLength: 8)
 
-                TextField("Filter caller or instruction...", text: $model.filterQuery)
+                TextField(localizer.L("Filter caller or instruction...", "筛选调用方或指令..."), text: $model.filterQuery)
                     .textFieldStyle(.plain)
                     .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -1199,7 +1276,7 @@ public struct MachXrefQuickJumpPopoverView: View {
                 .frame(height: ColdTungstenMetrics.borderHairline)
 
             if records.isEmpty {
-                Text("No cross-references recorded in this direction.")
+                Text(localizer.L("No cross-references recorded in this direction.", "当前方向暂无交叉引用记录。"))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .frame(maxWidth: .infinity)
@@ -1211,7 +1288,7 @@ public struct MachXrefQuickJumpPopoverView: View {
                         ForEach(Array(records.enumerated()), id: \.element.id) { idx, xref in
                             let accent = ColdTungstenPalette.color(for: xref.kind)
                             HStack(spacing: 10) {
-                                Text(xref.kind.rawValue)
+                                Text(xref.kind.localizedBadge(in: localizer.language))
                                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                                     .foregroundStyle(accent)
                                     .padding(.horizontal, 5)

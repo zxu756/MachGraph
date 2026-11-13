@@ -2543,7 +2543,11 @@ public struct GhidraHeadlessSideBySideBridge: Sendable {
         }
     }
 
-    public static let defaultGhidraInstallDirectory = "/Users/xu/Applications/ghidra_12.1.4_PUBLIC"
+    public static var defaultGhidraInstallDirectory: String {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Applications/ghidra_12.1.4_PUBLIC")
+            .path
+    }
     public static let defaultJavaHomeDirectory = "/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home"
 
     public let ghidraInstallDirectory: String

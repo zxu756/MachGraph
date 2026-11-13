@@ -71,6 +71,31 @@ public enum GoToParseFailure: Error, LocalizedError, Sendable, Equatable {
             return "No symbol, recovered function, custom rename, or section matched '\(sym)'."
         }
     }
+
+    public func localizedDescription(in language: MachLanguage) -> String {
+        switch self {
+        case .emptyQuery:
+            return language.select(
+                "Enter a virtual address (0x100001000), relative offset (+0x400), file offset (off:0x1000), or symbol (_verify_license).",
+                "请输入虚拟地址 (0x100001000)、相对偏移 (+0x400)、文件偏移 (off:0x1000) 或符号名 (_verify_license)。"
+            )
+        case .invalidAddressExpression(let expr):
+            return language.select(
+                "Malformed address or offset expression '\(expr)'.",
+                "地址或偏移表达式格式无效: '\(expr)'。"
+            )
+        case .unmappedFileOffset(let off):
+            return language.select(
+                "File offset \(off.hexString) does not map into any loaded binary segment.",
+                "文件偏移 \(off.hexString) 未映射到任何已加载的二进制段。"
+            )
+        case .unknownSymbolOrFunction(let sym):
+            return language.select(
+                "No symbol, recovered function, custom rename, or section matched '\(sym)'.",
+                "未找到匹配 '\(sym)' 的符号、恢复函数、重命名或节区。"
+            )
+        }
+    }
 }
 
 // MARK: - Stateless Go-To Expression Parser (`G` Shortcut Engine)

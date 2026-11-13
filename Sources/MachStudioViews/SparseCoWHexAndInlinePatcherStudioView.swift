@@ -12,6 +12,7 @@ import SwiftUI
 public struct SparseCoWHexAndInlinePatcherStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     @ObservedObject private var cursorBus: SynchronizedAddressCursorBus
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     @State private var inspectorTab: HexBottomInspectorTab = .primitives
 
@@ -20,6 +21,13 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
         case cStructOverlay = "C Struct"
 
         public var id: String { rawValue }
+
+        public func localizedTitle(in lang: MachLanguage) -> String {
+            switch self {
+            case .primitives: return lang == .zhHans ? "基础类型" : "Primitives"
+            case .cStructOverlay: return lang == .zhHans ? "C 结构体" : "C Struct"
+            }
+        }
     }
 
     public init(viewModel: MachStudioViewModel) {
@@ -85,7 +93,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
     private var leftHexAndInspectorColumn: some View {
         VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Sparse CoW Hex & ASCII Viewport",
+                title: localizer.L("Sparse CoW Hex & ASCII Viewport", "稀疏CoW十六进制与ASCII视口"),
                 sfSymbol: "00.square",
                 countBadge: viewModel.overlayBuffer.modifiedByteCount
             ) {
@@ -137,11 +145,19 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
     private var cowTelemetryPill: some View {
         let dirtyCount = viewModel.overlayBuffer.modifiedByteCount
         let extentCount = viewModel.overlayBuffer.dirtyExtents.count
+        let pillLabel: String = {
+            if dirtyCount > 0 {
+                return localizer.language == .zhHans
+                    ? "\(dirtyCount) 字节已改 (\(extentCount) CoW 区间)"
+                    : "\(dirtyCount) B dirty (\(extentCount) CoW extent)"
+            }
+            return localizer.L("Clean Base Map", "基线镜像未修改")
+        }()
         return HStack(spacing: 5) {
             Circle()
                 .fill(dirtyCount > 0 ? ColdTungstenPalette.warmCopper : ColdTungstenPalette.signalEmerald)
                 .frame(width: 6, height: 6)
-            Text(dirtyCount > 0 ? "\(dirtyCount) B dirty (\(extentCount) CoW extent)" : "Clean Base Map")
+            Text(pillLabel)
                 .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                 .foregroundStyle(dirtyCount > 0 ? ColdTungstenPalette.warmCopper : ColdTungstenPalette.coolPewter)
         }
@@ -176,7 +192,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                         .fixedSize(horizontal: true, vertical: false)
 
-                    Button("@ Cursor") { syncHexViewportToCursor() }
+                    Button(localizer.L("@ Cursor", "@ 光标")) { syncHexViewportToCursor() }
                         .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
                         .fixedSize(horizontal: true, vertical: false)
 
@@ -215,7 +231,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
             HStack(spacing: 6) {
                 Menu {
                     ForEach(HexStudioSearchMode.allCases) { mode in
-                        Button(mode.rawValue) {
+                        Button(mode.localizedTitle(in: localizer.language)) {
                             viewModel.hexSearchMode = mode
                             viewModel.executeHexSearch()
                         }
@@ -224,7 +240,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                     HStack(spacing: 4) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 10, weight: .semibold))
-                        Text(viewModel.hexSearchMode.rawValue)
+                        Text(viewModel.hexSearchMode.localizedTitle(in: localizer.language))
                             .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 8, weight: .bold))
@@ -242,7 +258,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize(horizontal: true, vertical: false)
 
-                TextField("Wildcard hex (e.g. 7F 23 03 D5 or ?? 03 5F D6)...", text: $viewModel.hexSearchQuery)
+                TextField(viewModel.hexSearchMode.localizedPlaceholder(in: localizer.language), text: $viewModel.hexSearchQuery)
                     .textFieldStyle(.plain)
                     .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -257,7 +273,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         viewModel.executeHexSearch()
                     }
 
-                Button("Find") {
+                Button(localizer.L("Find", "查找")) {
                     viewModel.executeHexSearch()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
@@ -301,9 +317,9 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
 
     private var hexMatrixHeaderRow: some View {
         HStack(spacing: 0) {
-            Text("OFFSET")
+            Text(localizer.L("OFFSET", "文件偏移"))
                 .frame(width: 52, alignment: .leading)
-            Text("VIRTUAL ADDR")
+            Text(localizer.L("VIRTUAL ADDR", "虚拟地址"))
                 .frame(width: 82, alignment: .leading)
 
             HStack(spacing: 1.5) {
@@ -338,7 +354,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 .frame(width: 52, alignment: .leading)
                 .fixedSize(horizontal: true, vertical: false)
 
-            Text(row.virtualAddress?.compactHexString ?? "unmapped")
+            Text(row.virtualAddress?.compactHexString ?? localizer.L("unmapped", "未映射"))
                 .font(ColdTungstenTypography.addressMono(size: 10.0, weight: rowContainsSelection ? .bold : .regular))
                 .foregroundStyle(rowContainsSelection ? ColdTungstenPalette.tungstenSapphire : ColdTungstenPalette.coolPewter)
                 .frame(width: 82, alignment: .leading)
@@ -429,13 +445,14 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
 
     private var bottomDataAndStructInspectorPanel: some View {
         let inspector = dataInspectorValues
+        let locHex = inspector?.virtualAddress?.compactHexString ?? inspector?.fileOffset.hexString ?? viewModel.selectedHexByteOffset.hexString
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Image(systemName: "tablecells.badge.ellipsis")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                Text("Structure Inspector @ \(inspector?.virtualAddress?.compactHexString ?? inspector?.fileOffset.hexString ?? viewModel.selectedHexByteOffset.hexString)")
+                Text(localizer.language == .zhHans ? "结构体检查器 @ \(locHex)" : "Structure Inspector @ \(locHex)")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
@@ -443,7 +460,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 Spacer(minLength: 6)
 
                 ForEach(HexBottomInspectorTab.allCases) { tab in
-                    Button(tab.rawValue) {
+                    Button(tab.localizedTitle(in: localizer.language)) {
                         inspectorTab = tab
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
@@ -474,7 +491,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                     ) {
                         ForEach(curatedInspectorRows(from: inspector?.rows ?? [])) { row in
                             HStack(spacing: 6) {
-                                Text(row.label)
+                                Text(row.label == "ARM64 instruction" ? localizer.L("ARM64 instruction", "ARM64 指令") : row.label)
                                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                                     .frame(width: 84, alignment: .leading)
@@ -504,7 +521,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 } else {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 8) {
-                            Text("Struct:")
+                            Text(localizer.L("Struct:", "结构体:"))
                                 .font(ColdTungstenTypography.secondaryCaption)
                                 .foregroundStyle(ColdTungstenPalette.coolPewter)
 
@@ -564,13 +581,13 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
     private var rightInlineAssemblerAndReSignerColumn: some View {
         VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Inline ARM64 Assembler & CodeDirectory Re-Signer",
+                title: localizer.L("Inline ARM64 Assembler & CodeDirectory Re-Signer", "内联ARM64汇编与重签名器"),
                 sfSymbol: "hammer.fill"
             ) {
                 Button {
                     viewModel.applySingleInstructionNOPAtCursor()
                 } label: {
-                    Label("NOP @ Cursor", systemImage: "rectangle.dashed")
+                    Label(localizer.L("NOP @ Cursor", "光标处写 NOP"), systemImage: "rectangle.dashed")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                 .fixedSize(horizontal: true, vertical: false)
@@ -592,14 +609,14 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
     private var inlineAssemblerCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Label("Two-Pass ARM64 / ARM64e Mini-Assembler", systemImage: "cpu")
+                Label(localizer.L("Two-Pass ARM64 / ARM64e Mini-Assembler", "双遍ARM64内联汇编器"), systemImage: "cpu")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 4)
 
-                Text("PC-Relative + PAC")
+                Text(localizer.L("PC-Relative + PAC", "PC相对 + PAC"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.tungstenAmber)
                     .padding(.horizontal, 6)
@@ -610,12 +627,12 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
             }
 
             HStack(spacing: 6) {
-                Text("Target VA:")
+                Text(localizer.L("Target VA:", "目标虚拟地址:"))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize(horizontal: true, vertical: false)
 
-                TextField("0x100001038 or _verify_license", text: $viewModel.patchTargetAddressText)
+                TextField(localizer.L("0x100001038 or _verify_license", "0x100001038 或 _verify_license"), text: $viewModel.patchTargetAddressText)
                     .textFieldStyle(.plain)
                     .font(ColdTungstenTypography.addressMono(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
@@ -631,7 +648,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         viewModel.recomputeLivePatchPreview()
                     }
 
-                Button("Use Cursor") {
+                Button(localizer.L("Use Cursor", "使用光标")) {
                     viewModel.patchTargetAddressText = cursorBus.currentLocation.virtualAddress.compactHexString
                     viewModel.recomputeLivePatchPreview()
                 }
@@ -642,7 +659,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("ARM64 Instructions (semicolon-separated):")
+                Text(localizer.L("ARM64 Instructions (semicolon-separated):", "ARM64 汇编指令 (分号分隔):"))
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
 
@@ -668,19 +685,19 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
             // Preset Assembly Snippets
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
-                    Text("Presets:")
+                    Text(localizer.L("Presets:", "预设:"))
                         .font(ColdTungstenTypography.secondaryCaption)
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                         .fixedSize(horizontal: true, vertical: false)
 
-                    assemblerPresetChip(title: "PAC True (w0=1; retaa)", asm: "paciasp; mov w0, #1; retaa")
-                    assemblerPresetChip(title: "Zero Stub (w0=0; ret)", asm: "mov w0, #0; ret")
-                    assemblerPresetChip(title: "2x NOP Sled", asm: "nop; nop")
+                    assemblerPresetChip(title: localizer.L("PAC True (w0=1; retaa)", "PAC 置真 (w0=1; retaa)"), asm: "paciasp; mov w0, #1; retaa")
+                    assemblerPresetChip(title: localizer.L("Zero Stub (w0=0; ret)", "返回零桩 (w0=0; ret)"), asm: "mov w0, #0; ret")
+                    assemblerPresetChip(title: localizer.L("2x NOP Sled", "双 NOP 滑板"), asm: "nop; nop")
                 }
             }
 
             HStack(spacing: 10) {
-                Toggle("NOP-pad span", isOn: $viewModel.padNOPToOriginalInstructionSpan)
+                Toggle(localizer.L("NOP-pad span", "填充 NOP 对齐"), isOn: $viewModel.padNOPToOriginalInstructionSpan)
                     .toggleStyle(.checkbox)
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
@@ -688,7 +705,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         viewModel.recomputeLivePatchPreview()
                     }
 
-                Toggle("Allow branch clobber", isOn: $viewModel.allowBranchTargetClobber)
+                Toggle(localizer.L("Allow branch clobber", "允许覆盖跳转目标"), isOn: $viewModel.allowBranchTargetClobber)
                     .toggleStyle(.checkbox)
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
@@ -698,7 +715,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 Button {
                     viewModel.commitLiveInstructionPatch()
                 } label: {
-                    Label("Apply CoW Patch", systemImage: "bolt.horizontal.fill")
+                    Label(localizer.L("Apply CoW Patch", "应用 CoW 补丁"), systemImage: "bolt.horizontal.fill")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, isActive: true, compact: true))
                 .fixedSize(horizontal: true, vertical: false)
@@ -736,22 +753,26 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(clean ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
 
-                    Text(clean ? "SAFETY VERIFIED CLEAN" : "CONTROL-FLOW HAZARD DETECTED")
+                    Text(clean ? localizer.L("SAFETY VERIFIED CLEAN", "安全性校验通过") : localizer.L("CONTROL-FLOW HAZARD DETECTED", "检测到控制流风险"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
                         .foregroundStyle(clean ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
                         .fixedSize(horizontal: true, vertical: false)
 
                     Spacer(minLength: 4)
 
-                    Text("\(preview.patchedBytes.count) B (\(preview.patchedInstructions.count) insns) @ \(preview.virtualAddress.compactHexString)")
-                        .font(ColdTungstenTypography.addressMono(size: 10.5))
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                        .fixedSize(horizontal: true, vertical: false)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "\(preview.patchedBytes.count) 字节 (\(preview.patchedInstructions.count) 指令) @ \(preview.virtualAddress.compactHexString)"
+                            : "\(preview.patchedBytes.count) B (\(preview.patchedInstructions.count) insns) @ \(preview.virtualAddress.compactHexString)"
+                    )
+                    .font(ColdTungstenTypography.addressMono(size: 10.5))
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
                 VStack(alignment: .leading, spacing: 5) {
                     diffLineRow(
-                        tag: "BASE",
+                        tag: localizer.L("BASE", "基线"),
                         tagColor: ColdTungstenPalette.coolPewter,
                         bytesHex: preview.originalBytes.map { String(format: "%02X", $0) }.joined(separator: " "),
                         instructions: preview.originalInstructions
@@ -845,7 +866,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
     private var activeCoWPatchStackCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("Active CoW Patch Journal & Export", systemImage: "square.stack.3d.down.right")
+                Label(localizer.L("Active CoW Patch Journal & Export", "活动 CoW 补丁日志与导出"), systemImage: "square.stack.3d.down.right")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
@@ -866,10 +887,13 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
             }
 
             if viewModel.overlayBuffer.patches.isEmpty {
-                Text("No CoW overlay patches recorded. Assemble ARM64 instructions above to stage an overlay.")
-                    .font(ColdTungstenTypography.secondaryCaption)
-                    .foregroundStyle(ColdTungstenPalette.coolPewter)
-                    .fixedSize(horizontal: false, vertical: true)
+                Text(localizer.L(
+                    "No CoW overlay patches recorded. Assemble ARM64 instructions above to stage an overlay.",
+                    "暂无 CoW 补丁记录。请在上方输入 ARM64 汇编指令生成补丁覆写。"
+                ))
+                .font(ColdTungstenTypography.secondaryCaption)
+                .foregroundStyle(ColdTungstenPalette.coolPewter)
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(viewModel.overlayBuffer.patches) { patch in
                     HStack(spacing: 8) {
@@ -960,7 +984,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
 
         return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("Mach-O LC_CODE_SIGNATURE SHA-256 Re-Signer", systemImage: "signature")
+                Label(localizer.L("Mach-O LC_CODE_SIGNATURE SHA-256 Re-Signer", "Mach-O LC_CODE_SIGNATURE SHA-256 重签名"), systemImage: "signature")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
@@ -970,7 +994,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                 Button {
                     viewModel.reSignActiveMachOBinary()
                 } label: {
-                    Label("Re-Sign Ad-Hoc", systemImage: "checkmark.seal.fill")
+                    Label(localizer.L("Re-Sign Ad-Hoc", "临时重签名"), systemImage: "checkmark.seal.fill")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .positiveEmerald, isActive: true, compact: true))
                 .fixedSize(horizontal: true, vertical: false)
@@ -978,13 +1002,13 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
 
             HStack(spacing: 8) {
                 cdHashComparisonBox(
-                    label: "ORIGINAL CDHASH (SHA-256)",
+                    label: localizer.L("ORIGINAL CDHASH (SHA-256)", "原始 CDHASH (SHA-256)"),
                     hashPrefix: String(baseHash),
                     accent: ColdTungstenPalette.coolPewter
                 )
 
                 cdHashComparisonBox(
-                    label: "REBUILT CDHASH (AD-HOC)",
+                    label: localizer.L("REBUILT CDHASH (AD-HOC)", "重建 CDHASH (临时签名)"),
                     hashPrefix: String(activeHash),
                     accent: isValidAfterResign ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber
                 )
@@ -992,7 +1016,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
 
             if let verify = resign?.verificationReport ?? report {
                 HStack(spacing: 10) {
-                    Text(verify.isValid ? "VALID AD-HOC" : "DIRTY PAGE SLOTS")
+                    Text(verify.isValid ? localizer.L("VALID AD-HOC", "临时签名有效") : localizer.L("DIRTY PAGE SLOTS", "存在脏页槽位"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                         .foregroundStyle(verify.isValid ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
                         .padding(.horizontal, 6)
@@ -1001,16 +1025,24 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 3))
                         .fixedSize(horizontal: true, vertical: false)
 
-                    Text("Slots: \(verify.verifiedCodeSlots)/\(verify.totalCodeSlots) SHA-256 pages")
-                        .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
-                        .foregroundStyle(ColdTungstenPalette.steelWhite)
-                        .fixedSize(horizontal: true, vertical: false)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "槽位: \(verify.verifiedCodeSlots)/\(verify.totalCodeSlots) SHA-256 页"
+                            : "Slots: \(verify.verifiedCodeSlots)/\(verify.totalCodeSlots) SHA-256 pages"
+                    )
+                    .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
+                    .foregroundStyle(ColdTungstenPalette.steelWhite)
+                    .fixedSize(horizontal: true, vertical: false)
 
                     if let resign, !resign.recalculatedPageSlotIndices.isEmpty {
-                        Text("Rehashed Page #\(resign.recalculatedPageSlotIndices.map(String.init).joined(separator: ","))")
-                            .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
-                            .foregroundStyle(ColdTungstenPalette.warmCopper)
-                            .fixedSize(horizontal: true, vertical: false)
+                        Text(
+                            localizer.language == .zhHans
+                                ? "已重算页 #\(resign.recalculatedPageSlotIndices.map(String.init).joined(separator: ","))"
+                                : "Rehashed Page #\(resign.recalculatedPageSlotIndices.map(String.init).joined(separator: ","))"
+                        )
+                        .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
+                        .foregroundStyle(ColdTungstenPalette.warmCopper)
+                        .fixedSize(horizontal: true, vertical: false)
                     }
                 }
             }

@@ -13,6 +13,7 @@ import SwiftUI
 public struct SynchronizedDecompilerSplitStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     public let leftPaneMode: WorkbenchPaneTab
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     public init(
         viewModel: MachStudioViewModel,
@@ -30,7 +31,7 @@ public struct SynchronizedDecompilerSplitStudioView: View {
                     .font(.system(size: 10.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.signalEmerald)
 
-                Text("SYNCHRONIZED SPLIT BUS")
+                Text(localizer.L("SYNCHRONIZED SPLIT BUS", "同步分屏总线"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.signalEmerald)
                     .fixedSize()
@@ -51,7 +52,7 @@ public struct SynchronizedDecompilerSplitStudioView: View {
 
                 // Left Pane Mode Switcher (`Disassembly` vs `CFG Graph`)
                 HStack(spacing: 4) {
-                    Button("Left: Disassembly") {
+                    Button(localizer.L("Left: Disassembly", "左侧: 反汇编")) {
                         viewModel.cursorBus.enableSideBySideSplit(primary: .disassembly, secondary: .pseudoC)
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
@@ -60,7 +61,7 @@ public struct SynchronizedDecompilerSplitStudioView: View {
                         compact: true
                     ))
 
-                    Button("Left: CFG Graph") {
+                    Button(localizer.L("Left: CFG Graph", "左侧: 控制流图")) {
                         viewModel.cursorBus.enableSideBySideSplit(primary: .cfgGraph, secondary: .pseudoC)
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
@@ -69,7 +70,7 @@ public struct SynchronizedDecompilerSplitStudioView: View {
                         compact: true
                     ))
 
-                    Button("Exit Split") {
+                    Button(localizer.L("Exit Split", "退出分屏")) {
                         viewModel.cursorBus.disableSplitView()
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
@@ -117,6 +118,7 @@ public struct PseudoCDecompilerStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     public let compactForSplit: Bool
 
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @State private var showVariablesAndStructsDeck: Bool = true
     @State private var hoveredLineNumber: Int? = nil
     @State private var showNewStructEditor: Bool = false
@@ -178,7 +180,7 @@ public struct PseudoCDecompilerStudioView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                Text(compactForSplit ? "SSA Pseudo-C" : "SSA Micro-IR Pseudo-C Decompiler")
+                Text(compactForSplit ? localizer.L("SSA Pseudo-C", "SSA 伪C") : localizer.L("SSA Micro-IR Pseudo-C Decompiler", "SSA 微IR 伪C反编译器"))
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize()
@@ -200,7 +202,7 @@ public struct PseudoCDecompilerStudioView: View {
 
                 Spacer(minLength: 4)
 
-                Button(showVariablesAndStructsDeck ? "Vars & Structs" : "Show Vars") {
+                Button(showVariablesAndStructsDeck ? localizer.L("Vars & Structs", "变量与结构体") : localizer.L("Show Vars", "显示变量")) {
                     showVariablesAndStructsDeck.toggle()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(
@@ -214,7 +216,9 @@ public struct PseudoCDecompilerStudioView: View {
                         viewModel.toggleOrRunGhidraComparison()
                     } label: {
                         Label(
-                            viewModel.isGhidraSideBySideEnabled ? "Ghidra 12.1.4: ON" : "Ghidra 12.1.4 Diff",
+                            viewModel.isGhidraSideBySideEnabled
+                                ? localizer.L("Ghidra 12.1.4: ON", "Ghidra 12.1.4: 开启")
+                                : localizer.L("Ghidra 12.1.4 Diff", "Ghidra 12.1.4 对比"),
                             systemImage: "square.split.2x1"
                         )
                     }
@@ -229,14 +233,17 @@ public struct PseudoCDecompilerStudioView: View {
                     if let src = decompiled?.fullSourceText {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(src, forType: .string)
+                        let lineCount = src.components(separatedBy: "\n").count
                         viewModel.toastController.enqueue(
                             kind: .success,
-                            title: "Copied Structured Pseudo-C",
-                            detail: "\(src.components(separatedBy: "\n").count) lines copied to clipboard"
+                            title: localizer.L("Copied Structured Pseudo-C", "已复制结构化伪C代码"),
+                            detail: localizer.language == .zhHans
+                                ? "已复制 \(lineCount) 行代码至剪贴板"
+                                : "\(lineCount) lines copied to clipboard"
                         )
                     }
                 } label: {
-                    Label("Copy C", systemImage: "doc.on.doc")
+                    Label(localizer.L("Copy C", "复制 C"), systemImage: "doc.on.doc")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(compact: true))
             }
@@ -259,14 +266,14 @@ public struct PseudoCDecompilerStudioView: View {
 
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                ssaMetricTag("SSA VARS", "\(output.ssaVariableCount)", color: ColdTungstenPalette.tungstenSapphire)
-                ssaMetricTag("DEAD STORES", "\(output.eliminatedDeadStoreCount)", color: ColdTungstenPalette.signalEmerald)
-                ssaMetricTag("CONFIDENCE", "\(confidencePct)%", color: confColor)
-                ssaMetricTag("PARAMS", "\(output.parameters.count)", color: ColdTungstenPalette.steelWhite)
-                ssaMetricTag("LOCALS", "\(output.localVariables.count)", color: ColdTungstenPalette.coolPewter)
-                ssaMetricTag("IR BLOCKS", "\(output.microBlocks.count)", color: ColdTungstenPalette.coolPewter)
+                ssaMetricTag(localizer.L("SSA VARS", "SSA 变量"), "\(output.ssaVariableCount)", color: ColdTungstenPalette.tungstenSapphire)
+                ssaMetricTag(localizer.L("DEAD STORES", "死存储消除"), "\(output.eliminatedDeadStoreCount)", color: ColdTungstenPalette.signalEmerald)
+                ssaMetricTag(localizer.L("CONFIDENCE", "置信度"), "\(confidencePct)%", color: confColor)
+                ssaMetricTag(localizer.L("PARAMS", "参数"), "\(output.parameters.count)", color: ColdTungstenPalette.steelWhite)
+                ssaMetricTag(localizer.L("LOCALS", "局部变量"), "\(output.localVariables.count)", color: ColdTungstenPalette.coolPewter)
+                ssaMetricTag(localizer.L("IR BLOCKS", "IR 块"), "\(output.microBlocks.count)", color: ColdTungstenPalette.coolPewter)
                 if !compactForSplit {
-                    ssaMetricTag("RETURN", output.returnType.cTypeName, color: ColdTungstenPalette.tungstenAmber)
+                    ssaMetricTag(localizer.L("RETURN", "返回类型"), output.returnType.cTypeName, color: ColdTungstenPalette.tungstenAmber)
                 }
             }
             .padding(.horizontal, 10)
@@ -289,7 +296,7 @@ public struct PseudoCDecompilerStudioView: View {
             LazyVStack(alignment: .leading, spacing: 0) {
                 // Function Prototype Signature Banner
                 HStack(spacing: 8) {
-                    Text("// Cytron Dominance-Frontier SSA -> Structured C AST")
+                    Text(localizer.L("// Cytron Dominance-Frontier SSA -> Structured C AST", "// Cytron 支配边界 SSA -> 结构化无 goto 伪C语法树"))
                         .font(ColdTungstenTypography.offsetGutterMono(size: 10.5))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                         .fixedSize()
@@ -388,7 +395,10 @@ public struct PseudoCDecompilerStudioView: View {
     private func ghidraSideBySideColumn(_ output: DecompiledFunctionOutput) -> some View {
         let ghidraText = output.ghidraSideBySideSource
             ?? viewModel.ghidraDecompiledByFunction[output.functionAddress]
-            ?? "/* Click 'Ghidra 12.1.4 Diff' to invoke analyzeHeadless DecompInterface */"
+            ?? localizer.L(
+                "/* Click 'Ghidra 12.1.4 Diff' to invoke analyzeHeadless DecompInterface */",
+                "/* 点击「Ghidra 12.1.4 对比」调用 analyzeHeadless DecompInterface */"
+            )
 
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
@@ -400,7 +410,7 @@ public struct PseudoCDecompilerStudioView: View {
                     .foregroundStyle(ColdTungstenPalette.tungstenAmber)
                     .fixedSize()
                 Spacer()
-                Text(viewModel.ghidraProbe.isAvailable ? "HEADLESS READY" : "REFERENCE BASELINE")
+                Text(viewModel.ghidraProbe.isAvailable ? localizer.L("HEADLESS READY", "无头引擎就绪") : localizer.L("REFERENCE BASELINE", "参考基线"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5))
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize()
@@ -432,14 +442,14 @@ public struct PseudoCDecompilerStudioView: View {
                 Image(systemName: "memorychip")
                     .font(.system(size: 10.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
-                Text("RECOVERED VARIABLES & CUSTOM C STRUCT FIELD MAPPER")
+                Text(localizer.L("RECOVERED VARIABLES & CUSTOM C STRUCT FIELD MAPPER", "恢复变量与自定义C结构体映射"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize()
 
                 Spacer()
 
-                Button(showNewStructEditor ? "Close Builder" : "+ Define C Struct") {
+                Button(showNewStructEditor ? localizer.L("Close Builder", "关闭构建器") : localizer.L("+ Define C Struct", "+ 定义 C 结构体")) {
                     showNewStructEditor.toggle()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(compact: true))
@@ -453,10 +463,20 @@ public struct PseudoCDecompilerStudioView: View {
                 HStack(alignment: .top, spacing: 8) {
                     // Recovered Parameters & Locals Chips
                     ForEach(Array(output.parameters.enumerated()), id: \.offset) { idx, param in
-                        variableCard(kind: "ARG x\(idx)", name: param.name, cType: param.type.cTypeName, accent: ColdTungstenPalette.tungstenSapphire)
+                        variableCard(
+                            kind: localizer.language == .zhHans ? "参数 x\(idx)" : "ARG x\(idx)",
+                            name: param.name,
+                            cType: param.type.cTypeName,
+                            accent: ColdTungstenPalette.tungstenSapphire
+                        )
                     }
                     ForEach(Array(output.localVariables.prefix(6).enumerated()), id: \.offset) { _, local in
-                        variableCard(kind: "SSA LOCAL", name: local.name, cType: local.type.cTypeName, accent: ColdTungstenPalette.signalEmerald)
+                        variableCard(
+                            kind: localizer.L("SSA LOCAL", "SSA 局部"),
+                            name: local.name,
+                            cType: local.type.cTypeName,
+                            accent: ColdTungstenPalette.signalEmerald
+                        )
                     }
 
                     // Persisted `.machproj` Custom C Struct Cards
@@ -541,7 +561,7 @@ public struct PseudoCDecompilerStudioView: View {
                 .background(ColdTungstenPalette.gunmetalSlate)
                 .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: 1))
 
-            Button("Commit Struct") {
+            Button(localizer.L("Commit Struct", "提交结构体")) {
                 let cleanName = newStructName.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !cleanName.isEmpty else { return }
                 let created = CustomStructDefinition(
@@ -615,9 +635,12 @@ public struct PseudoCDecompilerStudioView: View {
             Image(systemName: "curlybraces")
                 .font(.system(size: 26))
                 .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
-            Text("Select a non-thunk ARM64 function to inspect SSA Micro-IR Structured Pseudo-C.")
-                .font(ColdTungstenTypography.bodyText)
-                .foregroundStyle(ColdTungstenPalette.coolPewter)
+            Text(localizer.L(
+                "Select a non-thunk ARM64 function to inspect SSA Micro-IR Structured Pseudo-C.",
+                "请选择非跳板 ARM64 函数以查看 SSA 微IR 结构化伪C代码。"
+            ))
+            .font(ColdTungstenTypography.bodyText)
+            .foregroundStyle(ColdTungstenPalette.coolPewter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

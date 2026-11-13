@@ -13,6 +13,19 @@ public enum NavigatorFunctionSortOrder: String, Sendable, Codable, Hashable, Cas
     case sizeDescending = "Instructions"
 
     public var id: String { rawValue }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .addressAscending:
+            return language.select("Address", "地址")
+        case .nameAlphabetical:
+            return language.select("Name", "名称")
+        case .complexityDescending:
+            return language.select("Complexity", "复杂度")
+        case .sizeDescending:
+            return language.select("Instructions", "指令数")
+        }
+    }
 }
 
 extension NavigatorSidebarFilter {
@@ -56,6 +69,7 @@ public final class MachNavigatorSidebarState: ObservableObject {
 
 @MainActor
 public struct MachBinaryNavigatorSidebarView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var state: MachNavigatorSidebarState
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
 
@@ -104,7 +118,7 @@ public struct MachBinaryNavigatorSidebarView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Binary Navigator",
+                title: localizer.L("Binary Navigator", "二进制导航"),
                 sfSymbol: "sidebar.left",
                 countBadge: modeCount(for: state.selectedMode)
             )
@@ -132,7 +146,7 @@ public struct MachBinaryNavigatorSidebarView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                    TextField("Filter \(state.selectedMode.rawValue.lowercased())...", text: $state.filterQuery)
+                    TextField(state.selectedMode.localizedFilterPlaceholder(in: localizer.language), text: $state.filterQuery)
                         .textFieldStyle(.plain)
                         .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
@@ -220,7 +234,7 @@ public struct MachBinaryNavigatorSidebarView: View {
             HStack(spacing: 4) {
                 Image(systemName: mode.sfSymbolName)
                     .font(.system(size: 10.5, weight: .semibold))
-                Text(mode.rawValue)
+                Text(mode.localizedTitle(in: localizer.language))
                     .font(ColdTungstenTypography.controlLabel)
             }
             .foregroundStyle(active ? ColdTungstenPalette.tungstenSapphire : ColdTungstenPalette.coolPewter)
@@ -245,7 +259,7 @@ public struct MachBinaryNavigatorSidebarView: View {
             HStack(spacing: 5) {
                 ForEach(NavigatorFunctionSortOrder.allCases) { order in
                     let selected = state.functionSortOrder == order
-                    Button(order.rawValue) {
+                    Button(order.localizedTitle(in: localizer.language)) {
                         state.functionSortOrder = order
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
@@ -264,7 +278,7 @@ public struct MachBinaryNavigatorSidebarView: View {
                     compact: true
                 ))
 
-                Button("No Thunks") {
+                Button(localizer.L("No Thunks", "隐藏跳板")) {
                     state.hideThunkFunctions.toggle()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(
@@ -324,7 +338,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let renames = renameMap
         return Group {
             if items.isEmpty {
-                emptyNavigatorPlaceholder("No matching functions recovered.")
+                emptyNavigatorPlaceholder(localizer.L("No matching functions recovered.", "未找到匹配的恢复函数。"))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -349,9 +363,9 @@ public struct MachBinaryNavigatorSidebarView: View {
                                         microTagPill("PAC", color: ColdTungstenPalette.tungstenAmber)
                                     }
                                     if fn.isThunk {
-                                        microTagPill("THUNK", color: ColdTungstenPalette.coolPewter)
+                                        microTagPill(localizer.L("THUNK", "跳板"), color: ColdTungstenPalette.coolPewter)
                                     } else if fn.isLeaf {
-                                        microTagPill("LEAF", color: ColdTungstenPalette.signalEmerald)
+                                        microTagPill(localizer.L("LEAF", "叶函数"), color: ColdTungstenPalette.signalEmerald)
                                     }
                                     microTagPill("CC:\(fn.cyclomaticComplexity)", color: ccColor)
                                 }
@@ -361,7 +375,12 @@ public struct MachBinaryNavigatorSidebarView: View {
                                     .foregroundStyle(renames[fn.address] != nil ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.steelWhite)
                                     .fixedSize(horizontal: false, vertical: true)
 
-                                Text("\(fn.blocks.count) BBs · \(fn.instructionCount) insns · frame \(fn.stackFrameBytes)B")
+                                Text(
+                                    localizer.L(
+                                        "\(fn.blocks.count) BBs · \(fn.instructionCount) insns · frame \(fn.stackFrameBytes)B",
+                                        "\(fn.blocks.count) 基本块 · \(fn.instructionCount) 指令 · 栈帧 \(fn.stackFrameBytes)B"
+                                    )
+                                )
                                     .font(ColdTungstenTypography.offsetGutterMono(size: 10.5))
                                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                             }
@@ -406,7 +425,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let renames = renameMap
         return Group {
             if items.isEmpty {
-                emptyNavigatorPlaceholder("No symbols match the current filter.")
+                emptyNavigatorPlaceholder(localizer.L("No symbols match the current filter.", "未找到匹配的符号。"))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -475,7 +494,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let stubs = filteredImportStubs
         return Group {
             if libs.isEmpty && stubs.isEmpty {
-                emptyNavigatorPlaceholder("No imported dylibs or external symbol stubs.")
+                emptyNavigatorPlaceholder(localizer.L("No imported dylibs or external symbol stubs.", "无导入动态库或外部符号桩。"))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -490,10 +509,10 @@ public struct MachBinaryNavigatorSidebarView: View {
                                         .foregroundStyle(ColdTungstenPalette.steelWhite)
                                     Spacer()
                                     if lib.isWeak {
-                                        microTagPill("WEAK", color: ColdTungstenPalette.tungstenAmber)
+                                        microTagPill(localizer.L("WEAK", "弱引用"), color: ColdTungstenPalette.tungstenAmber)
                                     }
                                     if lib.isReexport {
-                                        microTagPill("REEXPORT", color: ColdTungstenPalette.tungstenSapphire)
+                                        microTagPill(localizer.L("REEXPORT", "重导出"), color: ColdTungstenPalette.tungstenSapphire)
                                     }
                                 }
                                 Text("\(lib.installName) (v\(lib.currentVersion))")
@@ -556,7 +575,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let items = filteredStrings
         return Group {
             if items.isEmpty {
-                emptyNavigatorPlaceholder("No extracted string literals match filter.")
+                emptyNavigatorPlaceholder(localizer.L("No extracted string literals match filter.", "未找到匹配的字符串常量。"))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -625,7 +644,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let swiftList = filteredSwiftTypes
         return Group {
             if objcList.isEmpty && swiftList.isEmpty {
-                emptyNavigatorPlaceholder("No Objective-C classes or Swift nominal descriptors.")
+                emptyNavigatorPlaceholder(localizer.L("No Objective-C classes or Swift nominal descriptors.", "未检测到 Objective-C 类或 Swift 类型描述符。"))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -686,7 +705,7 @@ public struct MachBinaryNavigatorSidebarView: View {
                                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if !st.fieldNames.isEmpty {
-                                    Text("Fields: \(st.fieldNames.joined(separator: ", "))")
+                                    Text("\(localizer.L("Fields:", "字段:")) \(st.fieldNames.joined(separator: ", "))")
                                         .font(ColdTungstenTypography.offsetGutterMono(size: 10.5))
                                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                                         .fixedSize(horizontal: false, vertical: true)
@@ -724,7 +743,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let items = filteredBookmarks
         return Group {
             if items.isEmpty {
-                emptyNavigatorPlaceholder("No analyst bookmarks saved. Press B to bookmark cursor.")
+                emptyNavigatorPlaceholder(localizer.L("No analyst bookmarks saved. Press B to bookmark cursor.", "暂无分析书签。按 B 键可在当前光标处添加书签。"))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -794,7 +813,7 @@ public struct MachBinaryNavigatorSidebarView: View {
         let items = filteredPatches
         return Group {
             if items.isEmpty {
-                emptyNavigatorPlaceholder("No sparse byte or ARM64 instruction patches staged.")
+                emptyNavigatorPlaceholder(localizer.L("No sparse byte or ARM64 instruction patches staged.", "暂无已暂存的稀疏字节或 ARM64 指令补丁。"))
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -809,7 +828,7 @@ public struct MachBinaryNavigatorSidebarView: View {
                                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                                     Spacer()
                                     if let onTogglePatch {
-                                        Button(patch.isEnabled ? "ACTIVE" : "BYPASSED") {
+                                        Button(patch.isEnabled ? localizer.L("ACTIVE", "已启用") : localizer.L("BYPASSED", "已旁路")) {
                                             onTogglePatch(patch)
                                         }
                                         .buttonStyle(TungstenToolbarButtonStyle(
@@ -819,7 +838,7 @@ public struct MachBinaryNavigatorSidebarView: View {
                                         ))
                                     } else {
                                         microTagPill(
-                                            patch.isEnabled ? "ACTIVE" : "BYPASSED",
+                                            patch.isEnabled ? localizer.L("ACTIVE", "已启用") : localizer.L("BYPASSED", "已旁路"),
                                             color: patch.isEnabled ? ColdTungstenPalette.anodizedCrimson : ColdTungstenPalette.coolPewter
                                         )
                                     }
@@ -912,6 +931,19 @@ public enum WorkbenchBottomDrawerChannel: String, Sendable, Codable, Hashable, C
         case .pluginConsole: return "terminal"
         }
     }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .xrefsAtCursor:
+            return language.select("Xrefs at Cursor", "光标交叉引用")
+        case .securityFindings:
+            return language.select("Security Findings", "安全审计发现")
+        case .undoRedoJournal:
+            return language.select("Undo/Redo Journal", "撤销/重做日志")
+        case .pluginConsole:
+            return language.select("Plugin Console", "插件控制台")
+        }
+    }
 }
 
 @MainActor
@@ -968,6 +1000,7 @@ public final class MachBottomDrawerState: ObservableObject {
 
 @MainActor
 public struct MachBottomInspectionDrawerView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var state: MachBottomDrawerState
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
 
@@ -1106,7 +1139,7 @@ public struct MachBottomInspectionDrawerView: View {
             HStack(spacing: 5) {
                 Image(systemName: channel.sfSymbolName)
                     .font(.system(size: 11, weight: .semibold))
-                Text(channel.rawValue)
+                Text(channel.localizedTitle(in: localizer.language))
                     .font(ColdTungstenTypography.controlLabel)
                 Text("\(count)")
                     .font(ColdTungstenTypography.microBadgeMono(size: 10, weight: .semibold))
@@ -1141,16 +1174,16 @@ public struct MachBottomInspectionDrawerView: View {
     private var channelTrailingControls: some View {
         switch state.activeChannel {
         case .xrefsAtCursor:
-            Text("Cursor \(cursorBus.currentLocation.virtualAddress.compactHexString)")
+            Text("\(localizer.L("Cursor", "光标")) \(cursorBus.currentLocation.virtualAddress.compactHexString)")
                 .font(ColdTungstenTypography.addressMono(size: 11.0))
                 .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
                 .fixedSize()
         case .securityFindings:
             HStack(spacing: 4) {
-                Button("All") { state.findingsSeverityFilter = nil }
+                Button(localizer.L("All", "全部")) { state.findingsSeverityFilter = nil }
                     .buttonStyle(TungstenToolbarButtonStyle(isActive: state.findingsSeverityFilter == nil, compact: true))
                 ForEach([SecurityFindingSeverity.critical, .high, .medium, .low], id: \.self) { sev in
-                    Button(sev.rawValue) {
+                    Button(sev.localizedBadge(in: localizer.language)) {
                         state.findingsSeverityFilter = (state.findingsSeverityFilter == sev) ? nil : sev
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(isActive: state.findingsSeverityFilter == sev, compact: true))
@@ -1158,20 +1191,20 @@ public struct MachBottomInspectionDrawerView: View {
             }
         case .undoRedoJournal:
             HStack(spacing: 6) {
-                Button("Undo") { onUndo?() }
+                Button(localizer.L("Undo", "撤销")) { onUndo?() }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                     .disabled(undoTransactions.isEmpty)
-                Button("Redo") { onRedo?() }
+                Button(localizer.L("Redo", "重做")) { onRedo?() }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                     .disabled(redoTransactions.isEmpty)
             }
         case .pluginConsole:
             HStack(spacing: 6) {
                 if let onRunPlugins {
-                    Button("Run Audit") { onRunPlugins() }
+                    Button(localizer.L("Run Audit", "运行审计")) { onRunPlugins() }
                         .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
                 }
-                Button("Clear") { state.clearConsole() }
+                Button(localizer.L("Clear", "清空")) { state.clearConsole() }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
             }
         }
@@ -1180,14 +1213,19 @@ public struct MachBottomInspectionDrawerView: View {
     private var xrefsChannelView: some View {
         Group {
             if xrefsAtCursor.isEmpty {
-                drawerPlaceholder("No cross-references indexed for \(cursorBus.currentLocation.virtualAddress.compactHexString).")
+                drawerPlaceholder(
+                    localizer.L(
+                        "No cross-references indexed for \(cursorBus.currentLocation.virtualAddress.compactHexString).",
+                        "当前地址 \(cursorBus.currentLocation.virtualAddress.compactHexString) 暂无交叉引用索引。"
+                    )
+                )
             } else {
                 ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(xrefsAtCursor) { xref in
                             let accent = ColdTungstenPalette.color(for: xref.kind)
                             HStack(spacing: 10) {
-                                Text(xref.kind.rawValue)
+                                Text(xref.kind.localizedBadge(in: localizer.language))
                                     .font(ColdTungstenTypography.microBadgeMono(size: 10, weight: .bold))
                                     .foregroundStyle(accent)
                                     .frame(width: 96, alignment: .leading)
@@ -1225,7 +1263,7 @@ public struct MachBottomInspectionDrawerView: View {
             : findings.filter { $0.severity == state.findingsSeverityFilter }
         return Group {
             if visible.isEmpty {
-                drawerPlaceholder("No security audit findings matching the active filter.")
+                drawerPlaceholder(localizer.L("No security audit findings matching the active filter.", "当前筛选条件下暂无安全审计发现。"))
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1233,11 +1271,11 @@ public struct MachBottomInspectionDrawerView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 HStack(spacing: 8) {
                                     SeverityBadgePill(severity: finding.severity)
-                                    Text(finding.title)
+                                    Text(finding.localizedTitle(in: localizer.language))
                                         .font(ColdTungstenTypography.controlLabel)
                                         .foregroundStyle(ColdTungstenPalette.steelWhite)
                                     Spacer()
-                                    Text(finding.category)
+                                    Text(finding.localizedCategory(in: localizer.language))
                                         .font(ColdTungstenTypography.microBadgeMono(size: 10.5))
                                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                                     if let addr = finding.address {
@@ -1247,7 +1285,7 @@ public struct MachBottomInspectionDrawerView: View {
                                         .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, compact: true))
                                     }
                                 }
-                                Text(finding.detail)
+                                Text(finding.localizedDetail(in: localizer.language))
                                     .font(ColdTungstenTypography.secondaryCaption)
                                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                                     .fixedSize(horizontal: false, vertical: true)
@@ -1273,15 +1311,20 @@ public struct MachBottomInspectionDrawerView: View {
     private var undoRedoChannelView: some View {
         Group {
             if undoTransactions.isEmpty && redoTransactions.isEmpty {
-                drawerPlaceholder("SQLite WAL Undo/Redo journal is clean — renames, comments, bookmarks, and patches appear here.")
+                drawerPlaceholder(
+                    localizer.L(
+                        "SQLite WAL Undo/Redo journal is clean: renames, comments, bookmarks, and patches appear here.",
+                        "SQLite WAL 撤销/重做日志为空: 重命名、注释、书签与字节补丁将记录于此。"
+                    )
+                )
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(undoTransactions) { tx in
-                            transactionRow(tx, stackBadge: "UNDO", badgeColor: ColdTungstenPalette.signalEmerald)
+                            transactionRow(tx, stackBadge: localizer.L("UNDO", "可撤销"), badgeColor: ColdTungstenPalette.signalEmerald)
                         }
                         ForEach(redoTransactions) { tx in
-                            transactionRow(tx, stackBadge: "REDO", badgeColor: ColdTungstenPalette.tungstenAmber)
+                            transactionRow(tx, stackBadge: localizer.L("REDO", "可重做"), badgeColor: ColdTungstenPalette.tungstenAmber)
                         }
                     }
                 }
@@ -1303,7 +1346,7 @@ public struct MachBottomInspectionDrawerView: View {
                 .background(badgeColor.opacity(0.14))
                 .clipShape(RoundedRectangle(cornerRadius: 3))
                 .fixedSize()
-            Text(tx.title)
+            Text(tx.localizedTitle(in: localizer.language))
                 .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
                 .foregroundStyle(ColdTungstenPalette.steelWhite)
             Spacer()
@@ -1318,7 +1361,12 @@ public struct MachBottomInspectionDrawerView: View {
     private var pluginConsoleChannelView: some View {
         Group {
             if state.consoleEntries.isEmpty {
-                drawerPlaceholder("JavaScriptCore plugin console idle. Click 'Run Audit' to execute static security rules.")
+                drawerPlaceholder(
+                    localizer.L(
+                        "JavaScriptCore plugin console idle. Click 'Run Audit' to execute static security rules.",
+                        "JavaScriptCore 插件控制台空闲。点击“运行审计”以执行静态安全检测规则。"
+                    )
+                )
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
@@ -1367,6 +1415,7 @@ public struct MachBottomInspectionDrawerView: View {
 
 @MainActor
 public struct MachTopWorkbenchToolbarView: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @ObservedObject public var cursorBus: SynchronizedAddressCursorBus
     public let image: LoadedBinaryImage?
     public let functions: [RecoveredFunction]
@@ -1441,7 +1490,7 @@ public struct MachTopWorkbenchToolbarView: View {
                     Button {
                         onOpenBinary()
                     } label: {
-                        Label("Open Binary", systemImage: "folder")
+                        Label(localizer.L("Open Binary", "打开二进制"), systemImage: "folder")
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
                 }
@@ -1453,12 +1502,20 @@ public struct MachTopWorkbenchToolbarView: View {
                     if image.slices.count > 1, let onSelectSlice {
                         Menu {
                             ForEach(image.slices) { slice in
-                                Button("Slice #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))") {
+                                Button(
+                                    localizer.L(
+                                        "Slice #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))",
+                                        "切片 #\(slice.index): \(slice.architecture.displayName) (\(slice.fileOffset.hexString))"
+                                    )
+                                ) {
                                     onSelectSlice(slice.index)
                                 }
                             }
                         } label: {
-                            Label("Slice: \(image.architecture.displayName)", systemImage: "square.stack.3d.up")
+                            Label(
+                                localizer.L("Slice: \(image.architecture.displayName)", "切片: \(image.architecture.displayName)"),
+                                systemImage: "square.stack.3d.up"
+                            )
                         }
                         .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, compact: true))
                     }
@@ -1472,7 +1529,9 @@ public struct MachTopWorkbenchToolbarView: View {
                     cursorBus.toggleSplitView(defaultSecondary: .pseudoC)
                 } label: {
                     Label(
-                        cursorBus.isSplitViewActive ? "Split: CFG + Pseudo-C" : "Split View",
+                        cursorBus.isSplitViewActive
+                            ? localizer.L("Split: CFG + Pseudo-C", "分屏: 控制流图 + 伪C")
+                            : localizer.L("Split View", "分屏视图"),
                         systemImage: "rectangle.split.2x1"
                     )
                 }
@@ -1482,13 +1541,13 @@ public struct MachTopWorkbenchToolbarView: View {
                     compact: true
                 ))
 
-                // Command Palette, Audit, Snapshot & Re-Sign Action Cluster
+                // Command Palette, Audit, Snapshot, Re-Sign & Bilingual Language Cluster
                 Button {
                     onOpenCommandPalette()
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "command")
-                        Text("Palette")
+                        Text(localizer.L("Palette", "命令面板"))
                         TungstenKeycapBadge("⌘K")
                     }
                 }
@@ -1497,23 +1556,25 @@ public struct MachTopWorkbenchToolbarView: View {
                 Button {
                     onRunSecurityAudit()
                 } label: {
-                    Label("Audit", systemImage: "checkmark.shield")
+                    Label(localizer.L("Audit", "安全审计"), systemImage: "checkmark.shield")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, compact: true))
 
                 Button {
                     onCaptureSnapshot()
                 } label: {
-                    Label("Snapshot", systemImage: "camera.aperture")
+                    Label(localizer.L("Snapshot", "快照"), systemImage: "camera.aperture")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(compact: true))
 
                 Button {
                     onReSignMachO()
                 } label: {
-                    Label("Re-Sign", systemImage: "signature")
+                    Label(localizer.L("Re-Sign", "重签名"), systemImage: "signature")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .positiveEmerald, compact: true))
+
+                TungstenLanguageTogglePill(localizer: localizer, compact: true)
             }
             .padding(.horizontal, 10)
             .frame(height: ColdTungstenMetrics.topToolbarHeight)
@@ -1533,7 +1594,7 @@ public struct MachTopWorkbenchToolbarView: View {
 
         return Button(action: onOpenGoToModal) {
             HStack(spacing: 6) {
-                Text(image?.fileName ?? "No Binary")
+                Text(image?.fileName ?? localizer.L("No Binary", "未加载二进制"))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
 
@@ -1558,7 +1619,7 @@ public struct MachTopWorkbenchToolbarView: View {
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
                 if let fileOff {
-                    Text("(File \(fileOff.hexString))")
+                    Text(localizer.L("(File \(fileOff.hexString))", "(偏移 \(fileOff.hexString))"))
                         .font(ColdTungstenTypography.offsetGutterMono(size: 10.5))
                         .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                 }

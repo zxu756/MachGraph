@@ -399,6 +399,7 @@ public enum ColdTungstenSyntaxHighlighter: Sendable {
 
 @MainActor
 public struct SeverityBadgePill: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     public let severity: SecurityFindingSeverity
     public let count: Int?
     public let isSelected: Bool
@@ -419,7 +420,7 @@ public struct SeverityBadgePill: View {
             Circle()
                 .fill(accent)
                 .frame(width: 6, height: 6)
-            Text(severity.rawValue)
+            Text(severity.localizedBadge(in: localizer.language))
                 .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .bold))
                 .foregroundStyle(accent)
             if let count {
@@ -446,6 +447,7 @@ public struct SeverityBadgePill: View {
 
 @MainActor
 public struct FormatArchBadge: View {
+    @ObservedObject private var localizer: MachLocalizer = .shared
     public let containerFormat: BinaryContainerFormat
     public let architecture: CPUArchitecture
     public let isSigned: Bool
@@ -501,7 +503,7 @@ public struct FormatArchBadge: View {
                 HStack(spacing: 3) {
                     Image(systemName: isAdHoc ? "checkmark.seal" : "checkmark.seal.fill")
                         .font(.system(size: 10, weight: .semibold))
-                    Text(isAdHoc ? "AD-HOC" : "SIGNED")
+                    Text(isAdHoc ? localizer.L("AD-HOC", "临时签名") : localizer.L("SIGNED", "已签名"))
                         .font(ColdTungstenTypography.microBadgeMono(size: 10, weight: .semibold))
                 }
                 .foregroundStyle(isAdHoc ? ColdTungstenPalette.tungstenAmber : ColdTungstenPalette.signalEmerald)
@@ -516,6 +518,70 @@ public struct FormatArchBadge: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusStandard))
         .fixedSize(horizontal: true, vertical: true)
+    }
+}
+
+/// Crisp Cold-Tungsten-Steel (`#0F1216` / `#1B222C` / `#58A6FF`) `中文 | EN` segmented toggle pill.
+@MainActor
+public struct TungstenLanguageTogglePill: View {
+    @ObservedObject public var localizer: MachLocalizer
+    public let compact: Bool
+
+    public init(
+        localizer: MachLocalizer = .shared,
+        compact: Bool = true
+    ) {
+        self.localizer = localizer
+        self.compact = compact
+    }
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            segmentButton(.zhHans)
+
+            Rectangle()
+                .fill(ColdTungstenPalette.tungstenSeam)
+                .frame(width: ColdTungstenMetrics.borderHairline, height: compact ? 16 : 18)
+
+            segmentButton(.en)
+        }
+        .padding(1)
+        .background(ColdTungstenPalette.chassisBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusStandard)
+                .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusStandard))
+        .fixedSize(horizontal: true, vertical: true)
+        .help(localizer.L("Toggle Interface Language (⇧⌘L)", "切换界面语言 (⇧⌘L)"))
+    }
+
+    private func segmentButton(_ target: MachLanguage) -> some View {
+        let active = localizer.language == target
+        return Button {
+            localizer.setLanguage(target)
+        } label: {
+            Text(target.badge)
+                .font(
+                    target == .zhHans
+                        ? Font.system(size: compact ? 11.5 : 12.0, weight: active ? .semibold : .medium, design: .default)
+                        : ColdTungstenTypography.microBadgeMono(size: compact ? 11.0 : 11.5, weight: active ? .bold : .semibold)
+                )
+                .foregroundStyle(active ? ColdTungstenPalette.tungstenSapphire : ColdTungstenPalette.coolPewter)
+                .padding(.horizontal, compact ? 8 : 10)
+                .padding(.vertical, compact ? 3.5 : 4.5)
+                .background(active ? ColdTungstenPalette.brushedSteel : Color.clear)
+                .overlay(
+                    RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
+                        .strokeBorder(
+                            active ? ColdTungstenPalette.tungstenSapphire.opacity(0.85) : Color.clear,
+                            lineWidth: ColdTungstenMetrics.borderHairline
+                        )
+                )
+                .clipShape(RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact))
+                .fixedSize(horizontal: true, vertical: true)
+        }
+        .buttonStyle(.plain)
     }
 }
 

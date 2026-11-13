@@ -63,6 +63,21 @@ public enum MachDemoFixturePreset: String, CaseIterable, Identifiable, Sendable 
             return SyntheticBinaryFixtureBuilder.buildWasmBinary()
         }
     }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .arm64eMachO:
+            return language.select("Mach-O 64 (arm64e PAC)", "Mach-O 64 (arm64e PAC)")
+        case .universalFat:
+            return language.select("Universal Fat (arm64e + x86_64)", "通用二进制 Fat (arm64e + x86_64)")
+        case .elf64AArch64:
+            return language.select("ELF64 (AArch64 Linux)", "ELF64 (AArch64 Linux)")
+        case .pe32PlusARM64:
+            return language.select("PE32+ (Windows ARM64)", "PE32+ (Windows ARM64)")
+        case .wasmModule:
+            return language.select("WebAssembly 1.0 Module", "WebAssembly 1.0 模块")
+        }
+    }
 }
 
 public enum HexStudioSearchMode: String, CaseIterable, Identifiable, Sendable {
@@ -72,6 +87,32 @@ public enum HexStudioSearchMode: String, CaseIterable, Identifiable, Sendable {
     case pointer64 = "64-Bit Pointer"
 
     public var id: String { rawValue }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .wildcardHex:
+            return language.select("Hex Wildcard", "十六进制通配")
+        case .asciiString:
+            return "ASCII / UTF-8"
+        case .utf16String:
+            return "UTF-16LE"
+        case .pointer64:
+            return language.select("64-Bit Pointer", "64位指针")
+        }
+    }
+
+    public func localizedPlaceholder(in language: MachLanguage) -> String {
+        switch self {
+        case .wildcardHex:
+            return language.select("Wildcard hex (e.g. 7F 23 03 D5 or ?? 03 5F D6)...", "十六进制通配搜索 (如 7F 23 03 D5 或 ?? 03 5F D6)...")
+        case .asciiString:
+            return language.select("Search ASCII / UTF-8 bytes...", "搜索 ASCII / UTF-8 字符串...")
+        case .utf16String:
+            return language.select("Search UTF-16LE wide string...", "搜索 UTF-16LE 宽字符串...")
+        case .pointer64:
+            return language.select("64-bit target address (e.g. 0x100001038)...", "输入 64 位目标地址 (如 0x100001038)...")
+        }
+    }
 }
 
 public enum RuntimeMetadataSubTab: String, CaseIterable, Identifiable, Sendable {
@@ -80,6 +121,17 @@ public enum RuntimeMetadataSubTab: String, CaseIterable, Identifiable, Sendable 
     case chainedFixups = "Dyld Chained Fixups (PAC)"
 
     public var id: String { rawValue }
+
+    public func localizedTitle(in language: MachLanguage) -> String {
+        switch self {
+        case .cStrings:
+            return language.select("Cross-Referenced Strings", "交叉引用字符串")
+        case .objcAndSwift:
+            return language.select("ObjC 2.0 & Swift 5 Types", "ObjC 2.0 与 Swift 5 类型")
+        case .chainedFixups:
+            return language.select("Dyld Chained Fixups (PAC)", "Dyld 链式修复 (PAC)")
+        }
+    }
 }
 
 // MARK: - Master Studio Coordinator (`MachStudioViewModel`)
@@ -243,9 +295,28 @@ public final class MachStudioViewModel: ObservableObject {
         )
         let probe = bridge.probeInstallation()
         self.ghidraProbe = probe
+        let loc = MachLocalizer.shared
+        self.patchNoteInput = loc.L(
+            "Force _verify_license PAC-authenticated true return",
+            "强制 _verify_license 返回经 PAC 签名的真值 (w0=1)"
+        )
+        self.lastExportedPatchSummary = loc.L(
+            "IPS / BPS ready (1 active CoW extent)",
+            "IPS / BPS 就绪 (1 个活动 CoW 脏区间)"
+        )
+        self.scratchpadStatusText = loc.L(
+            "JSVirtualMachine sandbox ready (4 built-in plugins verified)",
+            "JSVirtualMachine 沙箱就绪 (已校验 4 个内置插件)"
+        )
         self.ghidraStatusText = probe.isAvailable
-            ? "Ghidra \(probe.ghidraVersion ?? "12.1.4") + OpenJDK 21 detected"
-            : "Pure-Swift SSA Decompiler active (Ghidra optional)"
+            ? loc.L(
+                "Ghidra \(probe.ghidraVersion ?? "12.1.4") + OpenJDK 21 detected",
+                "已检测到 Ghidra \(probe.ghidraVersion ?? "12.1.4") + OpenJDK 21"
+            )
+            : loc.L(
+                "Pure-Swift SSA Decompiler active (Ghidra optional)",
+                "纯 Swift SSA 反编译器运行中 (Ghidra 为可选组件)"
+            )
 
         bindReactivePipelines()
 
@@ -285,6 +356,46 @@ public final class MachStudioViewModel: ObservableObject {
                 self.recomputeCFGLayoutsAndDecompilation()
             }
             .store(in: &cancellables)
+
+        MachLocalizer.shared.$language
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] lang in
+                guard let self else { return }
+                self.paletteController.rebuildCatalog(
+                    image: self.loadedImage,
+                    functions: self.functions,
+                    renames: self.customRenames,
+                    bookmarks: self.bookmarks,
+                    findings: self.securityFindings,
+                    language: lang
+                )
+                if self.lastScratchpadResult == nil {
+                    self.scratchpadStatusText = lang.select(
+                        "JSVirtualMachine sandbox ready (4 built-in plugins verified)",
+                        "JSVirtualMachine 沙箱就绪 (已校验 4 个内置插件)"
+                    )
+                }
+                if !self.isRunningGhidraHeadless {
+                    self.ghidraStatusText = self.ghidraProbe.isAvailable
+                        ? lang.select(
+                            "Ghidra \(self.ghidraProbe.ghidraVersion ?? "12.1.4") + OpenJDK 21 detected",
+                            "已检测到 Ghidra \(self.ghidraProbe.ghidraVersion ?? "12.1.4") + OpenJDK 21"
+                        )
+                        : lang.select(
+                            "Pure-Swift SSA Decompiler active (Ghidra optional)",
+                            "纯 Swift SSA 反编译器运行中 (Ghidra 为可选组件)"
+                        )
+                }
+                if self.lastExportedPatchSummary.hasPrefix("IPS / BPS") {
+                    self.lastExportedPatchSummary = lang.select(
+                        "IPS / BPS ready (1 active CoW extent)",
+                        "IPS / BPS 就绪 (1 个活动 CoW 脏区间)"
+                    )
+                }
+                self.recomputeLivePatchPreview()
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Loading Binaries (Synthetic Fixtures, Fat Slices & Disk Files)
@@ -308,15 +419,21 @@ public final class MachStudioViewModel: ObservableObject {
             if emitToast, let img = loadedImage {
                 toastController.enqueue(
                     kind: .success,
-                    title: "Loaded \(img.fileName) (\(img.architecture.displayName))",
-                    detail: "Recovered \(functions.count) functions, \(xrefCount) xrefs, and \(securityFindings.count) audit findings",
+                    title: MGL(
+                        "Loaded \(img.fileName) (\(img.architecture.displayName))",
+                        "已加载 \(img.fileName) (\(img.architecture.displayName))"
+                    ),
+                    detail: MGL(
+                        "Recovered \(functions.count) functions, \(xrefCount) xrefs, and \(securityFindings.count) audit findings",
+                        "已恢复 \(functions.count) 个函数、\(xrefCount) 条交叉引用与 \(securityFindings.count) 项审计发现"
+                    ),
                     autoDismiss: true
                 )
             }
         } catch {
             toastController.enqueue(
                 kind: .error,
-                title: "Binary Load Failed",
+                title: MGL("Binary Load Failed", "二进制加载失败"),
                 detail: error.localizedDescription
             )
         }
@@ -339,15 +456,18 @@ public final class MachStudioViewModel: ObservableObject {
             if emitToast, let img = loadedImage {
                 toastController.enqueue(
                     kind: .success,
-                    title: "Opened \(img.fileName)",
-                    detail: "\(img.containerFormat.rawValue) · \(img.architecture.displayName) · \(functions.count) functions",
+                    title: MGL("Opened \(img.fileName)", "已打开 \(img.fileName)"),
+                    detail: MGL(
+                        "\(img.containerFormat.rawValue) · \(img.architecture.displayName) · \(functions.count) functions",
+                        "\(img.containerFormat.rawValue) · \(img.architecture.displayName) · \(functions.count) 个函数"
+                    ),
                     autoDismiss: true
                 )
             }
         } catch {
             toastController.enqueue(
                 kind: .error,
-                title: "Unable to Open Binary",
+                title: MGL("Unable to Open Binary", "无法打开二进制文件"),
                 detail: error.localizedDescription
             )
         }
@@ -365,11 +485,11 @@ public final class MachStudioViewModel: ObservableObject {
             )
             toastController.enqueue(
                 kind: .info,
-                title: "Switched Universal Slice #\(index)",
+                title: MGL("Switched Universal Slice #\(index)", "已切换通用切片 #\(index)"),
                 detail: loadedImage.map { "\($0.architecture.displayName) @ \($0.sliceFileOffset.hexString)" }
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Slice Switch Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Slice Switch Failed", "切片切换失败"), detail: error.localizedDescription)
         }
     }
 
@@ -487,16 +607,20 @@ public final class MachStudioViewModel: ObservableObject {
 
     private func seedCanonicalReverseEngineeringWorkspace(image: LoadedBinaryImage, index: BinaryAnalysisIndex) {
         seedDefaultStructsOnly()
+        let loc = MachLocalizer.shared
 
         if let verifyFn = index.function(named: "_verify_license") {
             try? undoRedo.setInlineComment(
                 at: verifyFn.address,
-                text: "ARM64e PAC-protected license gate; checks token prefix & rolling XOR digest",
+                text: loc.L(
+                    "ARM64e PAC-protected license gate; checks token prefix & rolling XOR digest",
+                    "受 ARM64e PAC 保护的授权校验入口；校验令牌前缀与滚动 XOR 摘要"
+                ),
                 isRepeatable: true
             )
             _ = try? undoRedo.toggleBookmark(
                 at: verifyFn.address,
-                label: "License Gate (_verify_license)",
+                label: loc.L("License Gate (_verify_license)", "授权校验入口 (_verify_license)"),
                 category: "Auth"
             )
 
@@ -514,7 +638,10 @@ public final class MachStudioViewModel: ObservableObject {
                 image: image,
                 safetyContext: safetyCtx,
                 allowClobberingBranchTargets: false,
-                note: "Bypass license check with PAC-signed w0=1 return"
+                note: loc.L(
+                    "Bypass license check with PAC-signed w0=1 return",
+                    "使用 PAC 签名 w0=1 返回序列绕过授权校验"
+                )
             ) {
                 try? undoRedo.recordBytePatch(patchRecord)
                 if let resign = try? MachOAdHocReSigner().reSignOverlay(overlayBuffer, image: image) {
@@ -526,12 +653,15 @@ public final class MachStudioViewModel: ObservableObject {
         if let dispatchFn = index.function(named: "_dispatch_command") {
             _ = try? undoRedo.toggleBookmark(
                 at: dispatchFn.address,
-                label: "4-Way Switch Jump Table",
+                label: loc.L("4-Way Switch Jump Table", "四路 Switch 跳转表"),
                 category: "CFG"
             )
             try? undoRedo.setInlineComment(
                 at: dispatchFn.address,
-                text: "Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)",
+                text: loc.L(
+                    "Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)",
+                    "带边界检查的 __TEXT,__const 四分支跳转表 (操作码 0..3)"
+                ),
                 isRepeatable: false
             )
         }
@@ -539,14 +669,17 @@ public final class MachStudioViewModel: ObservableObject {
         if let checksumFn = index.function(named: "_compute_checksum") {
             _ = try? undoRedo.toggleBookmark(
                 at: checksumFn.address,
-                label: "Rolling XOR Checksum Loop",
+                label: loc.L("Rolling XOR Checksum Loop", "滚动 XOR 校验和循环"),
                 category: "Crypto"
             )
         }
 
         _ = try? snapshotManager.createCheckpoint(
-            name: "Baseline Triage + PAC Bypass Staged",
-            note: "Initial static CFG recovery, 2 custom C structs, and CoW ARM64e inline patch"
+            name: loc.L("Baseline Triage + PAC Bypass Staged", "基线分诊 + PAC 绕过补丁已暂存"),
+            note: loc.L(
+                "Initial static CFG recovery, 2 custom C structs, and CoW ARM64e inline patch",
+                "初始静态 CFG 恢复、2 个自定义 C 结构体与 CoW ARM64e 内联补丁"
+            )
         )
     }
 
@@ -639,9 +772,10 @@ public final class MachStudioViewModel: ObservableObject {
     }
 
     public func recomputeLivePatchPreview() {
+        let loc = MachLocalizer.shared
         guard let image = loadedImage else {
             livePatchPreview = nil
-            patchPreviewError = "No binary image loaded."
+            patchPreviewError = loc.L("No binary image loaded.", "未加载二进制镜像。")
             return
         }
         let resolvedVA: VirtualAddress
@@ -655,20 +789,26 @@ public final class MachStudioViewModel: ObservableObject {
             resolvedVA = resolved.virtualAddress
         case .failure(let err):
             livePatchPreview = nil
-            patchPreviewError = err.localizedDescription
+            patchPreviewError = err.localizedDescription(in: loc.language)
             return
         }
 
         guard let fileOff = image.fileOffset(for: resolvedVA) else {
             livePatchPreview = nil
-            patchPreviewError = "Address \(resolvedVA.compactHexString) has no file-backed segment offset."
+            patchPreviewError = loc.L(
+                "Address \(resolvedVA.compactHexString) has no file-backed segment offset.",
+                "虚拟地址 \(resolvedVA.compactHexString) 无对应的文件映射偏移。"
+            )
             return
         }
 
         let trimmedAsm = inlineAssemblyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedAsm.isEmpty else {
             livePatchPreview = nil
-            patchPreviewError = "Enter one or more semicolon-separated ARM64 instructions."
+            patchPreviewError = loc.L(
+                "Enter one or more semicolon-separated ARM64 instructions.",
+                "请输入一条或多条以分号分隔的 ARM64 汇编指令。"
+            )
             return
         }
 
@@ -700,7 +840,7 @@ public final class MachStudioViewModel: ObservableObject {
         recomputeLivePatchPreview()
         guard let preview = livePatchPreview else {
             if let err = patchPreviewError {
-                toastController.enqueue(kind: .error, title: "Cannot Assemble Patch", detail: err)
+                toastController.enqueue(kind: .error, title: MGL("Cannot Assemble Patch", "无法汇编补丁"), detail: err)
             }
             return
         }
@@ -726,14 +866,17 @@ public final class MachStudioViewModel: ObservableObject {
             refreshDatabaseAnnotationsAndStats()
             toastController.enqueue(
                 kind: .success,
-                title: "Applied \(record.byteCount)-Byte CoW ARM64 Patch",
+                title: MGL(
+                    "Applied \(record.byteCount)-Byte CoW ARM64 Patch",
+                    "已应用 \(record.byteCount) 字节 CoW ARM64 补丁"
+                ),
                 detail: "\(preview.virtualAddress.compactHexString): \(preview.patchedDisassemblyText)",
                 addressLink: preview.virtualAddress
             )
         } catch {
             toastController.enqueue(
                 kind: .warning,
-                title: "Patch Blocked by Safety Verifier",
+                title: MGL("Patch Blocked by Safety Verifier", "安全校验器已拦截补丁"),
                 detail: error.localizedDescription
             )
         }
@@ -751,15 +894,15 @@ public final class MachStudioViewModel: ObservableObject {
                 in: &overlayBuffer,
                 image: image,
                 allowClobberingBranchTargets: true,
-                note: "NOP instruction at \(va.compactHexString)"
+                note: MGL("NOP instruction at \(va.compactHexString)", "在 \(va.compactHexString) 写入 NOP 指令")
             )
             try undoRedo.recordBytePatch(rec)
             refreshOverlayDerivedTelemetry()
             refreshDatabaseAnnotationsAndStats()
             recomputeLivePatchPreview()
-            toastController.enqueue(kind: .info, title: "Wrote ARM64 NOP", detail: va.compactHexString)
+            toastController.enqueue(kind: .info, title: MGL("Wrote ARM64 NOP", "已写入 ARM64 NOP"), detail: va.compactHexString)
         } catch {
-            toastController.enqueue(kind: .error, title: "NOP Patch Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("NOP Patch Failed", "NOP 补丁写入失败"), detail: error.localizedDescription)
         }
     }
 
@@ -771,7 +914,7 @@ public final class MachStudioViewModel: ObservableObject {
             refreshDatabaseAnnotationsAndStats()
             recomputeLivePatchPreview()
         } catch {
-            toastController.enqueue(kind: .error, title: "Patch Toggle Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Patch Toggle Failed", "切换补丁状态失败"), detail: error.localizedDescription)
         }
     }
 
@@ -791,13 +934,16 @@ public final class MachStudioViewModel: ObservableObject {
             self.codeSignatureReport = result.verificationReport
             toastController.enqueue(
                 kind: .success,
-                title: "Mach-O Ad-Hoc SHA-256 Signature Rebuilt",
-                detail: "CDHash \(result.updatedCDHashHex.prefix(24)) (\(result.recalculatedPageSlotIndices.count) page slots updated)"
+                title: MGL("Mach-O Ad-Hoc SHA-256 Signature Rebuilt", "Mach-O 临时 SHA-256 代码签名已重建"),
+                detail: MGL(
+                    "CDHash \(result.updatedCDHashHex.prefix(24)) (\(result.recalculatedPageSlotIndices.count) page slots updated)",
+                    "CDHash \(result.updatedCDHashHex.prefix(24)) (已重算 \(result.recalculatedPageSlotIndices.count) 个代码页槽位)"
+                )
             )
         } catch {
             toastController.enqueue(
                 kind: .error,
-                title: "Mach-O Re-Sign Error",
+                title: MGL("Mach-O Re-Sign Error", "Mach-O 重签名失败"),
                 detail: error.localizedDescription
             )
         }
@@ -909,14 +1055,20 @@ public final class MachStudioViewModel: ObservableObject {
             if emitToast {
                 toastController.enqueue(
                     kind: suite.findings.contains(where: { $0.severity >= .high }) ? .warning : .success,
-                    title: "Security Audit Completed (\(String(format: "%.1f ms", suite.totalDurationMilliseconds)))",
-                    detail: "\(suite.findings.count) findings across \(suite.results.count) JavaScriptCore plugins"
+                    title: MGL(
+                        "Security Audit Completed (\(String(format: "%.1f ms", suite.totalDurationMilliseconds)))",
+                        "安全审计完成 (\(String(format: "%.1f ms", suite.totalDurationMilliseconds)))"
+                    ),
+                    detail: MGL(
+                        "\(suite.findings.count) findings across \(suite.results.count) JavaScriptCore plugins",
+                        "\(suite.results.count) 个 JavaScriptCore 插件共检出 \(suite.findings.count) 项发现"
+                    )
                 )
             }
         } catch {
             toastController.enqueue(
                 kind: .error,
-                title: "Plugin Sandbox Suite Error",
+                title: MGL("Plugin Sandbox Suite Error", "插件沙箱套件执行错误"),
                 detail: error.localizedDescription
             )
         }
@@ -1048,7 +1200,8 @@ public final class MachStudioViewModel: ObservableObject {
             functions: functions,
             renames: customRenames,
             bookmarks: bookmarks,
-            findings: securityFindings
+            findings: securityFindings,
+            language: MachLocalizer.shared.language
         )
     }
 
@@ -1078,11 +1231,11 @@ public final class MachStudioViewModel: ObservableObject {
             recomputeCFGLayoutsAndDecompilation()
             toastController.enqueue(
                 kind: .success,
-                title: "Symbol Renamed in .machproj",
+                title: MGL("Symbol Renamed in .machproj", "已在 .machproj 中重命名符号"),
                 detail: "\(pendingRenameAddress.compactHexString) -> \(pendingRenameInput)"
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Rename Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Rename Failed", "符号重命名失败"), detail: error.localizedDescription)
         }
     }
 
@@ -1107,27 +1260,31 @@ public final class MachStudioViewModel: ObservableObject {
             recomputeCFGLayoutsAndDecompilation()
             toastController.enqueue(
                 kind: .info,
-                title: pendingCommentInput.isEmpty ? "Removed Inline Comment" : "Saved Inline Comment",
+                title: pendingCommentInput.isEmpty
+                    ? MGL("Removed Inline Comment", "已移除内联注释")
+                    : MGL("Saved Inline Comment", "已保存内联注释"),
                 detail: pendingCommentAddress.compactHexString
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Comment Save Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Comment Save Failed", "注释保存失败"), detail: error.localizedDescription)
         }
     }
 
     public func toggleBookmarkAtCursor() {
         let va = cursorBus.currentLocation.virtualAddress
-        let defaultLabel = displayFunctionName(at: va) ?? "Cursor \(va.compactHexString)"
+        let defaultLabel = displayFunctionName(at: va) ?? MGL("Cursor \(va.compactHexString)", "光标 \(va.compactHexString)")
         do {
             let added = try undoRedo.toggleBookmark(at: va, label: defaultLabel, category: "Triage")
             refreshDatabaseAnnotationsAndStats()
             toastController.enqueue(
                 kind: .info,
-                title: added ? "Bookmarked \(va.compactHexString)" : "Removed Bookmark",
+                title: added
+                    ? MGL("Bookmarked \(va.compactHexString)", "已添加书签 \(va.compactHexString)")
+                    : MGL("Removed Bookmark", "已移除书签"),
                 detail: defaultLabel
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Bookmark Error", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Bookmark Error", "书签操作失败"), detail: error.localizedDescription)
         }
     }
 
@@ -1144,11 +1301,14 @@ public final class MachStudioViewModel: ObservableObject {
             recomputeCFGLayoutsAndDecompilation()
             toastController.enqueue(
                 kind: .success,
-                title: "Saved C Struct '\(definition.name)'",
-                detail: "\(definition.totalByteSize) bytes · \(definition.fields.count) fields"
+                title: MGL("Saved C Struct '\(definition.name)'", "已保存 C 结构体 '\(definition.name)'"),
+                detail: MGL(
+                    "\(definition.totalByteSize) bytes · \(definition.fields.count) fields",
+                    "\(definition.totalByteSize) 字节 · \(definition.fields.count) 个字段"
+                )
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Struct Save Error", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Struct Save Error", "结构体保存失败"), detail: error.localizedDescription)
         }
     }
 
@@ -1157,7 +1317,11 @@ public final class MachStudioViewModel: ObservableObject {
         syncOverlayPatchesFromDatabase()
         refreshDatabaseAnnotationsAndStats()
         recomputeCFGLayoutsAndDecompilation()
-        toastController.enqueue(kind: .info, title: "Undid Mutation", detail: undone.title)
+        toastController.enqueue(
+            kind: .info,
+            title: MGL("Undid Mutation", "已撤销变更"),
+            detail: undone.localizedTitle(in: MachLocalizer.shared.language)
+        )
     }
 
     public func performRedo() {
@@ -1165,7 +1329,11 @@ public final class MachStudioViewModel: ObservableObject {
         syncOverlayPatchesFromDatabase()
         refreshDatabaseAnnotationsAndStats()
         recomputeCFGLayoutsAndDecompilation()
-        toastController.enqueue(kind: .info, title: "Redid Mutation", detail: redone.title)
+        toastController.enqueue(
+            kind: .info,
+            title: MGL("Redid Mutation", "已重做变更"),
+            detail: redone.localizedTitle(in: MachLocalizer.shared.language)
+        )
     }
 
     private func syncOverlayPatchesFromDatabase() {
@@ -1181,17 +1349,23 @@ public final class MachStudioViewModel: ObservableObject {
         let indexNum = checkpoints.count + 1
         do {
             let summary = try snapshotManager.createCheckpoint(
-                name: "Checkpoint #\(indexNum) @ \(cursorBus.currentLocation.virtualAddress.compactHexString)",
-                note: "\(customRenames.count) renames, \(overlayBuffer.patches.count) patches, \(bookmarks.count) bookmarks"
+                name: MGL(
+                    "Checkpoint #\(indexNum) @ \(cursorBus.currentLocation.virtualAddress.compactHexString)",
+                    "快照 #\(indexNum) @ \(cursorBus.currentLocation.virtualAddress.compactHexString)"
+                ),
+                note: MGL(
+                    "\(customRenames.count) renames, \(overlayBuffer.patches.count) patches, \(bookmarks.count) bookmarks",
+                    "\(customRenames.count) 个重命名, \(overlayBuffer.patches.count) 个补丁, \(bookmarks.count) 个书签"
+                )
             )
             refreshDatabaseAnnotationsAndStats()
             toastController.enqueue(
                 kind: .success,
-                title: "Saved SQLite WAL Snapshot",
+                title: MGL("Saved SQLite WAL Snapshot", "已保存 SQLite WAL 分析快照"),
                 detail: summary.name
             )
         } catch {
-            toastController.enqueue(kind: .error, title: "Snapshot Failed", detail: error.localizedDescription)
+            toastController.enqueue(kind: .error, title: MGL("Snapshot Failed", "快照保存失败"), detail: error.localizedDescription)
         }
     }
 
@@ -1257,6 +1431,13 @@ public final class MachStudioViewModel: ObservableObject {
             isPreferencesPresented = true
         case .openShortcutsSheet:
             isShortcutsSheetPresented = true
+        case .toggleLanguage:
+            let next = MachLocalizer.shared.toggleLanguage()
+            toastController.enqueue(
+                kind: .info,
+                title: next.select("Switched Interface to English", "已切换界面语言为简体中文"),
+                detail: next.select("Press ⇧⌘L anytime to switch back to 中文", "随时按 ⇧⌘L 可切回 English")
+            )
         }
     }
 

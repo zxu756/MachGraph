@@ -201,11 +201,15 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         let cli = MachCLIRunner()
 
         let helpOut = try await cli.execute(arguments: ["--help"])
-        #expect(helpOut.contains("MachGraph 1.0.0"))
+        #expect(helpOut.contains("MachGraph 1.1.0"))
         #expect(helpOut.contains("decompile"))
+        #expect(helpOut.contains("--lang"))
 
         let verOut = try await cli.execute(arguments: ["version"])
-        #expect(verOut.contains("MachGraph 1.0.0"))
+        #expect(verOut.contains("MachGraph 1.1.0"))
+
+        let verZhOut = try await cli.execute(arguments: ["--lang", "zh", "version"])
+        #expect(verZhOut.contains("MachGraph 1.1.0"))
 
         let infoOut = try await cli.execute(arguments: ["info"])
         #expect(infoOut.contains("Format:"))
@@ -739,6 +743,135 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
 
         for tab in WorkbenchPaneTab.allCases {
             #expect(!tab.sfSymbolName.isEmpty)
+            #expect(!tab.localizedTitle(in: .en).isEmpty)
+            #expect(!tab.localizedTitle(in: .zhHans).isEmpty)
         }
+    }
+
+    // MARK: - 6. v1.1.0 Bilingual (`中文 / EN`) Localization & Triage Report Verification
+
+    @Test("MachLanguage resolution priority chain: CLI --lang > MACHGRAPH_LANG > UserDefaults > Chinese Locale auto-detection")
+    func machLanguageResolutionOrderAndChineseLocaleAutoDetection() {
+        let suiteName = "io.github.zxu756.MachGraph.test.lang.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // 1. Auto-detects Simplified Chinese when preferredLanguages starts with "zh"
+        let autoZh = MachLanguage.resolve(
+            arguments: [],
+            environment: [:],
+            userDefaults: defaults,
+            preferredLanguages: ["zh-Hans-CN", "en-US"]
+        )
+        #expect(autoZh == .zhHans)
+
+        // 2. Falls back to English on non-Chinese system locale
+        let autoEn = MachLanguage.resolve(
+            arguments: [],
+            environment: [:],
+            userDefaults: defaults,
+            preferredLanguages: ["en-US"]
+        )
+        #expect(autoEn == .en)
+
+        // 3. UserDefaults overrides system locale
+        defaults.set("en", forKey: MachLanguage.userDefaultsKey)
+        let fromDefaults = MachLanguage.resolve(
+            arguments: [],
+            environment: [:],
+            userDefaults: defaults,
+            preferredLanguages: ["zh-Hans-CN"]
+        )
+        #expect(fromDefaults == .en)
+
+        // 4. MACHGRAPH_LANG overrides UserDefaults
+        let fromEnv = MachLanguage.resolve(
+            arguments: [],
+            environment: ["MACHGRAPH_LANG": "zh"],
+            userDefaults: defaults,
+            preferredLanguages: ["en-US"]
+        )
+        #expect(fromEnv == .zhHans)
+
+        // 5. CLI --lang / --lang= overrides MACHGRAPH_LANG & UserDefaults
+        let fromCLI = MachLanguage.resolve(
+            arguments: ["--export-screenshots", "/tmp/out", "--lang", "en"],
+            environment: ["MACHGRAPH_LANG": "zh"],
+            userDefaults: defaults,
+            preferredLanguages: ["zh-Hans-CN"]
+        )
+        #expect(fromCLI == .en)
+
+        let fromCLIEquals = MachLanguage.resolve(
+            arguments: ["info", "--lang=zh-CN"],
+            environment: ["MACHGRAPH_LANG": "en"],
+            userDefaults: defaults,
+            preferredLanguages: ["en-US"]
+        )
+        #expect(fromCLIEquals == .zhHans)
+    }
+
+    @Test("MachLocalizer toggles live between zh-Hans and en, persists to UserDefaults, and localizes domain models")
+    @MainActor
+    func machLocalizerLiveTogglePersistenceAndDomainTranslations() {
+        let suiteName = "io.github.zxu756.MachGraph.test.localizer.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let localizer = MachLocalizer(
+            arguments: [],
+            environment: [:],
+            userDefaults: defaults,
+            preferredLanguages: ["en-US"]
+        )
+        #expect(localizer.language == .en)
+        #expect(localizer.language.badge == "EN")
+        #expect(localizer.L("CFG Graph", "控制流图") == "CFG Graph")
+
+        localizer.toggleLanguage()
+        #expect(localizer.language == .zhHans)
+        #expect(localizer.language.badge == "中文")
+        #expect(localizer.L("CFG Graph", "控制流图") == "控制流图")
+        #expect(defaults.string(forKey: MachLanguage.userDefaultsKey) == "zh-Hans")
+
+        localizer.toggleLanguage()
+        #expect(localizer.language == .en)
+        #expect(defaults.string(forKey: MachLanguage.userDefaultsKey) == "en")
+
+        for tab in WorkbenchPaneTab.allCases {
+            #expect(tab.localizedTitle(in: .en) != tab.localizedTitle(in: .zhHans))
+        }
+        #expect(NavigatorSidebarFilter.functions.localizedTitle(in: .zhHans) == "函数")
+        #expect(NavigatorSidebarFilter.symbols.localizedTitle(in: .zhHans) == "符号")
+        #expect(NavigatorSidebarFilter.imports.localizedTitle(in: .zhHans) == "导入")
+        #expect(NavigatorSidebarFilter.bookmarks.localizedTitle(in: .zhHans) == "书签")
+        for plugin in BuiltInMachPluginCatalog.allPlugins {
+            #expect(!plugin.localizedName(in: .zhHans).isEmpty)
+            #expect(!plugin.localizedSummary(in: .zhHans).isEmpty)
+        }
+    }
+
+    @Test("ColdTungstenHTMLReportExporter emits interactive 中文 | EN toggle, localStorage & navigator.language auto-zh, and zero em-dashes")
+    func coldTungstenHTMLReportBilingualToggleAndZeroEmDashMarkers() throws {
+        let data = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "BilingualDemo.arm64e")
+
+        let html = try ColdTungstenHTMLReportExporter().exportHTMLReport(
+            analysisIndex: index,
+            binaryData: data
+        )
+
+        #expect(html.contains("MachGraph v1.1.0"))
+        #expect(html.contains(#"class="lang-toggle""#))
+        #expect(html.contains(#"data-set-lang="zh""#))
+        #expect(html.contains(#"data-set-lang="en""#))
+        #expect(html.contains("data-en="))
+        #expect(html.contains("data-zh="))
+        #expect(html.contains("machgraph-report-lang"))
+        #expect(html.contains("localStorage"))
+        #expect(html.contains("navigator.language"))
+        #expect(html.contains("startsWith('zh')"))
+        #expect(html.contains("冷钨钢二进制逆向分诊报告"))
+        #expect(!html.contains("\u{2014}"))
     }
 }

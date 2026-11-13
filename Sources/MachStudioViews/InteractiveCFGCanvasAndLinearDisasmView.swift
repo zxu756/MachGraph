@@ -15,6 +15,7 @@ public struct InteractiveCFGCanvasStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     public let compactForSplit: Bool
 
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @State private var userZoomMultiplier: CGFloat = 1.0
     @State private var userPanOffset: CGSize = .zero
     @State private var activeDragTranslation: CGSize = .zero
@@ -168,7 +169,7 @@ public struct InteractiveCFGCanvasStudioView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                Text(compactForSplit ? "CFG" : "Sugiyama Layered CFG")
+                Text(compactForSplit ? localizer.L("CFG", "控制流图") : localizer.L("Sugiyama Layered CFG", "Sugiyama 分层控制流图"))
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize()
@@ -196,10 +197,10 @@ public struct InteractiveCFGCanvasStudioView: View {
                     .frame(width: 1, height: 14)
 
                 // Edge Semantic Legend Pills
-                edgeLegendChip(label: "True", color: ColdTungstenPalette.signalEmerald, dashed: false)
-                edgeLegendChip(label: "False", color: ColdTungstenPalette.anodizedCrimson, dashed: false)
-                edgeLegendChip(label: "Switch", color: ColdTungstenPalette.tungstenAmber, dashed: false)
-                edgeLegendChip(label: "Back-Edge", color: ColdTungstenPalette.warmCopper, dashed: true)
+                edgeLegendChip(label: localizer.L("True", "真分支"), color: ColdTungstenPalette.signalEmerald, dashed: false)
+                edgeLegendChip(label: localizer.L("False", "假分支"), color: ColdTungstenPalette.anodizedCrimson, dashed: false)
+                edgeLegendChip(label: localizer.L("Switch", "跳转表"), color: ColdTungstenPalette.tungstenAmber, dashed: false)
+                edgeLegendChip(label: localizer.L("Back-Edge", "回边"), color: ColdTungstenPalette.warmCopper, dashed: true)
 
                 Rectangle()
                     .fill(ColdTungstenPalette.tungstenSeam)
@@ -226,7 +227,7 @@ public struct InteractiveCFGCanvasStudioView: View {
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(compact: true))
 
-                    Button("Fit") {
+                    Button(localizer.L("Fit", "适配")) {
                         userZoomMultiplier = 1.0
                         userPanOffset = .zero
                     }
@@ -237,7 +238,7 @@ public struct InteractiveCFGCanvasStudioView: View {
                     Button {
                         viewModel.showRightContextualInspector.toggle()
                     } label: {
-                        Label("Inspector", systemImage: "sidebar.right")
+                        Label(localizer.L("Inspector", "检查器"), systemImage: "sidebar.right")
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(
                         role: viewModel.showRightContextualInspector ? .accentSapphire : .standard,
@@ -263,28 +264,28 @@ public struct InteractiveCFGCanvasStudioView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 9) {
                 if let fn = activeFunction, let layout = activeLayout {
-                    cfgMetricPill(title: "FN", value: viewModel.displayFunctionName(fn), accent: ColdTungstenPalette.steelWhite)
-                    cfgMetricPill(title: "ENTRY", value: fn.address.compactHexString, accent: ColdTungstenPalette.tungstenSapphire)
-                    cfgMetricPill(title: "BLOCKS", value: "\(fn.blocks.count)", accent: ColdTungstenPalette.steelWhite)
-                    cfgMetricPill(title: "EDGES", value: "\(fn.edges.count)", accent: ColdTungstenPalette.coolPewter)
-                    cfgMetricPill(title: "LAYERS", value: "\(layout.layerCount)", accent: ColdTungstenPalette.coolPewter)
+                    cfgMetricPill(title: localizer.L("FN", "函数"), value: viewModel.displayFunctionName(fn), accent: ColdTungstenPalette.steelWhite)
+                    cfgMetricPill(title: localizer.L("ENTRY", "入口"), value: fn.address.compactHexString, accent: ColdTungstenPalette.tungstenSapphire)
+                    cfgMetricPill(title: localizer.L("BLOCKS", "基本块"), value: "\(fn.blocks.count)", accent: ColdTungstenPalette.steelWhite)
+                    cfgMetricPill(title: localizer.L("EDGES", "边"), value: "\(fn.edges.count)", accent: ColdTungstenPalette.coolPewter)
+                    cfgMetricPill(title: localizer.L("LAYERS", "层级"), value: "\(layout.layerCount)", accent: ColdTungstenPalette.coolPewter)
                     cfgMetricPill(
-                        title: "COMPLEXITY",
+                        title: localizer.L("COMPLEXITY", "复杂度"),
                         value: "CC \(fn.cyclomaticComplexity)",
                         accent: fn.cyclomaticComplexity >= 5 ? ColdTungstenPalette.tungstenAmber : ColdTungstenPalette.signalEmerald
                     )
                     let maxDomDepth = fn.dominatorTree.map(\.depth).max() ?? 0
-                    cfgMetricPill(title: "DOM", value: "D\(maxDomDepth)", accent: ColdTungstenPalette.tungstenSapphire)
+                    cfgMetricPill(title: localizer.L("DOM", "支配深"), value: "D\(maxDomDepth)", accent: ColdTungstenPalette.tungstenSapphire)
                     cfgMetricPill(
-                        title: "LOOPS",
+                        title: localizer.L("LOOPS", "循环"),
                         value: "\(fn.naturalLoops.count)",
                         accent: fn.naturalLoops.isEmpty ? ColdTungstenPalette.mutedOffsetInk : ColdTungstenPalette.warmCopper
                     )
                     if fn.usesPAC {
-                        cfgMetricPill(title: "AUTH", value: "ARM64E PAC", accent: ColdTungstenPalette.tungstenAmber)
+                        cfgMetricPill(title: localizer.L("AUTH", "认证"), value: "ARM64E PAC", accent: ColdTungstenPalette.tungstenAmber)
                     }
                     if !fn.jumpTables.isEmpty {
-                        cfgMetricPill(title: "JUMP TABLES", value: "\(fn.jumpTables.count)", accent: ColdTungstenPalette.tungstenAmber)
+                        cfgMetricPill(title: localizer.L("JUMP TABLES", "跳转表"), value: "\(fn.jumpTables.count)", accent: ColdTungstenPalette.tungstenAmber)
                     }
                 }
             }
@@ -433,12 +434,13 @@ public struct InteractiveCFGCanvasStudioView: View {
 
             // Crisp Edge Semantic Badge (`T`, `F`, `case N`, `LOOP`)
             let badgeText: String? = {
-                if edge.isBackEdge { return "LOOP" }
+                if edge.isBackEdge { return localizer.L("LOOP", "循环") }
                 return route.label ?? edge.kind.displayLabel
             }()
             if let badgeText, scale >= 0.55 {
                 let anchor = midpointAlongPolyline(pts)
-                let pillW = CGFloat(max(18, badgeText.count * 6 + 10))
+                let charW = (localizer.language == .zhHans && edge.isBackEdge) ? 10 : 6
+                let pillW = CGFloat(max(20, badgeText.count * charW + 10))
                 let pillH: CGFloat = 15.0
                 let pillRect = CGRect(
                     x: anchor.x - pillW * 0.5,
@@ -532,9 +534,12 @@ public struct InteractiveCFGCanvasStudioView: View {
             Image(systemName: "point.3.connected.trianglepath.dotted")
                 .font(.system(size: 26))
                 .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
-            Text("Select an executable ARM64 function from the Navigator to render its Sugiyama Control Flow Graph.")
-                .font(ColdTungstenTypography.bodyText)
-                .foregroundStyle(ColdTungstenPalette.coolPewter)
+            Text(localizer.L(
+                "Select an executable ARM64 function from the Navigator to render its Sugiyama Control Flow Graph.",
+                "请从左侧导航栏选择可执行 ARM64 函数以渲染 Sugiyama 控制流图。"
+            ))
+            .font(ColdTungstenTypography.bodyText)
+            .foregroundStyle(ColdTungstenPalette.coolPewter)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -555,6 +560,7 @@ private struct CFGBasicBlockNodeCardView: View {
     let loadedImage: LoadedBinaryImage?
     let scale: CGFloat
     let onSelectInstruction: (A64DecodedInstruction) -> Void
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     private var blockHasPAC: Bool {
         block.instructions.contains { $0.group == .pacPointerAuth }
@@ -593,9 +599,9 @@ private struct CFGBasicBlockNodeCardView: View {
                 Spacer(minLength: 2)
 
                 if block.isEntry {
-                    tinyNodeBadge("ENTRY", color: ColdTungstenPalette.signalEmerald, scale: scale)
+                    tinyNodeBadge(localizer.L("ENTRY", "入口"), color: ColdTungstenPalette.signalEmerald, scale: scale)
                 } else if block.isExit {
-                    tinyNodeBadge("EXIT", color: ColdTungstenPalette.anodizedCrimson, scale: scale)
+                    tinyNodeBadge(localizer.L("EXIT", "出口"), color: ColdTungstenPalette.anodizedCrimson, scale: scale)
                 }
 
                 if block.loopDepth > 0 {
@@ -695,6 +701,7 @@ private struct CFGMinimapRadarOverlayView: View {
     let currentOffset: CGSize
     let activeBlockID: Int?
     let onRecenterAtGraphPoint: (CGPoint) -> Void
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     private let radarWidth: CGFloat = 172.0
     private let radarHeight: CGFloat = 118.0
@@ -705,7 +712,7 @@ private struct CFGMinimapRadarOverlayView: View {
                 Image(systemName: "viewfinder")
                     .font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
-                Text("MINIMAP RADAR")
+                Text(localizer.L("MINIMAP RADAR", "缩略雷达"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.0, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize()
@@ -815,6 +822,7 @@ private struct CFGMinimapRadarOverlayView: View {
 @MainActor
 public struct MachCFGContextualInspectorView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     public init(viewModel: MachStudioViewModel) {
         self.viewModel = viewModel
@@ -827,7 +835,7 @@ public struct MachCFGContextualInspectorView: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Dominator & CFG Inspector",
+                title: localizer.L("Dominator & CFG Inspector", "支配树与控制流检查器"),
                 sfSymbol: "sidebar.right",
                 countBadge: viewModel.activeFunction?.blocks.count
             )
@@ -861,7 +869,7 @@ public struct MachCFGContextualInspectorView: View {
 
     private func functionTelemetrySection(_ fn: RecoveredFunction) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            inspectorSectionHeader("ACTIVE FUNCTION", icon: "function")
+            inspectorSectionHeader(localizer.L("ACTIVE FUNCTION", "当前函数"), icon: "function")
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(viewModel.displayFunctionName(fn))
@@ -884,10 +892,10 @@ public struct MachCFGContextualInspectorView: View {
                 }
 
                 HStack(spacing: 8) {
-                    statKeyVal("Frame", "\(fn.stackFrameBytes)B")
-                    statKeyVal("Insns", "\(fn.instructionCount)")
-                    statKeyVal("CC", "\(fn.cyclomaticComplexity)")
-                    statKeyVal("PAC", fn.usesPAC ? "Yes" : "No")
+                    statKeyVal(localizer.L("Frame", "栈帧"), "\(fn.stackFrameBytes)B")
+                    statKeyVal(localizer.L("Insns", "指令"), "\(fn.instructionCount)")
+                    statKeyVal(localizer.L("CC", "圈复杂"), "\(fn.cyclomaticComplexity)")
+                    statKeyVal("PAC", fn.usesPAC ? localizer.L("Yes", "是") : localizer.L("No", "否"))
                 }
             }
             .padding(8)
@@ -902,7 +910,7 @@ public struct MachCFGContextualInspectorView: View {
 
     private func dominatorTreeSection(_ fn: RecoveredFunction) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            inspectorSectionHeader("LENGAUER-TARJAN DOMINATORS", icon: "list.bullet.indent")
+            inspectorSectionHeader(localizer.L("LENGAUER-TARJAN DOMINATORS", "Lengauer-Tarjan 支配树"), icon: "list.bullet.indent")
 
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(fn.dominatorTree.prefix(8)) { domNode in
@@ -933,7 +941,7 @@ public struct MachCFGContextualInspectorView: View {
                                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                                     .fixedSize()
                             } else {
-                                Text("ROOT")
+                                Text(localizer.L("ROOT", "根节点"))
                                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                                     .foregroundStyle(ColdTungstenPalette.signalEmerald)
                                     .fixedSize()
@@ -965,25 +973,29 @@ public struct MachCFGContextualInspectorView: View {
 
     private func loopsAndJumpTablesSection(_ fn: RecoveredFunction) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            inspectorSectionHeader("NATURAL LOOPS & SWITCH TABLES", icon: "arrow.2.squarepath")
+            inspectorSectionHeader(localizer.L("NATURAL LOOPS & SWITCH TABLES", "自然循环与跳转表"), icon: "arrow.2.squarepath")
 
             ForEach(fn.naturalLoops) { loop in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
-                        Text("Loop Header BB#\(loop.headerBlockID)")
+                        Text(localizer.language == .zhHans ? "循环头 BB#\(loop.headerBlockID)" : "Loop Header BB#\(loop.headerBlockID)")
                             .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
                             .foregroundStyle(ColdTungstenPalette.warmCopper)
                             .fixedSize()
                         Spacer()
-                        Text("Depth \(loop.nestingDepth)")
+                        Text(localizer.language == .zhHans ? "深度 \(loop.nestingDepth)" : "Depth \(loop.nestingDepth)")
                             .font(ColdTungstenTypography.microBadgeMono(size: 9.5))
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
                             .fixedSize()
                     }
-                    Text("Body: \(loop.bodyBlockIDs.map { "BB#\($0)" }.joined(separator: ", "))")
-                        .font(ColdTungstenTypography.secondaryCaption)
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "循环体: \(loop.bodyBlockIDs.map { "BB#\($0)" }.joined(separator: ", "))"
+                            : "Body: \(loop.bodyBlockIDs.map { "BB#\($0)" }.joined(separator: ", "))"
+                    )
+                    .font(ColdTungstenTypography.secondaryCaption)
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(7)
                 .background(ColdTungstenPalette.gunmetalSlate)
@@ -992,14 +1004,22 @@ public struct MachCFGContextualInspectorView: View {
 
             ForEach(fn.jumpTables) { jt in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Switch @ \(jt.dispatchInstructionAddress.compactHexString)")
-                        .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
-                        .foregroundStyle(ColdTungstenPalette.tungstenAmber)
-                        .fixedSize()
-                    Text("Table \(jt.tableBaseAddress.compactHexString) · \(jt.targetAddresses.count) cases")
-                        .font(ColdTungstenTypography.secondaryCaption)
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(
+                        localizer.language == .zhHans
+                            ? "跳转分支 @ \(jt.dispatchInstructionAddress.compactHexString)"
+                            : "Switch @ \(jt.dispatchInstructionAddress.compactHexString)"
+                    )
+                    .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
+                    .foregroundStyle(ColdTungstenPalette.tungstenAmber)
+                    .fixedSize()
+                    Text(
+                        localizer.language == .zhHans
+                            ? "表基址 \(jt.tableBaseAddress.compactHexString) · \(jt.targetAddresses.count) 分支"
+                            : "Table \(jt.tableBaseAddress.compactHexString) · \(jt.targetAddresses.count) cases"
+                    )
+                    .font(ColdTungstenTypography.secondaryCaption)
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(7)
                 .background(ColdTungstenPalette.gunmetalSlate)
@@ -1013,15 +1033,15 @@ public struct MachCFGContextualInspectorView: View {
         let callees = viewModel.analysisIndex?.callees(of: fn.address) ?? []
 
         return VStack(alignment: .leading, spacing: 6) {
-            inspectorSectionHeader("CALL GRAPH NEIGHBORS", icon: "arrow.left.arrow.right")
+            inspectorSectionHeader(localizer.L("CALL GRAPH NEIGHBORS", "调用图邻接"), icon: "arrow.left.arrow.right")
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("Callers (\(callers.count))")
+                Text(localizer.language == .zhHans ? "调用方 (\(callers.count))" : "Callers (\(callers.count))")
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
                 if callers.isEmpty {
-                    Text("Entry / Root or external caller")
+                    Text(localizer.L("Entry / Root or external caller", "入口 / 根函数或外部调用"))
                         .font(ColdTungstenTypography.secondaryCaption)
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                 } else {
@@ -1046,12 +1066,12 @@ public struct MachCFGContextualInspectorView: View {
 
                 Divider().overlay(ColdTungstenPalette.tungstenSeam)
 
-                Text("Callees (\(callees.count))")
+                Text(localizer.language == .zhHans ? "被调方 (\(callees.count))" : "Callees (\(callees.count))")
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
                 if callees.isEmpty {
-                    Text("Leaf function (zero outgoing calls)")
+                    Text(localizer.L("Leaf function (zero outgoing calls)", "叶子函数 (无外呼调用)"))
                         .font(ColdTungstenTypography.secondaryCaption)
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                 } else {
@@ -1082,7 +1102,7 @@ public struct MachCFGContextualInspectorView: View {
 
     private func instructionSemanticsSection(_ insn: A64DecodedInstruction) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            inspectorSectionHeader("CURSOR INSTRUCTION", icon: "cpu")
+            inspectorSectionHeader(localizer.L("CURSOR INSTRUCTION", "光标指令"), icon: "cpu")
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
@@ -1102,7 +1122,7 @@ public struct MachCFGContextualInspectorView: View {
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(insn.group.rawValue)
+                Text(insn.group.localizedTitle(in: localizer.language))
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1110,7 +1130,11 @@ public struct MachCFGContextualInspectorView: View {
                 let reads = insn.readsRegisters.map(\.abiDisplayName).joined(separator: ", ")
                 let writes = insn.writesRegisters.map(\.abiDisplayName).joined(separator: ", ")
                 if !reads.isEmpty || !writes.isEmpty {
-                    Text("R: [\(reads.isEmpty ? "-" : reads)] · W: [\(writes.isEmpty ? "-" : writes)]")
+                    Text(
+                        localizer.language == .zhHans
+                            ? "读: [\(reads.isEmpty ? "-" : reads)] · 写: [\(writes.isEmpty ? "-" : writes)]"
+                            : "R: [\(reads.isEmpty ? "-" : reads)] · W: [\(writes.isEmpty ? "-" : writes)]"
+                    )
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1154,6 +1178,7 @@ public struct LinearDisassemblyStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     public let compactForSplit: Bool
 
+    @ObservedObject private var localizer: MachLocalizer = .shared
     @State private var scopeToActiveFunctionOnly: Bool = false
 
     public init(viewModel: MachStudioViewModel, compactForSplit: Bool = false) {
@@ -1192,15 +1217,15 @@ public struct LinearDisassemblyStudioView: View {
 
             // Column Legend Rail
             HStack(spacing: 8) {
-                Text("ADDRESS")
+                Text(localizer.L("ADDRESS", "虚拟地址"))
                     .frame(width: 88, alignment: .leading)
                 if viewModel.preferencesStore.preferences.showRawInstructionBytes && !compactForSplit {
-                    Text("LE BYTES")
+                    Text(localizer.L("LE BYTES", "小端字节"))
                         .frame(width: 84, alignment: .leading)
                 }
-                Text("ARM64 MNEMONIC & OPERANDS")
+                Text(localizer.L("ARM64 MNEMONIC & OPERANDS", "ARM64 助记符与操作数"))
                 Spacer()
-                Text(compactForSplit ? "SYNC" : "ANNOTATIONS / XREFS")
+                Text(compactForSplit ? localizer.L("SYNC", "同步") : localizer.L("ANNOTATIONS / XREFS", "注释 / 交叉引用"))
             }
             .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
             .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
@@ -1249,12 +1274,12 @@ public struct LinearDisassemblyStudioView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                Text(compactForSplit ? "ARM64 Disassembly" : "Linear ARM64 Disassembly")
+                Text(compactForSplit ? localizer.L("ARM64 Disassembly", "ARM64 反汇编") : localizer.L("Linear ARM64 Disassembly", "线性 ARM64 反汇编"))
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize()
 
-                Button(scopeToActiveFunctionOnly ? "Active Fn" : "All Functions") {
+                Button(scopeToActiveFunctionOnly ? localizer.L("Active Fn", "当前函数") : localizer.L("All Functions", "全部函数")) {
                     scopeToActiveFunctionOnly.toggle()
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(
@@ -1267,7 +1292,7 @@ public struct LinearDisassemblyStudioView: View {
                     viewModel.presentRenameModalForCursor()
                 } label: {
                     HStack(spacing: 4) {
-                        Text("Rename")
+                        Text(localizer.L("Rename", "重命名"))
                         TungstenKeycapBadge("N")
                     }
                 }
@@ -1277,7 +1302,7 @@ public struct LinearDisassemblyStudioView: View {
                     viewModel.presentCommentModalForCursor()
                 } label: {
                     HStack(spacing: 4) {
-                        Text("Comment")
+                        Text(localizer.L("Comment", "注释"))
                         TungstenKeycapBadge(";")
                     }
                 }
@@ -1288,7 +1313,7 @@ public struct LinearDisassemblyStudioView: View {
                         viewModel.presentXrefsPopoverAtCursor()
                     } label: {
                         HStack(spacing: 4) {
-                            Text("Xrefs")
+                            Text(localizer.L("Xrefs", "引用"))
                             TungstenKeycapBadge("X")
                         }
                     }
@@ -1298,7 +1323,7 @@ public struct LinearDisassemblyStudioView: View {
                         viewModel.toggleBookmarkAtCursor()
                     } label: {
                         HStack(spacing: 4) {
-                            Text("Bookmark")
+                            Text(localizer.L("Bookmark", "书签"))
                             TungstenKeycapBadge("B")
                         }
                     }
@@ -1320,7 +1345,7 @@ public struct LinearDisassemblyStudioView: View {
         let incomingCount = viewModel.analysisIndex?.xrefsTo(address: fn.address).count ?? 0
         return VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
-                Text("; FUNCTION")
+                Text(localizer.L("; FUNCTION", "; 函数"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.signalEmerald)
                     .fixedSize()
@@ -1348,10 +1373,14 @@ public struct LinearDisassemblyStudioView: View {
 
                 Spacer(minLength: 4)
 
-                Text("\(fn.blocks.count) BBs · \(incomingCount) xrefs")
-                    .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
-                    .foregroundStyle(ColdTungstenPalette.coolPewter)
-                    .fixedSize()
+                Text(
+                    localizer.language == .zhHans
+                        ? "\(fn.blocks.count) 块 · \(incomingCount) 引用"
+                        : "\(fn.blocks.count) BBs · \(incomingCount) xrefs"
+                )
+                .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
+                .foregroundStyle(ColdTungstenPalette.coolPewter)
+                .fixedSize()
             }
         }
         .padding(.horizontal, 10)
@@ -1374,14 +1403,14 @@ public struct LinearDisassemblyStudioView: View {
 
             if !block.predecessorIDs.isEmpty {
                 let preds = block.predecessorIDs.map { "BB#\($0)" }.joined(separator: ", ")
-                Text("; preds: \(preds)")
+                Text(localizer.language == .zhHans ? "; 前驱: \(preds)" : "; preds: \(preds)")
                     .font(ColdTungstenTypography.offsetGutterMono(size: 10.5))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                     .fixedSize()
             }
 
             if block.loopDepth > 0 {
-                Text("LOOP DEPTH \(block.loopDepth)")
+                Text(localizer.language == .zhHans ? "循环深度 \(block.loopDepth)" : "LOOP DEPTH \(block.loopDepth)")
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.0, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.warmCopper)
                     .fixedSize()
@@ -1448,7 +1477,7 @@ public struct LinearDisassemblyStudioView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                     if patchedBytes != nil {
-                        Text("CoW PATCHED")
+                        Text(localizer.L("CoW PATCHED", "CoW 已补丁"))
                             .font(ColdTungstenTypography.microBadgeMono(size: 9.0, weight: .bold))
                             .foregroundStyle(ColdTungstenPalette.warmCopper)
                             .padding(.horizontal, 4)

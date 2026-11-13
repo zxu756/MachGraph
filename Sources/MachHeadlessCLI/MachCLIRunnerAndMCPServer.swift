@@ -14,17 +14,23 @@ public struct MachCLIRunner: Sendable {
     public init() {}
 
     public func execute(arguments: [String]) async throws -> String {
-        guard let subcommand = arguments.first else {
+        if let cliLang = MachLanguage.extractCLIArgumentLanguage(from: arguments) {
+            await MainActor.run {
+                MachLocalizer.shared.setLanguage(cliLang, persist: false)
+            }
+        }
+        let cleanedArgs = Self.stripLanguageFlags(arguments)
+        guard let subcommand = cleanedArgs.first else {
             return Self.helpBanner
         }
-        let rest = Array(arguments.dropFirst())
+        let rest = Array(cleanedArgs.dropFirst())
 
         switch subcommand {
         case "help", "--help", "-h":
             return Self.helpBanner
 
         case "version", "--version":
-            return "MachGraph 1.0.0 (macOS arm64 · Zero-Wrapper Mach-O/ELF/PE/WASM Loader + ARM64 CFG + SSA Pseudo-C Decompiler)"
+            return "MachGraph 1.1.0 (macOS arm64 · Zero-Wrapper Mach-O/ELF/PE/WASM Loader + ARM64 CFG + SSA Pseudo-C Decompiler · 中文/EN)"
 
         case "info":
             let loaded = try loadAndAnalyze(args: rest)
@@ -311,8 +317,29 @@ public struct MachCLIRunner: Sendable {
         return args[idx + 1]
     }
 
+    public static func stripLanguageFlags(_ args: [String]) -> [String] {
+        var result: [String] = []
+        var idx = 0
+        while idx < args.count {
+            let tok = args[idx]
+            if tok == "--lang" || tok == "--language" {
+                idx += 2
+                continue
+            }
+            if tok.hasPrefix("--lang=") || tok.hasPrefix("--language=") {
+                idx += 1
+                continue
+            }
+            result.append(tok)
+            idx += 1
+        }
+        return result
+    }
+
     public static let helpBanner = """
-    MachGraph 1.0.0 - Native macOS Binary Reverse-Engineering, ARM64 CFG & SSA Decompiler IDE
+    MachGraph 1.1.0 - Native macOS Binary Reverse-Engineering, ARM64 CFG & SSA Decompiler IDE (中文 / EN)
+    Global Options:
+      --lang <zh|en>                                      Set workbench or screenshot language (env: MACHGRAPH_LANG=zh|en)
     Subcommands:
       info [--binary <path>]                              Inspect container format, arch, segments, Xrefs & CDHash
       segments [--binary <path>]                          List mapped VM segments & RWX protections
@@ -327,9 +354,9 @@ public struct MachCLIRunner: Sendable {
       patch-asm --address <0x...> --asm "..." [--output]  Assemble inline ARM64 patch & ad-hoc re-sign
       resign [--binary <path>] [--output <out>]           Recalculate Mach-O SHA-256 CodeDirectory page hashes
       audit-plugins [--binary <path>]                     Execute JavaScriptCore binary security audit plugins
-      export-html <out.html> [--binary <path>]            Export Hallmark Cold-Tungsten HTML triage dossier
+      export-html <out.html> [--binary <path>]            Export Hallmark Cold-Tungsten bilingual HTML triage dossier
       mcp [--binary <path>]                               Start JSON-RPC 2.0 reverse-engineering MCP server on stdio
-      --export-screenshots <output-dir>                   Render 2x Retina Cold-Tungsten workbench screenshots
+      --export-screenshots <output-dir> [--lang zh|en]    Render 2x Retina Cold-Tungsten workbench screenshots
     """
 }
 
@@ -427,7 +454,7 @@ public struct MachMCPServer: Sendable {
                 "result": [
                     "protocolVersion": "2024-11-05",
                     "capabilities": ["tools": ["listChanged": false]],
-                    "serverInfo": ["name": "machgraph-mcp", "version": "1.0.0"]
+                    "serverInfo": ["name": "machgraph-mcp", "version": "1.1.0"]
                 ]
             ])
 

@@ -13,6 +13,7 @@ import SwiftUI
 public struct StringsAndRuntimeMetadataStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     @ObservedObject private var cursorBus: SynchronizedAddressCursorBus
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     @State private var selectedObjCClassID: String?
 
@@ -46,13 +47,13 @@ public struct StringsAndRuntimeMetadataStudioView: View {
     public var body: some View {
         VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Runtime Metadata, Cross-Referenced Strings & PAC Fixups",
+                title: localizer.L("Runtime Metadata, Cross-Referenced Strings & PAC Fixups", "运行时元数据、交叉引用字符串与 PAC 修复"),
                 sfSymbol: "character.book.closed"
             ) {
                 HStack(spacing: 6) {
                     ForEach(RuntimeMetadataSubTab.allCases) { tab in
                         let active = viewModel.runtimeSubTab == tab
-                        Button(tab.rawValue) {
+                        Button(tab.localizedTitle(in: localizer.language)) {
                             viewModel.runtimeSubTab = tab
                         }
                         .buttonStyle(TungstenToolbarButtonStyle(
@@ -87,27 +88,33 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                TextField("Filter extracted UTF-8 / UTF-16 / ObjC selector literals...", text: $viewModel.stringsFilterQuery)
-                    .textFieldStyle(.plain)
-                    .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
-                    .foregroundStyle(ColdTungstenPalette.steelWhite)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(ColdTungstenPalette.chassisBackground)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
-                            .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
-                    )
+                TextField(
+                    localizer.L(
+                        "Filter extracted UTF-8 / UTF-16 / ObjC selector literals...",
+                        "筛选提取的 UTF-8 / UTF-16 / ObjC 选择器字符串..."
+                    ),
+                    text: $viewModel.stringsFilterQuery
+                )
+                .textFieldStyle(.plain)
+                .font(ColdTungstenTypography.disassemblyMono(size: 11.5))
+                .foregroundStyle(ColdTungstenPalette.steelWhite)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(ColdTungstenPalette.chassisBackground)
+                .overlay(
+                    RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
+                        .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
+                )
 
-                encodingFilterPill(title: "All", encoding: nil)
+                encodingFilterPill(title: localizer.L("All", "全部"), encoding: nil)
                 encodingFilterPill(title: "ASCII", encoding: .ascii)
                 encodingFilterPill(title: "UTF-8", encoding: .utf8)
                 encodingFilterPill(title: "UTF-16LE", encoding: .utf16LE)
-                encodingFilterPill(title: "Selector", encoding: .objcSelector)
+                encodingFilterPill(title: localizer.L("Selector", "选择器"), encoding: .objcSelector)
 
                 Spacer(minLength: 6)
 
-                Text("\(rows.count) literal(s)")
+                Text(localizer.language == .zhHans ? "\(rows.count) 条字符串" : "\(rows.count) literal(s)")
                     .font(ColdTungstenTypography.microBadgeMono(size: 10.5))
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize(horizontal: true, vertical: false)
@@ -121,11 +128,11 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                 .frame(height: ColdTungstenMetrics.borderHairline)
 
             HStack(spacing: 10) {
-                Text("VIRTUAL ADDR").frame(width: 96, alignment: .leading)
-                Text("SECTION").frame(width: 132, alignment: .leading)
-                Text("ENCODING").frame(width: 78, alignment: .leading)
-                Text("XREFS").frame(width: 58, alignment: .leading)
-                Text("LITERAL VALUE")
+                Text(localizer.L("VIRTUAL ADDR", "虚拟地址")).frame(width: 96, alignment: .leading)
+                Text(localizer.L("SECTION", "节区")).frame(width: 132, alignment: .leading)
+                Text(localizer.L("ENCODING", "编码")).frame(width: 78, alignment: .leading)
+                Text(localizer.L("XREFS", "交叉引用")).frame(width: 58, alignment: .leading)
+                Text(localizer.L("LITERAL VALUE", "字面量内容"))
                 Spacer()
             }
             .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
@@ -162,7 +169,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                                 .frame(width: 78, alignment: .leading)
                                 .fixedSize(horizontal: true, vertical: false)
 
-                            Text("\(xrefs.count) ref")
+                            Text(localizer.language == .zhHans ? "\(xrefs.count) 引用" : "\(xrefs.count) ref")
                                 .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
                                 .foregroundStyle(xrefs.isEmpty ? ColdTungstenPalette.mutedOffsetInk : ColdTungstenPalette.signalEmerald)
                                 .frame(width: 58, alignment: .leading)
@@ -175,10 +182,14 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                                     .fixedSize(horizontal: false, vertical: true)
 
                                 if let firstXref = xrefs.first {
-                                    Text("Referenced from \(viewModel.displaySymbolOrFunction(at: firstXref.fromAddress)) (\(firstXref.instructionPreview))")
-                                        .font(ColdTungstenTypography.offsetGutterMono(size: 10.0))
-                                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(
+                                        localizer.language == .zhHans
+                                            ? "引用自 \(viewModel.displaySymbolOrFunction(at: firstXref.fromAddress)) (\(firstXref.instructionPreview))"
+                                            : "Referenced from \(viewModel.displaySymbolOrFunction(at: firstXref.fromAddress)) (\(firstXref.instructionPreview))"
+                                    )
+                                    .font(ColdTungstenTypography.offsetGutterMono(size: 10.0))
+                                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                                    .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
 
@@ -230,14 +241,14 @@ public struct StringsAndRuntimeMetadataStudioView: View {
             // Left: Objective-C 2.0 Classes, Methods & Ivars
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
-                    Label("Objective-C 2.0 Metadata (__objc_classlist)", systemImage: "cube.box.fill")
+                    Label(localizer.L("Objective-C 2.0 Metadata (__objc_classlist)", "Objective-C 2.0 元数据 (__objc_classlist)"), systemImage: "cube.box.fill")
                         .font(ColdTungstenTypography.panelHeaderTitle)
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
                         .fixedSize(horizontal: true, vertical: false)
 
                     Spacer(minLength: 4)
 
-                    Text("\(objcClasses.count) class(es)")
+                    Text(localizer.language == .zhHans ? "\(objcClasses.count) 个类" : "\(objcClasses.count) class(es)")
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                         .fixedSize(horizontal: true, vertical: false)
@@ -251,7 +262,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                     .frame(height: ColdTungstenMetrics.borderHairline)
 
                 if objcClasses.isEmpty {
-                    Text("No Objective-C metadata sections present in active binary container.")
+                    Text(localizer.L("No Objective-C metadata sections present in active binary container.", "当前二进制容器未包含 Objective-C 元数据节区。"))
                         .font(ColdTungstenTypography.controlLabel)
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                         .padding(18)
@@ -276,14 +287,14 @@ public struct StringsAndRuntimeMetadataStudioView: View {
             // Right: Swift 5 Nominal Type Descriptors & Imported Libraries
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
-                    Label("Swift 5 Nominal Types (__swift5_types) & Dyld Imports", systemImage: "swift")
+                    Label(localizer.L("Swift 5 Nominal Types (__swift5_types) & Dyld Imports", "Swift 5 名义类型 (__swift5_types) 与动态导入"), systemImage: "swift")
                         .font(ColdTungstenTypography.panelHeaderTitle)
                         .foregroundStyle(ColdTungstenPalette.steelWhite)
                         .fixedSize(horizontal: true, vertical: false)
 
                     Spacer(minLength: 4)
 
-                    Text("\(swiftTypes.count) type(s)")
+                    Text(localizer.language == .zhHans ? "\(swiftTypes.count) 个类型" : "\(swiftTypes.count) type(s)")
                         .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
                         .foregroundStyle(ColdTungstenPalette.coolPewter)
                         .fixedSize(horizontal: true, vertical: false)
@@ -304,7 +315,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
 
                         if let libs = viewModel.loadedImage?.importedLibraries, !libs.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("LINKED DYNAMIC LIBRARIES")
+                                Text(localizer.L("LINKED DYNAMIC LIBRARIES", "链接动态库"))
                                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
@@ -364,7 +375,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
             }
 
             if !cls.methods.isEmpty {
-                Text("METHODS (\(cls.methods.count))")
+                Text(localizer.language == .zhHans ? "方法 (\(cls.methods.count))" : "METHODS (\(cls.methods.count))")
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
@@ -404,7 +415,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
             }
 
             if !cls.ivars.isEmpty {
-                Text("INSTANCE VARIABLES (\(cls.ivars.count))")
+                Text(localizer.language == .zhHans ? "实例变量 (\(cls.ivars.count))" : "INSTANCE VARIABLES (\(cls.ivars.count))")
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
@@ -500,11 +511,11 @@ public struct StringsAndRuntimeMetadataStudioView: View {
         let fixups = viewModel.loadedImage?.chainedFixups ?? []
         return VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text("POINTER VA").frame(width: 104, alignment: .leading)
-                Text("FILE OFF").frame(width: 82, alignment: .leading)
-                Text("FIXUP KIND").frame(width: 140, alignment: .leading)
-                Text("PAC KEY / DIV").frame(width: 120, alignment: .leading)
-                Text("TARGET SYMBOL / ADDRESS")
+                Text(localizer.L("POINTER VA", "指针虚拟地址")).frame(width: 104, alignment: .leading)
+                Text(localizer.L("FILE OFF", "文件偏移")).frame(width: 82, alignment: .leading)
+                Text(localizer.L("FIXUP KIND", "修复类型")).frame(width: 140, alignment: .leading)
+                Text(localizer.L("PAC KEY / DIV", "PAC 密钥 / 多样因子")).frame(width: 120, alignment: .leading)
+                Text(localizer.L("TARGET SYMBOL / ADDRESS", "目标符号 / 地址"))
                 Spacer()
             }
             .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
@@ -518,7 +529,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                 .frame(height: ColdTungstenMetrics.borderHairline)
 
             if fixups.isEmpty {
-                Text("No LC_DYLD_CHAINED_FIXUPS pointer chains present in active container.")
+                Text(localizer.L("No LC_DYLD_CHAINED_FIXUPS pointer chains present in active container.", "当前容器未包含 LC_DYLD_CHAINED_FIXUPS 链式指针表。"))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .padding(24)
@@ -553,7 +564,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
                                 Text(
                                     item.pacKey != nil
                                         ? "\(item.pacKey ?? "IA") · div 0x\(String(item.pacDiversity ?? 0, radix: 16, uppercase: true))"
-                                        : "unauthenticated"
+                                        : localizer.L("unauthenticated", "未签名指针")
                                 )
                                 .font(ColdTungstenTypography.microBadgeMono(size: 10.0))
                                 .foregroundStyle(item.pacKey != nil ? ColdTungstenPalette.warmCopper : ColdTungstenPalette.mutedOffsetInk)
@@ -596,6 +607,7 @@ public struct StringsAndRuntimeMetadataStudioView: View {
 public struct EntropyAndCodeSignStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     @ObservedObject private var cursorBus: SynchronizedAddressCursorBus
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     public init(viewModel: MachStudioViewModel) {
         self.viewModel = viewModel
@@ -605,14 +617,22 @@ public struct EntropyAndCodeSignStudioView: View {
     public var body: some View {
         VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Sliding-Window Shannon Entropy, Chi-Square Randomness & LC_CODE_SIGNATURE",
+                title: localizer.L(
+                    "Sliding-Window Shannon Entropy, Chi-Square Randomness & LC_CODE_SIGNATURE",
+                    "滑动窗口香农熵、卡方随机性与代码签名"
+                ),
                 sfSymbol: "waveform.path.ecg.rectangle"
             ) {
                 HStack(spacing: 6) {
                     Button {
                         cursorBus.activePane = .pluginFindings
                     } label: {
-                        Label("Plugin Audit (\(viewModel.securityFindings.count))", systemImage: "puzzlepiece.extension")
+                        Label(
+                            localizer.language == .zhHans
+                                ? "插件审计 (\(viewModel.securityFindings.count))"
+                                : "Plugin Audit (\(viewModel.securityFindings.count))",
+                            systemImage: "puzzlepiece.extension"
+                        )
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, compact: true))
                     .fixedSize(horizontal: true, vertical: false)
@@ -620,7 +640,7 @@ public struct EntropyAndCodeSignStudioView: View {
                     Button {
                         viewModel.reSignActiveMachOBinary()
                     } label: {
-                        Label("Verify & Re-Sign", systemImage: "checkmark.seal.fill")
+                        Label(localizer.L("Verify & Re-Sign", "校验并重签名"), systemImage: "checkmark.seal.fill")
                     }
                     .buttonStyle(TungstenToolbarButtonStyle(role: .positiveEmerald, isActive: true, compact: true))
                     .fixedSize(horizontal: true, vertical: false)
@@ -652,39 +672,49 @@ public struct EntropyAndCodeSignStudioView: View {
 
         return HStack(spacing: 8) {
             kpiTelemetryTile(
-                label: "SHANNON ENTROPY",
+                label: localizer.L("SHANNON ENTROPY", "香农熵"),
                 primary: String(format: "%.3f b/B", metrics?.shannonEntropyBits ?? 0.0),
-                secondary: "Min-H \(String(format: "%.2f", metrics?.minEntropyBits ?? 0.0)) b/B · \(viewModel.entropyReport?.samples.count ?? 0) windows",
+                secondary: localizer.language == .zhHans
+                    ? "最小熵 \(String(format: "%.2f", metrics?.minEntropyBits ?? 0.0)) b/B · \(viewModel.entropyReport?.samples.count ?? 0) 窗口"
+                    : "Min-H \(String(format: "%.2f", metrics?.minEntropyBits ?? 0.0)) b/B · \(viewModel.entropyReport?.samples.count ?? 0) windows",
                 accent: ColdTungstenPalette.tungstenSapphire
             )
 
             kpiTelemetryTile(
-                label: "PEARSON CHI-SQ",
+                label: localizer.L("PEARSON CHI-SQ", "皮尔逊卡方"),
                 primary: String(format: "χ² %.1f", metrics?.byteChiSquare ?? 0.0),
                 secondary: String(format: "p = %.4f · r = %+.3f", metrics?.byteChiSquarePValue ?? 0.0, metrics?.serialCorrelationCoefficient ?? 0.0),
                 accent: ColdTungstenPalette.warmCopper
             )
 
             kpiTelemetryTile(
-                label: "BIGRAM H(Xt|Xt-1)",
+                label: localizer.L("BIGRAM H(Xt|Xt-1)", "二元条件熵 H(Xt|Xt-1)"),
                 primary: String(format: "%.3f b/B", metrics?.bigramConditionalEntropyBits ?? 0.0),
-                secondary: String(format: "ASCII %.0f%% · Zero %.0f%%", (metrics?.printableByteRatio ?? 0) * 100, (metrics?.zeroByteRatio ?? 0) * 100),
+                secondary: localizer.language == .zhHans
+                    ? String(format: "可见字符 %.0f%% · 零字节 %.0f%%", (metrics?.printableByteRatio ?? 0) * 100, (metrics?.zeroByteRatio ?? 0) * 100)
+                    : String(format: "ASCII %.0f%% · Zero %.0f%%", (metrics?.printableByteRatio ?? 0) * 100, (metrics?.zeroByteRatio ?? 0) * 100),
                 accent: ColdTungstenPalette.signalEmerald
             )
 
             kpiTelemetryTile(
-                label: "CODESIGN SLOTS",
+                label: localizer.L("CODESIGN SLOTS", "代码签名槽位"),
                 primary: sigVerify?.isSigned == true
                     ? "\(sigVerify?.verifiedCodeSlots ?? 0)/\(sigVerify?.totalCodeSlots ?? 0) SHA-256"
-                    : "Unsigned Image",
-                secondary: sigVerify?.isValid == true ? "Ad-Hoc CDHash Verified" : "Container Unsealed",
+                    : localizer.L("Unsigned Image", "未签名镜像"),
+                secondary: sigVerify?.isValid == true
+                    ? localizer.L("Ad-Hoc CDHash Verified", "临时签名 CDHash 已验证")
+                    : localizer.L("Container Unsealed", "容器未封签"),
                 accent: sigVerify?.isValid == true ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber
             )
 
             kpiTelemetryTile(
-                label: "AUDIT FINDINGS",
-                primary: "\(viewModel.securityFindings.count) Total",
-                secondary: "\(highCritCount) Critical/High across 4 JSC plugins",
+                label: localizer.L("AUDIT FINDINGS", "安全审计发现"),
+                primary: localizer.language == .zhHans
+                    ? "共 \(viewModel.securityFindings.count) 项"
+                    : "\(viewModel.securityFindings.count) Total",
+                secondary: localizer.language == .zhHans
+                    ? "4 款 JSC 插件检出 \(highCritCount) 项高危"
+                    : "\(highCritCount) Critical/High across 4 JSC plugins",
                 accent: highCritCount > 0 ? ColdTungstenPalette.anodizedCrimson : ColdTungstenPalette.signalEmerald
             )
         }
@@ -731,7 +761,9 @@ public struct EntropyAndCodeSignStudioView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
                 Label(
-                    "Sliding-Window Entropy Spectrum (Window \(viewModel.entropyReport?.windowSize ?? 256) B · Step \(viewModel.entropyReport?.stepSize ?? 128) B)",
+                    localizer.language == .zhHans
+                        ? "滑动窗口熵谱 (窗口 \(viewModel.entropyReport?.windowSize ?? 256) B · 步长 \(viewModel.entropyReport?.stepSize ?? 128) B)"
+                        : "Sliding-Window Entropy Spectrum (Window \(viewModel.entropyReport?.windowSize ?? 256) B · Step \(viewModel.entropyReport?.stepSize ?? 128) B)",
                     systemImage: "chart.xyaxis.line"
                 )
                 .font(ColdTungstenTypography.panelHeaderTitle)
@@ -740,10 +772,10 @@ public struct EntropyAndCodeSignStudioView: View {
 
                 Spacer(minLength: 6)
 
-                legendSwatch(color: ColdTungstenPalette.tungstenSapphire, label: "Native A64 Code (5.2–7.2)")
-                legendSwatch(color: ColdTungstenPalette.signalEmerald, label: "ASCII / Literals")
-                legendSwatch(color: ColdTungstenPalette.warmCopper, label: "Packed / Crypto (≥7.25)")
-                legendSwatch(color: ColdTungstenPalette.coolPewter, label: "Headers / Zero Pad")
+                legendSwatch(color: ColdTungstenPalette.tungstenSapphire, label: localizer.L("Native A64 Code (5.2–7.2)", "原生 A64 代码 (5.2–7.2)"))
+                legendSwatch(color: ColdTungstenPalette.signalEmerald, label: localizer.L("ASCII / Literals", "ASCII / 字符串"))
+                legendSwatch(color: ColdTungstenPalette.warmCopper, label: localizer.L("Packed / Crypto (≥7.25)", "加壳 / 加密 (≥7.25)"))
+                legendSwatch(color: ColdTungstenPalette.coolPewter, label: localizer.L("Headers / Zero Pad", "头部 / 零填充"))
             }
 
             GeometryReader { geo in
@@ -898,14 +930,14 @@ public struct EntropyAndCodeSignStudioView: View {
         let sections = viewModel.loadedImage?.sections ?? []
         return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("Segment / Section RWX Map & Shannon H(X)", systemImage: "memorychip")
+                Label(localizer.L("Segment / Section RWX Map & Shannon H(X)", "段/节区 RWX 权限与香农熵"), systemImage: "memorychip")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 4)
 
-                Text("\(sections.count) sections")
+                Text(localizer.language == .zhHans ? "\(sections.count) 个节区" : "\(sections.count) sections")
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5))
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize(horizontal: true, vertical: false)
@@ -977,36 +1009,49 @@ public struct EntropyAndCodeSignStudioView: View {
 
         return VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("LC_CODE_SIGNATURE SuperBlob & Entitlements", systemImage: "lock.shield.fill")
+                Label(localizer.L("LC_CODE_SIGNATURE SuperBlob & Entitlements", "LC_CODE_SIGNATURE 超级块与权限配置"), systemImage: "lock.shield.fill")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
 
                 Spacer(minLength: 4)
 
-                Text(summary.isSigned ? (summary.isAdHoc ? "AD-HOC SHA-256" : "CMS SIGNED") : "UNSIGNED")
-                    .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
-                    .foregroundStyle(summary.isSigned ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background((summary.isSigned ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber).opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 3))
-                    .fixedSize(horizontal: true, vertical: false)
+                Text(
+                    summary.isSigned
+                        ? (summary.isAdHoc ? localizer.L("AD-HOC SHA-256", "临时签名 SHA-256") : localizer.L("CMS SIGNED", "CMS 签名"))
+                        : localizer.L("UNSIGNED", "未签名")
+                )
+                .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
+                .foregroundStyle(summary.isSigned ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background((summary.isSigned ? ColdTungstenPalette.signalEmerald : ColdTungstenPalette.tungstenAmber).opacity(0.15))
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                sigKeyValRow(key: "Identifier", value: summary.identifier.isEmpty ? "com.machgraph.target" : summary.identifier)
-                sigKeyValRow(key: "CDHash (128b)", value: cleanCDHash.isEmpty ? "none" : cleanCDHash)
+                sigKeyValRow(key: localizer.L("Identifier", "标识符"), value: summary.identifier.isEmpty ? "com.machgraph.target" : summary.identifier)
+                sigKeyValRow(key: "CDHash (128b)", value: cleanCDHash.isEmpty ? localizer.L("none", "无") : cleanCDHash)
                 sigKeyValRow(
-                    key: "CodeDirectory",
-                    value: String(
-                        format: "v0x%X · %@ · %d B page · %d/%d slots valid",
-                        summary.codeDirectoryVersion,
-                        summary.hashAlgorithm,
-                        summary.pageSize,
-                        verify?.verifiedCodeSlots ?? 0,
-                        verify?.totalCodeSlots ?? 0
-                    )
+                    key: localizer.L("CodeDirectory", "代码目录"),
+                    value: localizer.language == .zhHans
+                        ? String(
+                            format: "v0x%X · %@ · %d B 页 · %d/%d 槽有效",
+                            summary.codeDirectoryVersion,
+                            summary.hashAlgorithm,
+                            summary.pageSize,
+                            verify?.verifiedCodeSlots ?? 0,
+                            verify?.totalCodeSlots ?? 0
+                        )
+                        : String(
+                            format: "v0x%X · %@ · %d B page · %d/%d slots valid",
+                            summary.codeDirectoryVersion,
+                            summary.hashAlgorithm,
+                            summary.pageSize,
+                            verify?.verifiedCodeSlots ?? 0,
+                            verify?.totalCodeSlots ?? 0
+                        )
                 )
             }
             .padding(8)
@@ -1014,7 +1059,7 @@ public struct EntropyAndCodeSignStudioView: View {
             .clipShape(RoundedRectangle(cornerRadius: 4))
 
             if !summary.entitlementsPairs.isEmpty {
-                Text("EMBEDDED ENTITLEMENTS DER / PLIST")
+                Text(localizer.L("EMBEDDED ENTITLEMENTS DER / PLIST", "内嵌权限声明 DER / PLIST"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
@@ -1079,6 +1124,7 @@ public struct PluginSecurityAuditStudioView: View {
     @ObservedObject public var viewModel: MachStudioViewModel
     @ObservedObject private var cursorBus: SynchronizedAddressCursorBus
     @ObservedObject private var preferencesStore: MachWorkbenchPreferencesStore
+    @ObservedObject private var localizer: MachLocalizer = .shared
 
     public init(viewModel: MachStudioViewModel) {
         self.viewModel = viewModel
@@ -1111,14 +1157,14 @@ public struct PluginSecurityAuditStudioView: View {
     private var leftPluginCatalogAndScratchpadColumn: some View {
         VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "JavaScriptCore Sandbox & Plugins",
+                title: localizer.L("JavaScriptCore Sandbox & Plugins", "JavaScriptCore 沙箱与插件"),
                 sfSymbol: "puzzlepiece.extension",
                 countBadge: BuiltInMachPluginCatalog.allPlugins.count
             ) {
                 Button {
                     viewModel.runSecurityAuditSuite(emitToast: true)
                 } label: {
-                    Label("Run Suite", systemImage: "play.fill")
+                    Label(localizer.L("Run Suite", "运行套件"), systemImage: "play.fill")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber, isActive: true, compact: true))
                 .fixedSize(horizontal: true, vertical: false)
@@ -1153,7 +1199,7 @@ public struct PluginSecurityAuditStudioView: View {
                 }
                 .buttonStyle(.plain)
 
-                Text(plugin.name)
+                Text(plugin.localizedName(in: localizer.language))
                     .font(ColdTungstenTypography.controlLabel)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1168,7 +1214,7 @@ public struct PluginSecurityAuditStudioView: View {
                 }
             }
 
-            Text(plugin.summary)
+            Text(plugin.localizedSummary(in: localizer.language))
                 .font(ColdTungstenTypography.secondaryCaption)
                 .foregroundStyle(ColdTungstenPalette.coolPewter)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1188,7 +1234,7 @@ public struct PluginSecurityAuditStudioView: View {
                 Spacer(minLength: 4)
 
                 if let count = execResult?.findings.count {
-                    Text("\(count) hit(s)")
+                    Text(localizer.language == .zhHans ? "\(count) 项命中" : "\(count) hit(s)")
                         .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                         .foregroundStyle(count > 0 ? ColdTungstenPalette.tungstenAmber : ColdTungstenPalette.signalEmerald)
                         .fixedSize(horizontal: true, vertical: false)
@@ -1207,7 +1253,7 @@ public struct PluginSecurityAuditStudioView: View {
     private var jsScratchpadConsoleCard: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
-                Label("Live JSVirtualMachine `mach.*` Scratchpad", systemImage: "terminal.fill")
+                Label(localizer.L("Live JSVirtualMachine `mach.*` Scratchpad", "实时 JSVirtualMachine `mach.*` 脚本台"), systemImage: "terminal.fill")
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize(horizontal: true, vertical: false)
@@ -1217,7 +1263,7 @@ public struct PluginSecurityAuditStudioView: View {
                 Button {
                     viewModel.executeJSScratchpad()
                 } label: {
-                    Label("Run JS", systemImage: "bolt.fill")
+                    Label(localizer.L("Run JS", "运行 JS"), systemImage: "bolt.fill")
                 }
                 .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, isActive: true, compact: true))
                 .fixedSize(horizontal: true, vertical: false)
@@ -1268,26 +1314,32 @@ public struct PluginSecurityAuditStudioView: View {
         let items = visibleFindings
         return VStack(spacing: 0) {
             TungstenPanelHeaderBar(
-                title: "Static Binary Security Audit Findings",
+                title: localizer.L("Static Binary Security Audit Findings", "静态二进制安全审计发现"),
                 sfSymbol: "exclamationmark.shield.fill",
                 countBadge: items.count
             ) {
                 HStack(spacing: 5) {
-                    severityFilterChip(label: "ALL", severity: nil)
+                    severityFilterChip(label: localizer.L("ALL", "全部"), severity: nil)
                     ForEach(SecurityFindingSeverity.allCases.reversed(), id: \.self) { sev in
-                        severityFilterChip(label: sev.rawValue, severity: sev)
+                        severityFilterChip(label: sev.localizedBadge(in: localizer.language), severity: sev)
                     }
                 }
             }
 
             if items.isEmpty {
                 VStack(spacing: 6) {
-                    Text("No security audit findings match the active severity filter.")
-                        .font(ColdTungstenTypography.controlLabel)
-                        .foregroundStyle(ColdTungstenPalette.coolPewter)
-                    Text("Click 'Run Suite' to execute all 4 JavaScriptCore binary security analyzers.")
-                        .font(ColdTungstenTypography.secondaryCaption)
-                        .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
+                    Text(localizer.L(
+                        "No security audit findings match the active severity filter.",
+                        "当前严重等级筛选下暂无安全审计发现。"
+                    ))
+                    .font(ColdTungstenTypography.controlLabel)
+                    .foregroundStyle(ColdTungstenPalette.coolPewter)
+                    Text(localizer.L(
+                        "Click 'Run Suite' to execute all 4 JavaScriptCore binary security analyzers.",
+                        "点击「运行套件」以执行全部 4 款 JavaScriptCore 二进制安全分析插件。"
+                    ))
+                    .font(ColdTungstenTypography.secondaryCaption)
+                    .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -1322,12 +1374,12 @@ public struct PluginSecurityAuditStudioView: View {
                 SeverityBadgePill(severity: finding.severity)
                     .fixedSize(horizontal: true, vertical: false)
 
-                Text(finding.category.uppercased())
+                Text(finding.localizedCategory(in: localizer.language).uppercased())
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.tungstenAmber)
                     .fixedSize(horizontal: true, vertical: false)
 
-                Text("· \(finding.pluginName)")
+                Text("· \(finding.localizedPluginName(in: localizer.language))")
                     .font(ColdTungstenTypography.secondaryCaption)
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1360,12 +1412,12 @@ public struct PluginSecurityAuditStudioView: View {
                 }
             }
 
-            Text(finding.title)
+            Text(finding.localizedTitle(in: localizer.language))
                 .font(ColdTungstenTypography.panelHeaderTitle)
                 .foregroundStyle(ColdTungstenPalette.steelWhite)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text(finding.detail)
+            Text(finding.localizedDetail(in: localizer.language))
                 .font(ColdTungstenTypography.secondaryCaption)
                 .foregroundStyle(ColdTungstenPalette.coolPewter)
                 .fixedSize(horizontal: false, vertical: true)
