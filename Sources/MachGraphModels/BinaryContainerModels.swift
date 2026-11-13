@@ -248,6 +248,17 @@ public enum SymbolBinding: String, Sendable, Codable, Hashable, CaseIterable {
     case external = "External"
 }
 
+public enum SymbolProvenance: String, Sendable, Codable, Hashable, CaseIterable {
+    case symtab = "lc_symtab"
+    case indirectSymtab = "lc_dysymtab"
+    case exportTrie = "lc_dyld_exports_trie"
+    case functionStarts = "lc_function_starts"
+    case chainedFixups = "lc_dyld_chained_fixups"
+    case objcMetadata = "objc_metadata"
+    case swiftMetadata = "swift_metadata"
+    case entryPoint = "lc_main_entry"
+}
+
 public struct BinarySymbol: Sendable, Codable, Hashable, Identifiable {
     public let id: String
     public let name: String
@@ -258,6 +269,11 @@ public struct BinarySymbol: Sendable, Codable, Hashable, Identifiable {
     public let size: UInt64
     public let sectionIndex: Int?
     public let libraryOrdinal: Int?
+    public let provenance: SymbolProvenance
+
+    public var isInferred: Bool {
+        provenance != .symtab
+    }
 
     public init(
         name: String,
@@ -267,7 +283,8 @@ public struct BinarySymbol: Sendable, Codable, Hashable, Identifiable {
         address: VirtualAddress,
         size: UInt64 = 0,
         sectionIndex: Int? = nil,
-        libraryOrdinal: Int? = nil
+        libraryOrdinal: Int? = nil,
+        provenance: SymbolProvenance = .symtab
     ) {
         self.id = "\(address.hexString):\(name)"
         self.name = name
@@ -278,6 +295,7 @@ public struct BinarySymbol: Sendable, Codable, Hashable, Identifiable {
         self.size = size
         self.sectionIndex = sectionIndex
         self.libraryOrdinal = libraryOrdinal
+        self.provenance = provenance
     }
 }
 
@@ -640,7 +658,13 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
     }
 
     public func executableSections() -> [BinarySection] {
-        sections.filter { $0.kind == .code || $0.kind == .stubs || $0.permissions.contains(.execute) }
+        switch containerFormat {
+        case .machO64, .universalFat:
+            let instructionAttrMask: UInt32 = 0x8000_0400 // S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS
+            return sections.filter { ($0.flags & instructionAttrMask) != 0 && $0.size > 0 }
+        default:
+            return sections.filter { ($0.kind == .code || $0.kind == .stubs || $0.permissions.contains(.execute)) && $0.size > 0 }
+        }
     }
 
     public func exactSymbol(at vmAddress: VirtualAddress) -> BinarySymbol? {

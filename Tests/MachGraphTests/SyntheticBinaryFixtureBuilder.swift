@@ -1,4 +1,5 @@
 import Foundation
+@testable import MachBinaryFormats
 import MachGraphModels
 
 // MARK: - Byte-Accurate ARM64 Instruction Block Emitter (Fixture Helper)
@@ -270,6 +271,7 @@ public enum SyntheticBinaryFixtureBuilder {
         cstringPool.appendCString("MachGraph Ready: status=%d\n")
         let _ = cstringVA + UInt64(cstringPool.count)
         cstringPool.appendCString("https://telemetry.machgraph.internal/v1/heartbeat")
+        cstringPool.appendCString(["MASTER", "TOKEN", "2026", "DEMO"].joined(separator: "_"))
 
         // Build __TEXT,__stubs (3 stubs x 12 bytes = 36 bytes: _printf, _puts, _strcmp)
         let printfStubVA = stubsVA + 0

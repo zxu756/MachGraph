@@ -148,7 +148,8 @@ let package = Package(
                 "MachProjectStore",
                 "MachPluginSDK",
                 "MachHeadlessCLI",
-                "MachWorkbenchShell"
+                "MachWorkbenchShell",
+                "MachStudioViews"
             ]
         )
     ]

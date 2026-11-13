@@ -12,21 +12,12 @@ import SwiftUI
 @main
 struct MachGraphApplication {
 
-    private static let headlessCommands: Set<String> = [
-        "help", "--help", "-h",
-        "version", "--version",
-        "info", "segments", "symbols", "strings",
-        "disasm", "cfg", "cfg-dot", "decompile", "xrefs",
-        "entropy", "codesign", "patch", "patch-asm", "resign",
-        "audit", "audit-plugins", "report-html", "export-html", "mcp"
-    ]
-
     static func main() async {
         let rawArgs = Array(CommandLine.arguments.dropFirst())
         let userArgs = stripAppleSystemLaunchArguments(rawArgs)
 
         // Bootstrap live language resolution (`--lang zh|en` -> `MACHGRAPH_LANG` -> `UserDefaults` -> `Locale`)
-        MachLocalizer.shared.bootstrapFromEnvironment(arguments: userArgs)
+        let activeLanguage = MachLocalizer.shared.bootstrapFromEnvironment(arguments: userArgs)
 
         // 1. Deterministic 2x Retina Screenshot & Standalone Bilingual HTML Report Exporter
         if let exportIdx = userArgs.firstIndex(of: "--export-screenshots") {
@@ -37,7 +28,7 @@ struct MachGraphApplication {
                 outputPath = FileManager.default.currentDirectoryPath + "/docs"
             }
 
-            let exportLanguage = MachLanguage.extractCLIArgumentLanguage(from: userArgs) ?? MachLocalizer.shared.language
+            let exportLanguage = MachLanguage.extractCLIArgumentLanguage(from: userArgs) ?? activeLanguage
 
             do {
                 let summary = try MachRetinaScreenshotExporter.exportAllAssets(
@@ -55,9 +46,21 @@ struct MachGraphApplication {
             }
         }
 
-        // 2. Headless Reverse-Engineering CLI & Stdio MCP JSON-RPC Server
-        let argsWithoutLang = MachCLIRunner.stripLanguageFlags(userArgs)
-        if let first = argsWithoutLang.first, headlessCommands.contains(first) {
+        // 2. Headless Reverse-Engineering CLI & Stdio MCP JSON-RPC Server (single-source dispatch via MachCLIRunner)
+        let errPrefix = activeLanguage.select("MachGraph error:", "MachGraph 错误:")
+        let argsWithoutLang: [String]
+        do {
+            _ = try MachCLIRunner.validateAndResolveLanguage(from: userArgs)
+            argsWithoutLang = MachCLIRunner.stripLanguageFlags(userArgs)
+        } catch let mgErr as MachGraphError {
+            FileHandle.standardError.write(Data("\(errPrefix) \(mgErr.localizedMessage(in: activeLanguage))\n".utf8))
+            Foundation.exit(2)
+        } catch {
+            FileHandle.standardError.write(Data("\(errPrefix) \(error.localizedDescription)\n".utf8))
+            Foundation.exit(2)
+        }
+
+        if MachCLIRunner.isHeadlessInvocation(arguments: userArgs) {
             do {
                 let runner = MachCLIRunner()
                 let output = try await runner.execute(arguments: userArgs)
@@ -65,15 +68,45 @@ struct MachGraphApplication {
                     print(output)
                 }
                 Foundation.exit(0)
+            } catch let mgErr as MachGraphError {
+                let resolvedLang = (try? MachCLIRunner.validateAndResolveLanguage(from: userArgs)) ?? activeLanguage
+                let prefix = resolvedLang.select("MachGraph error:", "MachGraph 错误:")
+                FileHandle.standardError.write(Data("\(prefix) \(mgErr.localizedMessage(in: resolvedLang))\n".utf8))
+                if case .invalidCLIArguments = mgErr {
+                    Foundation.exit(2)
+                }
+                Foundation.exit(1)
             } catch {
-                FileHandle.standardError.write(Data("MachGraph CLI error: \(error.localizedDescription)\n".utf8))
+                let resolvedLang = (try? MachCLIRunner.validateAndResolveLanguage(from: userArgs)) ?? activeLanguage
+                let prefix = resolvedLang.select("MachGraph error:", "MachGraph 错误:")
+                FileHandle.standardError.write(Data("\(prefix) \(error.localizedDescription)\n".utf8))
                 Foundation.exit(1)
             }
         }
 
-        // 3. Interactive macOS Cold Tungsten Desktop Workbench
-        let initialBinaryURL = resolveInitialBinaryURL(from: argsWithoutLang)
-        launchDesktopWorkbench(initialBinaryURL: initialBinaryURL)
+        // Reject unrecognized top-level CLI flags instead of silently opening an empty window
+        for arg in argsWithoutLang where arg.hasPrefix("-") && arg != "--binary" && arg != "--demo" {
+            let msg = activeLanguage.select(
+                "Unknown option '\(arg)'. Run 'machgraph --help' for usage.\n",
+                "不支持的选项 '\(arg)'。请运行 'machgraph --help' 查看用法。\n"
+            )
+            FileHandle.standardError.write(Data(msg.utf8))
+            Foundation.exit(2)
+        }
+
+        // 3. Interactive macOS Cold Tungsten Desktop Workbench (starts empty unless <file>, --binary, or --demo is passed)
+        let loadDemo = argsWithoutLang.contains("--demo")
+        let initialBinaryURL: URL?
+        do {
+            initialBinaryURL = try resolveInitialBinaryURL(from: argsWithoutLang, language: activeLanguage)
+        } catch let mgErr as MachGraphError {
+            FileHandle.standardError.write(Data("MachGraph error: \(mgErr.localizedMessage(in: activeLanguage))\n".utf8))
+            Foundation.exit(1)
+        } catch {
+            FileHandle.standardError.write(Data("MachGraph error: \(error.localizedDescription)\n".utf8))
+            Foundation.exit(1)
+        }
+        launchDesktopWorkbench(initialBinaryURL: initialBinaryURL, loadDemo: loadDemo)
     }
 
     private static func stripAppleSystemLaunchArguments(_ args: [String]) -> [String] {
@@ -99,29 +132,37 @@ struct MachGraphApplication {
         return cleaned
     }
 
-    private static func resolveInitialBinaryURL(from args: [String]) -> URL? {
-        if let binFlagIndex = args.firstIndex(of: "--binary"),
-           args.indices.contains(binFlagIndex + 1) {
-            let candidate = URL(fileURLWithPath: args[binFlagIndex + 1])
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
+    private static func resolveInitialBinaryURL(from args: [String], language: MachLanguage) throws -> URL? {
+        if let binFlagIndex = args.firstIndex(of: "--binary") {
+            guard args.indices.contains(binFlagIndex + 1) else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Option '--binary' requires a file path.", "选项 '--binary' 需要提供文件路径。")
+                )
             }
+            let rawPath = args[binFlagIndex + 1]
+            let candidate = URL(fileURLWithPath: rawPath)
+            guard FileManager.default.fileExists(atPath: candidate.path) else {
+                throw MachGraphError.fileNotFound(rawPath)
+            }
+            return candidate
         }
-        if let first = args.first, !first.hasPrefix("-") {
+        let nonFlags = args.filter { !$0.hasPrefix("-") }
+        if let first = nonFlags.first {
             let candidate = URL(fileURLWithPath: first)
-            if FileManager.default.fileExists(atPath: candidate.path) {
-                return candidate
+            guard FileManager.default.fileExists(atPath: candidate.path) else {
+                throw MachGraphError.fileNotFound(first)
             }
+            return candidate
         }
         return nil
     }
 
-    private static func launchDesktopWorkbench(initialBinaryURL: URL?) {
+    private static func launchDesktopWorkbench(initialBinaryURL: URL?, loadDemo: Bool) {
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
         app.appearance = NSAppearance(named: .darkAqua)
 
-        let coordinator = MachDesktopAppDelegate(initialBinaryURL: initialBinaryURL)
+        let coordinator = MachDesktopAppDelegate(initialBinaryURL: initialBinaryURL, loadDemo: loadDemo)
         app.delegate = coordinator
         app.run()
     }
@@ -132,17 +173,19 @@ struct MachGraphApplication {
 @MainActor
 final class MachDesktopAppDelegate: NSObject, NSApplicationDelegate {
     private let initialBinaryURL: URL?
+    private let loadDemo: Bool
     private var viewModel: MachStudioViewModel?
     private var mainWindow: NSWindow?
     private var languageObserver: NSObjectProtocol?
 
-    init(initialBinaryURL: URL?) {
+    init(initialBinaryURL: URL?, loadDemo: Bool = false) {
         self.initialBinaryURL = initialBinaryURL
+        self.loadDemo = loadDemo
         super.init()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let vm = MachStudioViewModel(initialBinaryURL: initialBinaryURL, emitStartupToast: true)
+        let vm = MachStudioViewModel(initialBinaryURL: initialBinaryURL, loadDemo: loadDemo, emitStartupToast: true)
         self.viewModel = vm
 
         installMainMenuBar()
@@ -188,8 +231,8 @@ final class MachDesktopAppDelegate: NSObject, NSApplicationDelegate {
 
     private func localizedWindowTitle() -> String {
         MachLocalizer.shared.L(
-            "MachGraph - Native macOS ARM64 / Mach-O / ELF / PE / WASM Reverse-Engineering Workbench",
-            "MachGraph - macOS 原生 ARM64 / Mach-O / ELF / PE / WASM 逆向工程工作台"
+            "MachGraph - macOS ARM64 & Mach-O Binary Inspector",
+            "MachGraph - macOS ARM64 与 Mach-O 二进制检视工作台"
         )
     }
 

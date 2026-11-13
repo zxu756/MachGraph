@@ -488,4 +488,75 @@ struct BinaryFormatLoadersTests {
         #expect(!image.strings.isEmpty)
         #expect(image.codeSignature.isSigned)
     }
+
+    @Test("G5: /usr/bin/ssh __TEXT,__info_plist is classified as constData and excluded from executableSections")
+    func sshInfoPlistExcludedFromExecutableSections() throws {
+        let sshURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        try #require(FileManager.default.fileExists(atPath: sshURL.path))
+
+        let image = try UniversalBinaryDispatcher.load(fileURL: sshURL)
+        let infoPlistSection = try #require(image.sections.first { $0.sectionName == "__info_plist" })
+        #expect(infoPlistSection.kind != .code)
+        #expect(!image.executableSections().contains { $0.sectionName == "__info_plist" })
+    }
+
+    @Test("G20: Truncated Mach-O slices (8000 and 30000 bytes), empty files, and plain text files throw MachGraphError")
+    func truncatedMachOEmptyAndPlainTextRejected() throws {
+        // 1. Empty 0-byte input (/dev/null equivalent)
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: Data(), fileName: "empty")
+        }
+
+        // 2. Plain text input
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: Data("plain text README line\n".utf8), fileName: "readme.txt")
+        }
+
+        // 3. Extract arm64e slice from /bin/ls and truncate to 8000 and 30000 bytes
+        let lsWhole = try Data(contentsOf: URL(fileURLWithPath: "/bin/ls"))
+        let slices = try UniversalBinaryDispatcher.parseUniversalSlices(data: lsWhole)
+        let arm64eSlice = try #require(slices.first { $0.architecture == .arm64e } ?? slices.first)
+        let start = lsWhole.startIndex + Int(arm64eSlice.fileOffset.rawValue)
+        let sliceBytes = Data(lsWhole[start..<(start + Int(arm64eSlice.size))])
+        #expect(sliceBytes.count > 30_000)
+
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: Data(sliceBytes.prefix(8_000)), fileName: "ls_trunc8k")
+        }
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: Data(sliceBytes.prefix(30_000)), fileName: "ls_trunc30k")
+        }
+        // Universal Fat /bin/ls truncated to 8000 bytes as well
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: Data(lsWhole.prefix(8_000)), fileName: "ls_fat_trunc8k")
+        }
+    }
+
+    @Test("G22: ELF64 relocatable object file (ET_REL, e_type == 1) is rejected with unsupportedContainer")
+    func elf64RelocatableObjectRejected() {
+        var elfRel = Data(repeating: 0, count: 64)
+        elfRel[0] = 0x7F; elfRel[1] = 0x45; elfRel[2] = 0x4C; elfRel[3] = 0x46 // \x7FELF
+        elfRel[4] = 2 // ELFCLASS64
+        elfRel[5] = 1 // ELFDATA2LSB
+        elfRel[6] = 1 // EV_CURRENT
+        elfRel[16] = 1; elfRel[17] = 0 // e_type = ET_REL (1)
+        elfRel[18] = 183; elfRel[19] = 0 // e_machine = EM_AARCH64 (183)
+        elfRel[20] = 1 // e_version = 1
+
+        #expect(throws: MachGraphError.self) {
+            _ = try UniversalBinaryDispatcher.load(data: elfRel, fileName: "e1.o")
+        }
+    }
+
+    @Test("G10: /bin/ls symbols distinguish real LC_SYMTAB symbols from inferred LC_FUNCTION_STARTS and stub/GOT entries")
+    func binLsRealSymtabVersusInferredSymbolProvenance() throws {
+        let image = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: "/bin/ls"))
+        let symtabSymbols = image.symbols.filter { !$0.isInferred }
+        let inferredSymbols = image.symbols.filter { $0.isInferred }
+
+        #expect(!symtabSymbols.isEmpty)
+        #expect(symtabSymbols.contains { $0.name == "__mh_execute_header" && $0.provenance == .symtab })
+        #expect(!inferredSymbols.isEmpty)
+        #expect(inferredSymbols.contains { $0.provenance == .functionStarts })
+    }
 }

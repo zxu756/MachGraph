@@ -584,7 +584,7 @@ private struct Swift5ABIDemangler {
             return true
 
         case "C":
-            stack.append(.module("__C_Synthesized"))
+            stack.append(.module("__C"))
             return true
 
         case "L":

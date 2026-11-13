@@ -186,7 +186,7 @@ public enum BuiltInMachPluginCatalog: Sendable {
                 severity: "HIGH",
                 category: "Hardcoded Static Verification Token",
                 title: "Hardcoded Static Verification / Entitlement Token in Binary",
-                pattern: /\b(?:MACHGRAPH-PRO-[A-Z0-9-]{3,}|LICENSE-KEY-[A-Z0-9-]{4,}|MASTER[_-]?TOKEN[_-]?[A-Z0-9]{4,})\b/,
+                pattern: /\b(?:LICENSE-KEY-[A-Z0-9-]{4,}|MASTER[_-]?TOKEN[_-]?[A-Z0-9]{4,})\b/,
                 remediation: "Comparing against a static plaintext token embedded in __cstring exposes the secret to trivial string extraction. Use asymmetric cryptographic signature verification (Ed25519 / ECDSA) instead."
             },
             {
@@ -1089,8 +1089,8 @@ public struct MachPluginRunner: Sendable {
     ) throws -> MachPluginSuiteReport {
         let coordinator = BinaryAnalysisCoordinator()
         let index = binaryData != nil
-            ? coordinator.analyzeBinary(image, data: binaryData)
-            : coordinator.analyzeBinary(image)
+            ? try coordinator.analyzeBinary(image, data: binaryData)
+            : try coordinator.analyzeBinary(image)
         return try runSuite(
             against: index,
             binaryData: binaryData,

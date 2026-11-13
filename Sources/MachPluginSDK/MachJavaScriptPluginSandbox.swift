@@ -333,9 +333,9 @@ public struct MachJavaScriptPluginSandbox: Sendable {
         let coordinator = BinaryAnalysisCoordinator()
         let index: BinaryAnalysisIndex
         if let binaryData {
-            index = coordinator.analyzeBinary(image, data: binaryData)
+            index = try coordinator.analyzeBinary(image, data: binaryData)
         } else {
-            index = coordinator.analyzeBinary(image)
+            index = try coordinator.analyzeBinary(image)
         }
         return try execute(manifest: manifest, analysisIndex: index, binaryData: binaryData)
     }

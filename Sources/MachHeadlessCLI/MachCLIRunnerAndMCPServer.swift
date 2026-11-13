@@ -8,142 +8,993 @@ import MachPatchAndHexEngine
 import MachPluginSDK
 import MachProjectStore
 
-// MARK: - 15-Subcommand Headless Binary Reverse-Engineering CLI (`MachCLIRunner`)
+// MARK: - Canonical Single-Source CLI Subcommand Specification (`CLISubcommandSpec`)
+
+public struct CLISubcommandSpec: Sendable, Hashable {
+    public let primaryName: String
+    public let aliases: [String]
+    public let usageArgsEN: String
+    public let usageArgsZH: String
+    public let summaryEN: String
+    public let summaryZH: String
+
+    public init(
+        primaryName: String,
+        aliases: [String] = [],
+        usageArgsEN: String,
+        usageArgsZH: String,
+        summaryEN: String,
+        summaryZH: String
+    ) {
+        self.primaryName = primaryName
+        self.aliases = aliases
+        self.usageArgsEN = usageArgsEN
+        self.usageArgsZH = usageArgsZH
+        self.summaryEN = summaryEN
+        self.summaryZH = summaryZH
+    }
+
+    public var allNames: [String] {
+        [primaryName] + aliases
+    }
+}
+
+// MARK: - Headless Binary Inspection & Reverse-Engineering CLI (`MachCLIRunner`)
 
 public struct MachCLIRunner: Sendable {
+
+    /// Single source of truth for CLI subcommand dispatch AND `--help` output (fixes G17).
+    public static let subcommandSpecs: [CLISubcommandSpec] = [
+        CLISubcommandSpec(
+            primaryName: "info",
+            usageArgsEN: "<file> [--json]",
+            usageArgsZH: "<文件> [--json]",
+            summaryEN: "Inspect Mach-O / Universal headers, segments, sections, UUID & CDHash",
+            summaryZH: "检视 Mach-O / 通用二进制头部、段、节区、UUID 与代码签名摘要"
+        ),
+        CLISubcommandSpec(
+            primaryName: "segments",
+            usageArgsEN: "<file> [--json]",
+            usageArgsZH: "<文件> [--json]",
+            summaryEN: "List mapped VM segments, file offsets & RWX protections",
+            summaryZH: "列出虚拟内存段映射、文件偏移与 RWX 权限"
+        ),
+        CLISubcommandSpec(
+            primaryName: "symbols",
+            usageArgsEN: "<file> [--filter <q>] [--json]",
+            usageArgsZH: "<文件> [--filter <关键词>] [--json]",
+            summaryEN: "List LC_SYMTAB symbols separately from inferred function starts",
+            summaryZH: "分别列出 LC_SYMTAB 真实符号与推断出的函数起点符号"
+        ),
+        CLISubcommandSpec(
+            primaryName: "strings",
+            usageArgsEN: "<file> [--filter <q>] [--json]",
+            usageArgsZH: "<文件> [--filter <关键词>] [--json]",
+            summaryEN: "List extracted UTF-8 / UTF-16 string literals",
+            summaryZH: "列出提取的 UTF-8 / UTF-16 字符串字面量"
+        ),
+        CLISubcommandSpec(
+            primaryName: "fixups",
+            usageArgsEN: "<file> [--filter <q>] [--json]",
+            usageArgsZH: "<文件> [--filter <关键词>] [--json]",
+            summaryEN: "List dyld chained fixups (binds, rebases & ARM64e PAC diversity)",
+            summaryZH: "列出 dyld 链式修复项（绑定、重定位与 ARM64e PAC 多样性）"
+        ),
+        CLISubcommandSpec(
+            primaryName: "disasm",
+            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--json]",
+            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--json]",
+            summaryEN: "Disassemble ARM64/ARM64e instruction sections or a target function",
+            summaryZH: "反汇编 ARM64/ARM64e 指令节区或指定目标函数"
+        ),
+        CLISubcommandSpec(
+            primaryName: "cfg-dot",
+            aliases: ["cfg"],
+            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--json]",
+            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--json]",
+            summaryEN: "Export Graphviz DOT control-flow graph for a recovered function",
+            summaryZH: "导出已恢复函数的 Graphviz DOT 控制流图"
+        ),
+        CLISubcommandSpec(
+            primaryName: "decompile",
+            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--json]",
+            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--json]",
+            summaryEN: "[Experimental] Emit Pseudo-C from ARM64 CFG (condition expressions unverified)",
+            summaryZH: "【实验性】从 ARM64 控制流图生成伪C代码（条件表达式尚未验证）"
+        ),
+        CLISubcommandSpec(
+            primaryName: "xrefs",
+            usageArgsEN: "<file> [--address <0x...> | --symbol <name>] [--json]",
+            usageArgsZH: "<文件> [--address <0x...> | --symbol <名称>] [--json]",
+            summaryEN: "Query incoming & outgoing code/data cross-references",
+            summaryZH: "查询目标地址或符号的传入与传出交叉引用"
+        ),
+        CLISubcommandSpec(
+            primaryName: "codesign",
+            usageArgsEN: "<file> [--json]",
+            usageArgsZH: "<文件> [--json]",
+            summaryEN: "Verify Mach-O SuperBlob, CodeDirectory SHA-256 & entitlements",
+            summaryZH: "校验 Mach-O SuperBlob、CodeDirectory SHA-256 页哈希与权限项"
+        ),
+        CLISubcommandSpec(
+            primaryName: "entropy",
+            usageArgsEN: "<file> [--json]",
+            usageArgsZH: "<文件> [--json]",
+            summaryEN: "Compute sliding-window Shannon entropy & chi-square metrics",
+            summaryZH: "计算滑动窗口香农熵与卡方分布指标"
+        ),
+        CLISubcommandSpec(
+            primaryName: "patch-asm",
+            aliases: ["patch"],
+            usageArgsEN: "<file> --address <0x...> --asm \"...\" [--output <out>] [--json]",
+            usageArgsZH: "<文件> --address <0x...> --asm \"...\" [--output <输出路径>] [--json]",
+            summaryEN: "Assemble inline ARM64 patch & recalculate ad-hoc code signature",
+            summaryZH: "汇编内联 ARM64 补丁并重新计算临时代码签名"
+        ),
+        CLISubcommandSpec(
+            primaryName: "resign",
+            usageArgsEN: "<file> [--identifier <id>] [--output <out>] [--json]",
+            usageArgsZH: "<file> [--identifier <标识符>] [--output <输出路径>] [--json]",
+            summaryEN: "Recalculate Mach-O ad-hoc SHA-256 CodeDirectory page hashes",
+            summaryZH: "重新计算 Mach-O 临时 SHA-256 CodeDirectory 代码页哈希"
+        ),
+        CLISubcommandSpec(
+            primaryName: "audit-plugins",
+            aliases: ["audit"],
+            usageArgsEN: "<file> [--json]",
+            usageArgsZH: "<文件> [--json]",
+            summaryEN: "[Experimental] Run JavaScriptCore static audit plugins",
+            summaryZH: "【实验性】运行 JavaScriptCore 静态安全审计插件"
+        ),
+        CLISubcommandSpec(
+            primaryName: "export-html",
+            aliases: ["report-html"],
+            usageArgsEN: "<file> [--output <out.html>] [--json]",
+            usageArgsZH: "<文件> [--output <输出.html>] [--json]",
+            summaryEN: "Export standalone bilingual HTML binary triage report",
+            summaryZH: "导出独立离线中英双语 HTML 二进制分诊简报"
+        ),
+        CLISubcommandSpec(
+            primaryName: "mcp",
+            usageArgsEN: "[<file>] [--binary <path>]",
+            usageArgsZH: "[<文件>] [--binary <路径>]",
+            summaryEN: "Start JSON-RPC 2.0 reverse-engineering MCP server on stdio",
+            summaryZH: "在标准输入输出上启动 JSON-RPC 2.0 逆向 MCP 服务"
+        )
+    ]
+
+    public static let builtinMetaTokens: Set<String> = [
+        "help", "--help", "-h",
+        "version", "--version", "-v"
+    ]
+
+    /// Derived directly from `subcommandSpecs` + `builtinMetaTokens`.
+    public static var recognizedHeadlessTokens: Set<String> {
+        var tokens = builtinMetaTokens
+        for spec in subcommandSpecs {
+            for name in spec.allNames {
+                tokens.insert(name)
+            }
+        }
+        return tokens
+    }
+
+    public static func isHeadlessInvocation(arguments: [String]) -> Bool {
+        let stripped = stripLanguageFlags(arguments)
+        guard let first = stripped.first else { return false }
+        return recognizedHeadlessTokens.contains(first)
+    }
+
+    public static func resolveCanonicalSubcommand(_ raw: String) -> String? {
+        for spec in subcommandSpecs where spec.allNames.contains(raw) {
+            return spec.primaryName
+        }
+        return nil
+    }
+
     public init() {}
 
     public func execute(arguments: [String]) async throws -> String {
-        if let cliLang = MachLanguage.extractCLIArgumentLanguage(from: arguments) {
-            await MainActor.run {
-                MachLocalizer.shared.setLanguage(cliLang, persist: false)
-            }
+        let resolvedLang = try Self.validateAndResolveLanguage(from: arguments)
+        await MainActor.run {
+            MachLocalizer.shared.setLanguage(resolvedLang, persist: false)
         }
+
         let cleanedArgs = Self.stripLanguageFlags(arguments)
-        guard let subcommand = cleanedArgs.first else {
-            return Self.helpBanner
+        guard let rawSubcommand = cleanedArgs.first else {
+            return Self.helpBanner(in: resolvedLang)
         }
         let rest = Array(cleanedArgs.dropFirst())
 
-        switch subcommand {
-        case "help", "--help", "-h":
-            return Self.helpBanner
+        if ["help", "--help", "-h"].contains(rawSubcommand) {
+            return Self.helpBanner(in: resolvedLang)
+        }
+        if ["version", "--version", "-v"].contains(rawSubcommand) {
+            return Self.versionBanner(in: resolvedLang)
+        }
 
-        case "version", "--version":
-            return "MachGraph 1.1.0 (macOS arm64 · Zero-Wrapper Mach-O/ELF/PE/WASM Loader + ARM64 CFG + SSA Pseudo-C Decompiler · 中文/EN)"
+        guard let canonical = Self.resolveCanonicalSubcommand(rawSubcommand) else {
+            throw MachGraphError.invalidCLIArguments(
+                resolvedLang.select(
+                    "Unknown subcommand '\(rawSubcommand)'. Run 'machgraph --help' for usage.",
+                    "未知子命令 '\(rawSubcommand)'。请运行 'machgraph --help' 查看用法。"
+                )
+            )
+        }
 
+        // Handle `--help` passed after a subcommand name (e.g. `machgraph disasm --help`)
+        if rest.contains("--help") || rest.contains("-h") {
+            return Self.helpBanner(in: resolvedLang)
+        }
+
+        switch canonical {
         case "info":
-            let loaded = try loadAndAnalyze(args: rest)
-            let img = loaded.index.image
-            var lines: [String] = []
-            lines.append("File:          \(img.fileName) (\(img.fileSize) bytes)")
-            lines.append("SHA-256:       \(img.sha256Hex)")
-            lines.append("Format:        \(img.containerFormat.rawValue)")
-            lines.append("Architecture:  \(img.architecture.displayName) (PIE=\(img.isPositionIndependent))")
-            lines.append("Image Base:    \(img.imageBase.hexString)")
-            lines.append("Entry Point:   \(img.entryPoint?.hexString ?? "none")")
-            lines.append("Functions:     \(loaded.index.functions.count)")
-            lines.append("Instructions:  \(loaded.index.decodedInstructions.count)")
-            lines.append("Xrefs:         \(loaded.index.crossReferences.allRecords.count)")
-            lines.append("CodeSign:      signed=\(img.codeSignature.isSigned) adhoc=\(img.codeSignature.isAdHoc) cdhash=\(img.codeSignature.cdHashHex)")
-            return lines.joined(separator: "\n")
-
+            return try runInfo(args: rest, language: resolvedLang)
         case "segments":
-            let loaded = try loadAndAnalyze(args: rest)
-            return loaded.index.image.segments.map { seg in
+            return try runSegments(args: rest, language: resolvedLang)
+        case "symbols":
+            return try runSymbols(args: rest, language: resolvedLang)
+        case "strings":
+            return try runStrings(args: rest, language: resolvedLang)
+        case "fixups":
+            return try runFixups(args: rest, language: resolvedLang)
+        case "disasm":
+            return try runDisasm(args: rest, language: resolvedLang)
+        case "cfg-dot":
+            return try runCFGDot(args: rest, language: resolvedLang)
+        case "decompile":
+            return try runDecompile(args: rest, language: resolvedLang)
+        case "xrefs":
+            return try runXrefs(args: rest, language: resolvedLang)
+        case "codesign":
+            return try runCodeSign(args: rest, language: resolvedLang)
+        case "entropy":
+            return try runEntropy(args: rest, language: resolvedLang)
+        case "patch-asm":
+            return try runPatchAsm(args: rest, language: resolvedLang)
+        case "resign":
+            return try runResign(args: rest, language: resolvedLang)
+        case "audit-plugins":
+            return try runAuditPlugins(args: rest, language: resolvedLang)
+        case "export-html":
+            return try runExportHTML(args: rest, language: resolvedLang)
+        case "mcp":
+            let parsed = try parseArguments(
+                rest,
+                subcommand: "mcp",
+                valueFlags: ["--binary"],
+                boolFlags: ["--demo"],
+                language: resolvedLang
+            )
+            let defaultBinary: String?
+            if parsed.boolFlags.contains("--demo") {
+                defaultBinary = try Self.locateDemoBinaryURL(language: resolvedLang).path
+            } else {
+                defaultBinary = parsed.values["--binary"] ?? parsed.positionals.first
+            }
+            let server = MachMCPServer(defaultBinaryPath: defaultBinary, language: resolvedLang)
+            await server.serveStdio()
+            return ""
+        default:
+            throw MachGraphError.invalidCLIArguments("Unhandled subcommand '\(canonical)'.")
+        }
+    }
+
+    // MARK: - Subcommand Implementations
+
+    private func runInfo(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "info",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "info", language: language)
+        let img = target.image
+        let execSecs = (try? FunctionDiscoveryEngine().decodeExecutableSections(in: img, data: target.data)) ?? []
+        let insnCount = execSecs.reduce(0) { $0 + $1.instructions.count }
+        let realCount = img.symbols.filter { !$0.isInferred }.count
+        let inferredCount = img.symbols.filter { $0.isInferred }.count
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": img.fileName,
+                "filePath": img.filePath,
+                "fileSize": img.fileSize,
+                "sha256": img.sha256Hex,
+                "isDemo": target.isDemo,
+                "format": img.containerFormat.rawValue,
+                "architecture": img.architecture.displayName,
+                "selectedSliceIndex": img.selectedSliceIndex,
+                "sliceFileOffset": img.sliceFileOffset.rawValue,
+                "isPositionIndependent": img.isPositionIndependent,
+                "imageBase": img.imageBase.rawValue,
+                "imageBaseHex": img.imageBase.hexString,
+                "entryPoint": img.entryPoint.map { AnyHashable($0.rawValue) } ?? NSNull(),
+                "entryPointHex": img.entryPoint?.hexString ?? NSNull(),
+                "uuid": img.uuidString ?? NSNull(),
+                "platform": img.platformName,
+                "minOSVersion": img.minOSVersion,
+                "sdkVersion": img.sdkVersion,
+                "instructionCount": insnCount,
+                "functionStartsCount": img.functionStarts.count,
+                "realSymbolCount": realCount,
+                "inferredSymbolCount": inferredCount,
+                "stringCount": img.strings.count,
+                "fixupCount": img.chainedFixups.count,
+                "segments": img.segments.map { seg in
+                    [
+                        "name": seg.name,
+                        "vmaddr": seg.vmAddress.rawValue,
+                        "vmaddrHex": seg.vmAddress.hexString,
+                        "vmsize": seg.vmSize,
+                        "fileoff": seg.fileOffset.rawValue,
+                        "filesize": seg.fileSize,
+                        "initprot": seg.initialProtection.rwxString,
+                        "maxprot": seg.maxProtection.rwxString,
+                        "sectionCount": seg.sections.count
+                    ] as [String: Any]
+                },
+                "sections": img.sections.map { sec in
+                    [
+                        "segment": sec.segmentName,
+                        "section": sec.sectionName,
+                        "addr": sec.vmAddress.rawValue,
+                        "addrHex": sec.vmAddress.hexString,
+                        "size": sec.size,
+                        "offset": sec.fileOffset.rawValue,
+                        "flags": sec.flags,
+                        "isExecutable": img.executableSections().contains(where: { $0.id == sec.id })
+                    ] as [String: Any]
+                },
+                "libraries": img.importedLibraries.map { lib in
+                    [
+                        "ordinal": lib.ordinal,
+                        "installName": lib.installName,
+                        "currentVersion": lib.currentVersion,
+                        "isWeak": lib.isWeak,
+                        "isReexport": lib.isReexport
+                    ] as [String: Any]
+                },
+                "codeSignature": [
+                    "isSigned": img.codeSignature.isSigned,
+                    "isAdHoc": img.codeSignature.isAdHoc,
+                    "identifier": img.codeSignature.identifier,
+                    "teamIdentifier": img.codeSignature.teamIdentifier ?? NSNull(),
+                    "cdHash": img.codeSignature.cdHashHex,
+                    "hashAlgorithm": img.codeSignature.hashAlgorithm,
+                    "entitlementCount": img.codeSignature.entitlementsPairs.count
+                ] as [String: Any]
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append("File:          \(img.fileName) (\(img.fileSize) bytes)")
+        lines.append("SHA-256:       \(img.sha256Hex)")
+        lines.append("Format:        \(img.containerFormat.rawValue)")
+        lines.append("Architecture:  \(img.architecture.displayName) (PIE=\(img.isPositionIndependent))")
+        if let uuid = img.uuidString {
+            lines.append("UUID:          \(uuid)")
+        }
+        lines.append("Image Base:    \(img.imageBase.hexString)")
+        lines.append("Entry Point:   \(img.entryPoint?.hexString ?? "none")")
+        lines.append("Segments:      \(img.segments.count) (\(img.sections.count) sections)")
+        lines.append("Symbols:       \(realCount) symtab, \(inferredCount) inferred")
+        lines.append("Fixups:        \(img.chainedFixups.count)")
+        lines.append("Instructions:  \(insnCount)")
+        lines.append("CodeSign:      signed=\(img.codeSignature.isSigned) adhoc=\(img.codeSignature.isAdHoc) cdhash=\(img.codeSignature.cdHashHex)")
+        return lines.joined(separator: "\n")
+    }
+
+    private func runSegments(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "segments",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "segments", language: language)
+        let img = target.image
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": img.fileName,
+                "isDemo": target.isDemo,
+                "segments": img.segments.map { seg in
+                    [
+                        "name": seg.name,
+                        "vmaddr": seg.vmAddress.rawValue,
+                        "vmaddrHex": seg.vmAddress.hexString,
+                        "vmsize": seg.vmSize,
+                        "fileoff": seg.fileOffset.rawValue,
+                        "filesize": seg.fileSize,
+                        "initprot": seg.initialProtection.rwxString,
+                        "maxprot": seg.maxProtection.rwxString,
+                        "sections": seg.sections.map { sec in
+                            [
+                                "segment": sec.segmentName,
+                                "section": sec.sectionName,
+                                "addr": sec.vmAddress.rawValue,
+                                "addrHex": sec.vmAddress.hexString,
+                                "size": sec.size,
+                                "offset": sec.fileOffset.rawValue,
+                                "flags": sec.flags
+                            ] as [String: Any]
+                        }
+                    ] as [String: Any]
+                }
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        for seg in img.segments {
+            lines.append(
                 String(
-                    format: "%-16@ vm=%@ size=0x%llx off=0x%llx prot=%@/%@ sections=%d",
+                    format: "%-16@ vm=%@ size=0x%llx off=0x%llx fsz=0x%llx prot=%@/%@ sections=%d",
                     seg.name as NSString,
                     seg.vmAddress.hexString as NSString,
                     seg.vmSize,
                     seg.fileOffset.rawValue,
+                    seg.fileSize,
                     seg.initialProtection.rwxString as NSString,
                     seg.maxProtection.rwxString as NSString,
                     seg.sections.count
                 )
-            }.joined(separator: "\n")
+            )
+        }
+        return lines.joined(separator: "\n")
+    }
 
-        case "symbols":
-            let loaded = try loadAndAnalyze(args: rest)
-            let filter = optionValue("--filter", in: rest)?.lowercased()
-            let syms = loaded.index.image.symbols.filter { sym in
-                guard let q = filter, !q.isEmpty else { return true }
-                return sym.name.lowercased().contains(q) || sym.demangledName.lowercased().contains(q)
-            }
-            return syms.map { sym in
-                "\(sym.address.hexString) [\(sym.kind.rawValue)] \(sym.demangledName)"
-            }.joined(separator: "\n")
+    private func runSymbols(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "symbols",
+            valueFlags: ["--binary", "--slice", "--filter"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "symbols", language: language)
+        let filter = parsed.values["--filter"]?.lowercased()
+        let filtered = target.image.symbols.filter { sym in
+            guard let q = filter, !q.isEmpty else { return true }
+            return sym.name.lowercased().contains(q) || sym.demangledName.lowercased().contains(q)
+        }
+        let realSyms = filtered.filter { !$0.isInferred }
+        let inferredSyms = filtered.filter { $0.isInferred }
 
-        case "strings":
-            let loaded = try loadAndAnalyze(args: rest)
-            let filter = optionValue("--filter", in: rest)?.lowercased()
-            let strs = loaded.index.image.strings.filter { lit in
-                guard let q = filter, !q.isEmpty else { return true }
-                return lit.value.lowercased().contains(q)
+        if parsed.isJSON {
+            func encodeSymbol(_ sym: BinarySymbol) -> [String: Any] {
+                [
+                    "name": sym.name,
+                    "demangledName": sym.demangledName,
+                    "address": sym.address.rawValue,
+                    "addressHex": sym.address.hexString,
+                    "kind": sym.kind.rawValue,
+                    "binding": sym.binding.rawValue,
+                    "inferred": sym.isInferred,
+                    "source": sym.provenance.rawValue,
+                    "libraryOrdinal": sym.libraryOrdinal ?? NSNull()
+                ]
             }
-            return strs.map { lit in
-                "\(lit.address.hexString) (\(lit.sectionName)): \(lit.value)"
-            }.joined(separator: "\n")
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "realCount": realSyms.count,
+                "inferredCount": inferredSyms.count,
+                "realSymbols": realSyms.map(encodeSymbol),
+                "inferredSymbols": inferredSyms.map(encodeSymbol)
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
 
-        case "disasm":
-            let loaded = try loadAndAnalyze(args: rest)
-            let targetFn = selectFunction(in: loaded.index, args: rest)
-            guard let fn = targetFn else {
-                return loaded.index.decodedInstructions.prefix(64).map { insn in
-                    "\(insn.address.hexString)  \(insn.rawBytesHex)  \(insn.formattedDisassembly)"
-                }.joined(separator: "\n")
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append("# Symtab Symbols (\(realSyms.count)):")
+        for sym in realSyms {
+            lines.append("\(sym.address.hexString) [\(sym.kind.rawValue)] \(sym.demangledName)")
+        }
+        if !inferredSyms.isEmpty {
+            lines.append("# Inferred Entries (\(inferredSyms.count)):")
+            for sym in inferredSyms {
+                lines.append("\(sym.address.hexString) [inferred:\(sym.provenance.rawValue)] \(sym.demangledName)")
             }
-            var out: [String] = ["; Function \(fn.demangledName) @ \(fn.address.hexString)"]
-            for block in fn.blocks {
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runStrings(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "strings",
+            valueFlags: ["--binary", "--slice", "--filter"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "strings", language: language)
+        let filter = parsed.values["--filter"]?.lowercased()
+        let strs = target.image.strings.filter { lit in
+            guard let q = filter, !q.isEmpty else { return true }
+            return lit.value.lowercased().contains(q)
+        }
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "count": strs.count,
+                "strings": strs.map { lit in
+                    [
+                        "address": lit.address.rawValue,
+                        "addressHex": lit.address.hexString,
+                        "fileOffset": lit.fileOffset.rawValue,
+                        "section": lit.sectionName,
+                        "encoding": lit.encoding.rawValue,
+                        "value": lit.value
+                    ] as [String: Any]
+                }
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        for lit in strs {
+            lines.append("\(lit.address.hexString) (\(lit.sectionName)): \(lit.value)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runFixups(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "fixups",
+            valueFlags: ["--binary", "--slice", "--filter"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "fixups", language: language)
+        let filter = parsed.values["--filter"]?.lowercased()
+        let entries = target.image.chainedFixups.filter { fx in
+            guard let q = filter, !q.isEmpty else { return true }
+            return (fx.symbolName?.lowercased().contains(q) == true)
+                || fx.kind.rawValue.lowercased().contains(q)
+                || fx.location.hexString.lowercased().contains(q)
+        }
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "count": entries.count,
+                "fixups": entries.map { fx in
+                    [
+                        "location": fx.location.rawValue,
+                        "locationHex": fx.location.hexString,
+                        "fileOffset": fx.fileOffset.rawValue,
+                        "kind": fx.kind.rawValue,
+                        "targetAddress": fx.targetAddress.map { AnyHashable($0.rawValue) } ?? NSNull(),
+                        "targetAddressHex": fx.targetAddress?.hexString ?? NSNull(),
+                        "symbolName": fx.symbolName ?? NSNull(),
+                        "libraryOrdinal": fx.libraryOrdinal ?? NSNull(),
+                        "addend": fx.addend,
+                        "pacKey": fx.pacKey ?? NSNull(),
+                        "pacDiversity": fx.pacDiversity.map { Int($0) } ?? NSNull(),
+                        "isPACAuthenticated": fx.pacKey != nil
+                    ] as [String: Any]
+                }
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        for fx in entries {
+            let symPart = fx.symbolName.map { " sym=\($0)" } ?? ""
+            let tgtPart = fx.targetAddress.map { " target=\($0.hexString)" } ?? ""
+            let pacPart = fx.pacKey.map { " pac=\($0)(div=\(fx.pacDiversity ?? 0))" } ?? ""
+            lines.append("\(fx.location.hexString) [\(fx.kind.rawValue)] off=0x\(String(fx.fileOffset.rawValue, radix: 16))\(symPart)\(tgtPart)\(pacPart)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runDisasm(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "disasm",
+            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address", "--count", "--limit"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+
+        let requestedName = parsed.values["--function"] ?? parsed.values["--symbol"]
+        let requestedAddr = parsed.values["--address"]
+        let limitRaw = parsed.values["--count"] ?? parsed.values["--limit"]
+        let maxCount: Int?
+        if let limitRaw {
+            guard let n = Int(limitRaw), n > 0 else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select(
+                        "Invalid instruction count '\(limitRaw)'. Expected a positive integer.",
+                        "无效的指令数量 '\(limitRaw)'，应为正整数。"
+                    )
+                )
+            }
+            maxCount = n
+        } else {
+            maxCount = nil
+        }
+
+        // Targeted function/symbol/address disassembly
+        if requestedName != nil || requestedAddr != nil {
+            let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "disasm", language: language)
+            let fn = try resolveRequiredFunction(
+                in: loaded.index,
+                symbolQuery: requestedName,
+                addressQuery: requestedAddr,
+                language: language
+            )
+            let allFnInsns = fn.blocks.flatMap(\.instructions)
+            let cappedInsns = maxCount.map { Array(allFnInsns.prefix($0)) } ?? allFnInsns
+
+            if parsed.isJSON {
+                let dict: [String: Any] = [
+                    "fileName": loaded.index.image.fileName,
+                    "isDemo": loaded.isDemo,
+                    "function": fn.name,
+                    "demangledName": fn.demangledName,
+                    "address": fn.address.rawValue,
+                    "addressHex": fn.address.hexString,
+                    "instructions": cappedInsns.map(Self.encodeInstructionJSON)
+                ]
+                return try Self.encodeJSONObject(dict)
+            }
+
+            var out: [String] = []
+            if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+                out.append(banner)
+            }
+            out.append("; Function \(fn.demangledName) @ \(fn.address.hexString)")
+            var emitted = 0
+            outer: for block in fn.blocks {
                 out.append("\(block.label):")
                 for insn in block.instructions {
+                    if let maxCount, emitted >= maxCount { break outer }
                     let commentSuffix = insn.autoComment.map { " ; \($0)" } ?? ""
                     out.append("  \(insn.address.hexString)  \(insn.rawBytesHex)  \(insn.formattedDisassembly)\(commentSuffix)")
+                    emitted += 1
                 }
             }
             return out.joined(separator: "\n")
+        }
 
-        case "cfg-dot":
-            let loaded = try loadAndAnalyze(args: rest)
-            guard let fn = selectFunction(in: loaded.index, args: rest) ?? loaded.index.functions.first else {
-                throw MachGraphError.cfgAnalysisError("No functions recovered to export DOT graph.")
-            }
-            return exportFunctionDOT(fn)
-
-        case "decompile":
-            let loaded = try loadAndAnalyze(args: rest)
-            let engine = MachMicroDecompilerEngine()
-            if let fn = selectFunction(in: loaded.index, args: rest) {
-                return engine.decompile(function: fn, in: loaded.index).fullSourceText
-            }
-            let outputs = engine.decompileAllFunctions(in: loaded.index, includeThunks: false)
-            return outputs.map(\.fullSourceText).joined(separator: "\n\n")
-
-        case "xrefs":
-            let loaded = try loadAndAnalyze(args: rest)
-            let addrRaw = optionValue("--address", in: rest) ?? loaded.index.functions.first?.address.hexString ?? "0x0"
-            let targetAddr = parseHexOrDec(addrRaw)
-            let incoming = loaded.index.crossReferences.xrefsTo(address: targetAddr)
-            let outgoing = loaded.index.crossReferences.xrefsFrom(address: targetAddr)
-            var lines: [String] = ["XREFS TO \(targetAddr.hexString) (\(incoming.count)):"]
-            for rec in incoming {
-                lines.append("  <- \(rec.fromAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
-            }
-            lines.append("XREFS FROM \(targetAddr.hexString) (\(outgoing.count)):")
-            for rec in outgoing {
-                lines.append("  -> \(rec.toAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
-            }
-            return lines.joined(separator: "\n")
-
-        case "entropy":
-            let loaded = try loadAndAnalyze(args: rest)
-            let report = SlidingWindowEntropyProfiler().analyzeFullProfile(
-                data: loaded.data,
-                image: loaded.index.image,
-                windowSize: 1024,
-                stepSize: 512
+        // Full linear disassembly of instruction sections ONLY (fast O(N), skips 2D CFG layout!)
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "disasm", language: language)
+        let decodedSections = try FunctionDiscoveryEngine().decodeExecutableSections(in: target.image, data: target.data)
+        guard !decodedSections.isEmpty else {
+            throw MachGraphError.cfgAnalysisError(
+                language.select(
+                    "No executable instruction sections found in '\(target.image.fileName)'.",
+                    "在 '\(target.image.fileName)' 中未找到可执行指令节区。"
+                )
             )
-            return String(
+        }
+
+        if parsed.isJSON {
+            var remaining = maxCount ?? Int.max
+            var secArray: [[String: Any]] = []
+            for entry in decodedSections where remaining > 0 {
+                let slice = Array(entry.instructions.prefix(remaining))
+                remaining -= slice.count
+                secArray.append([
+                    "segment": entry.section.segmentName,
+                    "section": entry.section.sectionName,
+                    "address": entry.section.vmAddress.rawValue,
+                    "addressHex": entry.section.vmAddress.hexString,
+                    "instructions": slice.map(Self.encodeInstructionJSON)
+                ])
+            }
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "sections": secArray
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        var emitted = 0
+        outerSec: for entry in decodedSections {
+            lines.append("; Section \(entry.section.segmentName),\(entry.section.sectionName) @ \(entry.section.vmAddress.hexString)")
+            for insn in entry.instructions {
+                if let maxCount, emitted >= maxCount { break outerSec }
+                lines.append("\(insn.address.hexString)\t\(String(format: "%08x", insn.rawWord))\t\(insn.mnemonicText)\t\(insn.operandText)")
+                emitted += 1
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runCFGDot(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "cfg-dot",
+            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "cfg-dot", language: language)
+        let requestedName = parsed.values["--function"] ?? parsed.values["--symbol"]
+        let requestedAddr = parsed.values["--address"]
+
+        let fn: RecoveredFunction
+        if requestedName != nil || requestedAddr != nil {
+            fn = try resolveRequiredFunction(
+                in: loaded.index,
+                symbolQuery: requestedName,
+                addressQuery: requestedAddr,
+                language: language
+            )
+        } else if let entry = loaded.index.image.entryPoint,
+                  let entryFn = loaded.index.function(at: entry) ?? loaded.index.function(containing: entry) {
+            fn = entryFn
+        } else if let first = loaded.index.functions.first(where: { !$0.isThunk }) ?? loaded.index.functions.first {
+            fn = first
+        } else {
+            throw MachGraphError.cfgAnalysisError(
+                language.select("No functions recovered in image.", "镜像中未恢复出任何函数。")
+            )
+        }
+
+        let dot = exportFunctionDOT(fn)
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "function": fn.name,
+                "demangledName": fn.demangledName,
+                "address": fn.address.rawValue,
+                "addressHex": fn.address.hexString,
+                "blockCount": fn.blocks.count,
+                "edgeCount": fn.edges.count,
+                "cyclomaticComplexity": fn.cyclomaticComplexity,
+                "loopCount": fn.naturalLoops.count,
+                "dot": dot
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+        if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+            return "// \(banner)\n\(dot)"
+        }
+        return dot
+    }
+
+    private func runDecompile(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "decompile",
+            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "decompile", language: language)
+        let engine = MachMicroDecompilerEngine()
+        let requestedName = parsed.values["--function"] ?? parsed.values["--symbol"]
+        let requestedAddr = parsed.values["--address"]
+
+        let targetFunctions: [RecoveredFunction]
+        if requestedName != nil || requestedAddr != nil {
+            let fn = try resolveRequiredFunction(
+                in: loaded.index,
+                symbolQuery: requestedName,
+                addressQuery: requestedAddr,
+                language: language
+            )
+            targetFunctions = [fn]
+        } else {
+            let nonThunks = loaded.index.functions.filter { !$0.isThunk }
+            targetFunctions = nonThunks.isEmpty ? loaded.index.functions : nonThunks
+        }
+
+        guard !targetFunctions.isEmpty else {
+            throw MachGraphError.decompilerError(
+                language.select("No functions available to decompile.", "没有可供反编译的函数。")
+            )
+        }
+
+        let outputs = targetFunctions.map { fn in
+            engine.decompile(function: fn, in: loaded.index, language: language)
+        }
+        let warningLine = PseudoCCodeFormatter.experimentalWarningComment(in: language)
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "experimental": true,
+                "warning": warningLine,
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "functions": outputs.map { out in
+                    [
+                        "name": out.functionName,
+                        "address": out.functionAddress.rawValue,
+                        "addressHex": out.functionAddress.hexString,
+                        "signature": out.signatureLine,
+                        "source": out.fullSourceText
+                    ] as [String: Any]
+                }
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var body = outputs.map(\.fullSourceText).joined(separator: "\n\n")
+        if !body.hasPrefix(warningLine) {
+            body = warningLine + "\n" + body
+        }
+        if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+            // Keep experimental warning on line 1 per M0 Item 8!
+            let lines = body.components(separatedBy: "\n")
+            if let first = lines.first {
+                let tail = lines.dropFirst().joined(separator: "\n")
+                return "\(first)\n// \(banner)\n\(tail)"
+            }
+        }
+        return body
+    }
+
+    private func runXrefs(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "xrefs",
+            valueFlags: ["--binary", "--slice", "--address", "--function", "--symbol"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "xrefs", language: language)
+        let targetAddr: VirtualAddress
+        if let addrRaw = parsed.values["--address"] {
+            targetAddr = try parseStrictAddress(addrRaw, language: language)
+        } else if let symRaw = parsed.values["--function"] ?? parsed.values["--symbol"] {
+            let fn = try resolveRequiredFunction(in: loaded.index, symbolQuery: symRaw, addressQuery: nil, language: language)
+            targetAddr = fn.address
+        } else {
+            targetAddr = loaded.index.image.entryPoint ?? loaded.index.functions.first?.address ?? .zero
+        }
+
+        let incoming = loaded.index.crossReferences.xrefsTo(address: targetAddr)
+        let outgoing = loaded.index.crossReferences.xrefsFrom(address: targetAddr)
+
+        if parsed.isJSON {
+            func encodeXref(_ rec: XrefRecord) -> [String: Any] {
+                [
+                    "fromAddress": rec.fromAddress.rawValue,
+                    "fromAddressHex": rec.fromAddress.hexString,
+                    "toAddress": rec.toAddress.rawValue,
+                    "toAddressHex": rec.toAddress.hexString,
+                    "kind": rec.kind.rawValue,
+                    "instructionPreview": rec.instructionPreview
+                ]
+            }
+            let dict: [String: Any] = [
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "address": targetAddr.rawValue,
+                "addressHex": targetAddr.hexString,
+                "incoming": incoming.map(encodeXref),
+                "outgoing": outgoing.map(encodeXref)
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append("XREFS TO \(targetAddr.hexString) (\(incoming.count)):")
+        for rec in incoming {
+            lines.append("  <- \(rec.fromAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
+        }
+        lines.append("XREFS FROM \(targetAddr.hexString) (\(outgoing.count)):")
+        for rec in outgoing {
+            lines.append("  -> \(rec.toAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runCodeSign(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "codesign",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "codesign", language: language)
+        let cs = target.image.codeSignature
+        let verification = try? MachOAdHocReSigner().verifyCodeSignature(
+            in: target.data,
+            sliceIndex: target.image.selectedSliceIndex
+        )
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "isSigned": cs.isSigned,
+                "isAdHoc": cs.isAdHoc,
+                "identifier": cs.identifier,
+                "teamIdentifier": cs.teamIdentifier ?? NSNull(),
+                "cdHash": cs.cdHashHex,
+                "hashAlgorithm": cs.hashAlgorithm,
+                "verified": verification?.isValid ?? false,
+                "entitlements": cs.entitlementsPairs,
+                "cmsSigners": cs.cmsSignerCommonNames
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append(
+            "Signed=\(cs.isSigned) AdHoc=\(cs.isAdHoc) Identifier=\(cs.identifier) CDHash=\(cs.cdHashHex) Hash=\(cs.hashAlgorithm) Verified=\(verification?.isValid ?? false) Entitlements=\(cs.entitlementsPairs.count)"
+        )
+        return lines.joined(separator: "\n")
+    }
+
+    private func runEntropy(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "entropy",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "entropy", language: language)
+        let report = SlidingWindowEntropyProfiler().analyzeFullProfile(
+            data: target.data,
+            image: target.image,
+            windowSize: 1024,
+            stepSize: 512
+        )
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "shannonEntropyBits": report.overallMetrics.shannonEntropyBits,
+                "byteChiSquare": report.overallMetrics.byteChiSquare,
+                "zeroByteRatio": report.overallMetrics.zeroByteRatio,
+                "anomalyCount": report.anomalies.count,
+                "sampleCount": report.samples.count
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append(
+            String(
                 format: "OverallEntropy=%.4f bits/byte | ChiSquare=%.2f | ZeroRatio=%.3f | Anomalies=%d | Samples=%d",
                 report.overallMetrics.shannonEntropyBits,
                 report.overallMetrics.byteChiSquare,
@@ -151,130 +1002,468 @@ public struct MachCLIRunner: Sendable {
                 report.anomalies.count,
                 report.samples.count
             )
-
-        case "codesign":
-            let loaded = try loadAndAnalyze(args: rest)
-            let cs = loaded.index.image.codeSignature
-            let verification = try? MachOAdHocReSigner().verifyCodeSignature(in: loaded.data, sliceIndex: loaded.index.image.selectedSliceIndex)
-            return "Signed=\(cs.isSigned) AdHoc=\(cs.isAdHoc) Identifier=\(cs.identifier) CDHash=\(cs.cdHashHex) Hash=\(cs.hashAlgorithm) Verified=\(verification?.isValid ?? false) Entitlements=\(cs.entitlementsPairs.count)"
-
-        case "patch-asm":
-            let loaded = try loadAndAnalyze(args: rest)
-            guard let addrText = optionValue("--address", in: rest),
-                  let asmText = optionValue("--asm", in: rest) else {
-                throw MachGraphError.patchFormatError("Usage: machgraph patch-asm [--binary <path>] --address <0x...> --asm \"mov w0, #1; ret\" [--output <out>]")
-            }
-            let vmAddr = parseHexOrDec(addrText)
-            guard let fileOff = loaded.index.image.fileOffset(for: vmAddr) else {
-                throw MachGraphError.patchFormatError("Virtual address \(vmAddr.hexString) is not backed by file bytes.")
-            }
-            let baseOverlay = try SparseCoWByteOverlayBuffer(baseData: loaded.data, image: loaded.index.image)
-            let patchRecord = try InlineARM64InstructionPatcher().patchInstruction(
-                at: fileOff,
-                virtualAddress: vmAddr,
-                withAssembly: asmText,
-                in: baseOverlay,
-                image: loaded.index.image,
-                allowClobberingBranchTargets: rest.contains("--force")
-            )
-            let reSigned = try MachOAdHocReSigner().reSignMachO(
-                binaryData: loaded.data,
-                patches: [patchRecord],
-                sliceIndex: loaded.index.image.selectedSliceIndex
-            )
-            if let outPath = optionValue("--output", in: rest) {
-                try reSigned.signedBinaryData.write(to: URL(fileURLWithPath: outPath), options: .atomic)
-            }
-            return "Patched \(vmAddr.hexString) (\(patchRecord.originalAssembly ?? "bytes") -> \(patchRecord.patchedAssembly ?? asmText)) | NewCDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
-
-        case "resign":
-            let loaded = try loadAndAnalyze(args: rest)
-            let reSigned = try MachOAdHocReSigner().reSignMachO(
-                binaryData: loaded.data,
-                sliceIndex: loaded.index.image.selectedSliceIndex,
-                identifier: optionValue("--identifier", in: rest)
-            )
-            if let outPath = optionValue("--output", in: rest) {
-                try reSigned.signedBinaryData.write(to: URL(fileURLWithPath: outPath), options: .atomic)
-            }
-            return "Ad-hoc re-signed \(loaded.index.image.fileName) | CDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
-
-        case "audit-plugins":
-            let loaded = try loadAndAnalyze(args: rest)
-            let report = try MachPluginRunner().runSuite(
-                against: loaded.index,
-                binaryData: loaded.data,
-                continueOnError: true
-            )
-            if report.findings.isEmpty {
-                return "0 security findings across \(report.results.count) plugins."
-            }
-            return report.findings.map { f in
-                "[\(f.severity.rawValue)] \(f.address?.hexString ?? "image") (\(f.pluginID)) \(f.title) - \(f.detail)"
-            }.joined(separator: "\n")
-
-        case "export-html":
-            let outPath = optionValue("--output", in: rest) ?? (rest.first { !$0.hasPrefix("--") } ?? "machgraph-triage.html")
-            let loaded = try loadAndAnalyze(args: rest)
-            let html = try ColdTungstenHTMLReportExporter().exportHTMLReport(
-                analysisIndex: loaded.index,
-                binaryData: loaded.data
-            )
-            try html.write(toFile: outPath, atomically: true, encoding: .utf8)
-            return "Exported Cold-Tungsten HTML triage dossier to \(outPath)"
-
-        case "mcp":
-            let defaultBinary = optionValue("--binary", in: rest)
-            let server = MachMCPServer(defaultBinaryPath: defaultBinary)
-            await server.serveStdio()
-            return ""
-
-        default:
-            throw MachGraphError.ioFailure("Unknown subcommand '\(subcommand)'. Run 'MachGraph --help'.")
-        }
-    }
-
-    // MARK: - Helpers
-
-    private func loadAndAnalyze(args: [String]) throws -> (data: Data, index: BinaryAnalysisIndex) {
-        let coordinator = BinaryAnalysisCoordinator()
-        if let path = optionValue("--binary", in: args) {
-            let url = URL(fileURLWithPath: path)
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw MachGraphError.fileNotFound(path)
-            }
-            let data = try Data(contentsOf: url)
-            let idx = try coordinator.analyzeBinary(
-                data: data,
-                filePath: url.path,
-                fileName: url.lastPathComponent
-            )
-            return (data, idx)
-        }
-        let usePAC = !args.contains("--no-pac")
-        let synthetic = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: usePAC)
-        let idx = try coordinator.analyzeBinary(
-            data: synthetic,
-            filePath: "<synthetic-arm64e>",
-            fileName: usePAC ? "SyntheticAuthDemo.arm64e" : "SyntheticAuthDemo.arm64"
         )
-        return (synthetic, idx)
+        return lines.joined(separator: "\n")
     }
 
-    private func selectFunction(in index: BinaryAnalysisIndex, args: [String]) -> RecoveredFunction? {
-        if let addrRaw = optionValue("--address", in: args) {
-            let addr = parseHexOrDec(addrRaw)
+    private func runPatchAsm(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "patch-asm",
+            valueFlags: ["--binary", "--slice", "--address", "--asm", "--output", "-o"],
+            boolFlags: ["--force", "--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "patch-asm", language: language)
+        guard let addrText = parsed.values["--address"],
+              let asmText = parsed.values["--asm"] else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Usage: machgraph patch-asm <file> --address <0x...> --asm \"mov w0, #1; ret\" [--output <out>]",
+                    "用法: machgraph patch-asm <文件> --address <0x...> --asm \"mov w0, #1; ret\" [--output <输出路径>]"
+                )
+            )
+        }
+        let vmAddr = try parseStrictAddress(addrText, language: language)
+        guard let fileOff = target.image.fileOffset(for: vmAddr) else {
+            throw MachGraphError.patchFormatError("Virtual address \(vmAddr.hexString) is not backed by file bytes.")
+        }
+        let baseOverlay = try SparseCoWByteOverlayBuffer(baseData: target.data, image: target.image)
+        let patchRecord = try InlineARM64InstructionPatcher().patchInstruction(
+            at: fileOff,
+            virtualAddress: vmAddr,
+            withAssembly: asmText,
+            in: baseOverlay,
+            image: target.image,
+            allowClobberingBranchTargets: parsed.boolFlags.contains("--force")
+        )
+        let reSigned = try MachOAdHocReSigner().reSignMachO(
+            binaryData: target.data,
+            patches: [patchRecord],
+            sliceIndex: target.image.selectedSliceIndex
+        )
+        let outPath = parsed.values["--output"] ?? parsed.values["-o"]
+        if let outPath {
+            try reSigned.signedBinaryData.write(to: URL(fileURLWithPath: outPath), options: .atomic)
+        }
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "address": vmAddr.rawValue,
+                "addressHex": vmAddr.hexString,
+                "originalAssembly": patchRecord.originalAssembly ?? "",
+                "patchedAssembly": patchRecord.patchedAssembly ?? asmText,
+                "byteCount": patchRecord.byteCount,
+                "updatedCDHash": reSigned.updatedCDHashHex,
+                "valid": reSigned.verificationReport.isValid,
+                "outputPath": outPath ?? NSNull()
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        return "Patched \(vmAddr.hexString) (\(patchRecord.originalAssembly ?? "bytes") -> \(patchRecord.patchedAssembly ?? asmText)) | NewCDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
+    }
+
+    private func runResign(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "resign",
+            valueFlags: ["--binary", "--slice", "--identifier", "--output", "-o"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "resign", language: language)
+        let reSigned = try MachOAdHocReSigner().reSignMachO(
+            binaryData: target.data,
+            sliceIndex: target.image.selectedSliceIndex,
+            identifier: parsed.values["--identifier"]
+        )
+        let outPath = parsed.values["--output"] ?? parsed.values["-o"]
+        if let outPath {
+            try reSigned.signedBinaryData.write(to: URL(fileURLWithPath: outPath), options: .atomic)
+        }
+
+        if parsed.isJSON {
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "updatedCDHash": reSigned.updatedCDHashHex,
+                "valid": reSigned.verificationReport.isValid,
+                "outputPath": outPath ?? NSNull()
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        return "Ad-hoc re-signed \(target.image.fileName) | CDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
+    }
+
+    private func runAuditPlugins(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "audit-plugins",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "audit-plugins", language: language)
+        let report = try MachPluginRunner().runSuite(
+            against: loaded.index,
+            binaryData: loaded.data,
+            continueOnError: true
+        )
+
+        if parsed.isJSON {
+            let findingsJSON = try JSONEncoder().encode(report.findings)
+            let findingsArray = (try? JSONSerialization.jsonObject(with: findingsJSON)) ?? []
+            let dict: [String: Any] = [
+                "experimental": true,
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "pluginCount": report.results.count,
+                "findingCount": report.findings.count,
+                "findings": findingsArray
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        lines.append(
+            language.select(
+                "# EXPERIMENTAL: Static heuristic plugin output — false positives and false negatives are known.",
+                "# 【实验性】静态启发式插件输出：已知存在误报与漏报。"
+            )
+        )
+        if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+            lines.append(banner)
+        }
+        if report.findings.isEmpty {
+            lines.append("0 security findings across \(report.results.count) plugins.")
+        } else {
+            for f in report.findings {
+                lines.append("[\(f.severity.rawValue)] \(f.address?.hexString ?? "image") (\(f.pluginID)) \(f.localizedTitle(in: language)) - \(f.localizedDetail(in: language))")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runExportHTML(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "export-html",
+            valueFlags: ["--binary", "--slice", "--output", "-o"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "export-html", language: language)
+        let html = try ColdTungstenHTMLReportExporter().exportHTMLReport(
+            analysisIndex: loaded.index,
+            binaryData: loaded.data,
+            isDemo: loaded.isDemo
+        )
+        let outPath = parsed.values["--output"] ?? parsed.values["-o"]
+        if let outPath {
+            try html.write(toFile: outPath, atomically: true, encoding: .utf8)
+            if parsed.isJSON {
+                return try Self.encodeJSONObject([
+                    "fileName": loaded.index.image.fileName,
+                    "isDemo": loaded.isDemo,
+                    "outputPath": outPath,
+                    "byteCount": html.utf8.count
+                ])
+            }
+            return "Exported Cold-Tungsten HTML triage dossier to \(outPath)"
+        }
+        if parsed.isJSON {
+            return try Self.encodeJSONObject([
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "byteCount": html.utf8.count,
+                "html": html
+            ])
+        }
+        return html
+    }
+
+    // MARK: - Strict CLI Argument Parsing & Binary Loading
+
+    private struct ParsedCLIArguments {
+        let positionals: [String]
+        let values: [String: String]
+        let boolFlags: Set<String>
+
+        var isJSON: Bool { boolFlags.contains("--json") }
+        var isDemo: Bool { boolFlags.contains("--demo") }
+    }
+
+    private func parseArguments(
+        _ args: [String],
+        subcommand: String,
+        valueFlags: Set<String>,
+        boolFlags: Set<String>,
+        language: MachLanguage
+    ) throws -> ParsedCLIArguments {
+        var positionals: [String] = []
+        var values: [String: String] = [:]
+        var activeBools: Set<String> = []
+
+        var idx = 0
+        while idx < args.count {
+            let tok = args[idx]
+            if tok == "--" {
+                positionals.append(contentsOf: args[(idx + 1)...])
+                break
+            }
+            if tok.hasPrefix("-") && tok != "-" {
+                if let eqIdx = tok.firstIndex(of: "=") {
+                    let flagName = String(tok[..<eqIdx])
+                    let flagValue = String(tok[tok.index(after: eqIdx)...])
+                    guard valueFlags.contains(flagName) else {
+                        throw MachGraphError.invalidCLIArguments(
+                            language.select(
+                                "Unknown option '\(flagName)' for subcommand '\(subcommand)'.",
+                                "子命令 '\(subcommand)' 不支持选项 '\(flagName)'。"
+                            )
+                        )
+                    }
+                    values[flagName] = flagValue
+                    idx += 1
+                    continue
+                }
+                if valueFlags.contains(tok) {
+                    guard idx + 1 < args.count else {
+                        throw MachGraphError.invalidCLIArguments(
+                            language.select(
+                                "Option '\(tok)' requires a value.",
+                                "选项 '\(tok)' 需要提供参数值。"
+                            )
+                        )
+                    }
+                    values[tok] = args[idx + 1]
+                    idx += 2
+                    continue
+                }
+                if boolFlags.contains(tok) {
+                    activeBools.insert(tok)
+                    idx += 1
+                    continue
+                }
+                throw MachGraphError.invalidCLIArguments(
+                    language.select(
+                        "Unknown option '\(tok)' for subcommand '\(subcommand)'.",
+                        "子命令 '\(subcommand)' 不支持选项 '\(tok)'。"
+                    )
+                )
+            } else {
+                positionals.append(tok)
+                idx += 1
+            }
+        }
+
+        if positionals.count > 1 {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Unexpected extra positional argument '\(positionals[1])' for '\(subcommand)'.",
+                    "子命令 '\(subcommand)' 收到多余的位置参数 '\(positionals[1])'。"
+                )
+            )
+        }
+        if values["--binary"] != nil && !positionals.isEmpty {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Specify either a positional <file> path or '--binary <file>', not both.",
+                    "请只指定位置参数 <文件> 或 '--binary <文件>' 之一，不要同时传入。"
+                )
+            )
+        }
+
+        return ParsedCLIArguments(positionals: positionals, values: values, boolFlags: activeBools)
+    }
+
+    private func resolveInputFileURL(
+        parsed: ParsedCLIArguments,
+        subcommand: String,
+        language: MachLanguage
+    ) throws -> (url: URL, isDemo: Bool) {
+        if parsed.isDemo {
+            if parsed.values["--binary"] != nil || !parsed.positionals.isEmpty {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select(
+                        "Cannot combine '--demo' with an explicit binary file path.",
+                        "不能同时使用 '--demo' 与显式文件路径。"
+                    )
+                )
+            }
+            let demoURL = try Self.locateDemoBinaryURL(language: language)
+            return (demoURL, true)
+        }
+
+        guard let rawPath = parsed.values["--binary"] ?? parsed.positionals.first,
+              !rawPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Missing binary file path. Usage: machgraph \(subcommand) <file> (or pass --demo for the sample binary).",
+                    "缺少二进制文件路径。用法: machgraph \(subcommand) <文件>（或传入 --demo 载入演示样本）。"
+                )
+            )
+        }
+
+        let url = URL(fileURLWithPath: rawPath)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
+            throw MachGraphError.fileNotFound(rawPath)
+        }
+        if isDir.boolValue {
+            throw MachGraphError.ioFailure(
+                language.select(
+                    "'\(rawPath)' is a directory; pass the Mach-O binary file path inside it.",
+                    "'\(rawPath)' 是目录，请传入其中的 Mach-O 二进制文件路径。"
+                )
+            )
+        }
+        return (url, false)
+    }
+
+    private func loadContainerOnly(
+        parsed: ParsedCLIArguments,
+        subcommand: String,
+        language: MachLanguage
+    ) throws -> (data: Data, image: LoadedBinaryImage, isDemo: Bool) {
+        let resolved = try resolveInputFileURL(parsed: parsed, subcommand: subcommand, language: language)
+        let sliceIndex: Int?
+        if let rawSlice = parsed.values["--slice"] {
+            guard let s = Int(rawSlice), s >= 0 else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Invalid '--slice' index '\(rawSlice)'.", "无效的 '--slice' 切片索引 '\(rawSlice)'。")
+                )
+            }
+            sliceIndex = s
+        } else {
+            sliceIndex = nil
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: resolved.url)
+        } catch {
+            throw MachGraphError.ioFailure(
+                language.select(
+                    "Unable to read '\(resolved.url.path)': \(error.localizedDescription)",
+                    "无法读取文件 '\(resolved.url.path)': \(error.localizedDescription)"
+                )
+            )
+        }
+        guard !data.isEmpty else {
+            throw MachGraphError.unexpectedEOF(offset: 0, requested: 4, available: 0)
+        }
+        let image = try UniversalBinaryDispatcher.load(
+            data: data,
+            filePath: resolved.url.path,
+            fileName: resolved.url.lastPathComponent,
+            preferredSliceIndex: sliceIndex
+        )
+        return (data, image, resolved.isDemo)
+    }
+
+    private func loadAndAnalyzeCFG(
+        parsed: ParsedCLIArguments,
+        subcommand: String,
+        language: MachLanguage
+    ) throws -> (data: Data, index: BinaryAnalysisIndex, isDemo: Bool) {
+        let container = try loadContainerOnly(parsed: parsed, subcommand: subcommand, language: language)
+        let cliOptions = BinaryAnalysisOptions(
+            computeSugiyamaLayouts: false,
+            computePostDominatorTrees: false
+        )
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+        let index = try coordinator.analyzeBinary(container.image, data: container.data)
+        return (container.data, index, container.isDemo)
+    }
+
+    private func resolveRequiredFunction(
+        in index: BinaryAnalysisIndex,
+        symbolQuery: String?,
+        addressQuery: String?,
+        language: MachLanguage
+    ) throws -> RecoveredFunction {
+        if let addressQuery {
+            let addr = try parseStrictAddress(addressQuery, language: language)
             if let exact = index.functions.first(where: { $0.address == addr }) {
                 return exact
             }
-            return index.functions.first(where: { addr >= $0.address && addr < $0.endAddress })
-        }
-        if let fnName = optionValue("--function", in: args)?.lowercased() {
-            return index.functions.first {
-                $0.name.lowercased().contains(fnName) || $0.demangledName.lowercased().contains(fnName)
+            if let containing = index.functions.first(where: { addr >= $0.address && addr < $0.endAddress }) {
+                return containing
             }
+            throw MachGraphError.cfgAnalysisError(
+                language.select(
+                    "No function found at address '\(addressQuery)' in '\(index.image.fileName)'.",
+                    "在 '\(index.image.fileName)' 中未找到位于地址 '\(addressQuery)' 的函数。"
+                )
+            )
         }
-        return nil
+
+        if let symbolQuery {
+            let trimmed = symbolQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Function/symbol name must not be empty.", "函数或符号名称不能为空。")
+                )
+            }
+            let qLower = trimmed.lowercased()
+            let prefixed = qLower.hasPrefix("_") ? qLower : "_\(qLower)"
+
+            if let exact = index.functions.first(where: {
+                let n = $0.name.lowercased()
+                let d = $0.demangledName.lowercased()
+                return n == qLower || n == prefixed || d == qLower
+            }) {
+                return exact
+            }
+            if let partial = index.functions.first(where: {
+                $0.name.lowercased().contains(qLower) || $0.demangledName.lowercased().contains(qLower)
+            }) {
+                return partial
+            }
+            throw MachGraphError.cfgAnalysisError(
+                language.select(
+                    "Function or symbol '\(trimmed)' not found in '\(index.image.fileName)'.",
+                    "在 '\(index.image.fileName)' 中未找到函数或符号 '\(trimmed)'。"
+                )
+            )
+        }
+
+        throw MachGraphError.invalidCLIArguments(
+            language.select("Specify '--symbol <name>' or '--address <0x...>'.", "请指定 '--symbol <名称>' 或 '--address <0x...>'。")
+        )
+    }
+
+    private func parseStrictAddress(_ raw: String, language: MachLanguage) throws -> VirtualAddress {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.lowercased().hasPrefix("0x") {
+            let hex = String(trimmed.dropFirst(2))
+            if let val = UInt64(hex, radix: 16) {
+                return VirtualAddress(val)
+            }
+        } else if let val = UInt64(trimmed, radix: 10) {
+            return VirtualAddress(val)
+        } else if let val = UInt64(trimmed, radix: 16) {
+            return VirtualAddress(val)
+        }
+        throw MachGraphError.invalidCLIArguments(
+            language.select(
+                "Invalid virtual address '\(raw)'. Expected hexadecimal (0x...) or decimal integer.",
+                "无效的虚拟地址 '\(raw)'，应为十六进制 (0x...) 或十进制整数。"
+            )
+        )
+    }
+
+    private func demoBannerLine(isDemo: Bool, language: MachLanguage) -> String? {
+        guard isDemo else { return nil }
+        return language.select(
+            "[DEMO] Loaded sample fixture Fixtures/demo_arm64_sample (explicit --demo mode)",
+            "[演示数据] 已载入演示样本 Fixtures/demo_arm64_sample（显式 --demo 模式）"
+        )
     }
 
     private func exportFunctionDOT(_ fn: RecoveredFunction) -> String {
@@ -303,18 +1492,96 @@ public struct MachCLIRunner: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private func parseHexOrDec(_ raw: String) -> VirtualAddress {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasPrefix("0x") {
-            let hex = String(trimmed.dropFirst(2))
-            return VirtualAddress(UInt64(hex, radix: 16) ?? 0)
+    // MARK: - Demo Fixture Discovery, JSON Encoding & Help Generation
+
+    public static func locateDemoBinaryURL(language: MachLanguage = .en) throws -> URL {
+        let fm = FileManager.default
+        if let envOverride = ProcessInfo.processInfo.environment["MACHGRAPH_DEMO_BINARY"],
+           !envOverride.isEmpty,
+           fm.fileExists(atPath: envOverride) {
+            return URL(fileURLWithPath: envOverride)
         }
-        return VirtualAddress(UInt64(trimmed) ?? 0)
+        if let bundled = Bundle.main.url(forResource: "demo_arm64_sample", withExtension: nil),
+           fm.fileExists(atPath: bundled.path) {
+            return bundled
+        }
+
+        var searchRoots: [URL] = [
+            URL(fileURLWithPath: fm.currentDirectoryPath, isDirectory: true)
+        ]
+        if let argv0 = CommandLine.arguments.first, !argv0.isEmpty {
+            let rawExec = URL(fileURLWithPath: argv0)
+            searchRoots.append(rawExec.deletingLastPathComponent())
+            searchRoots.append(rawExec.resolvingSymlinksInPath().deletingLastPathComponent())
+        }
+        for bundle in Bundle.allBundles {
+            searchRoots.append(bundle.bundleURL.deletingLastPathComponent())
+        }
+
+        for root in searchRoots {
+            var cursor = root
+            for _ in 0..<6 {
+                let candidate = cursor.appendingPathComponent("Fixtures/demo_arm64_sample", isDirectory: false)
+                if fm.fileExists(atPath: candidate.path) {
+                    return candidate
+                }
+                let parent = cursor.deletingLastPathComponent()
+                if parent.path == cursor.path { break }
+                cursor = parent
+            }
+        }
+
+        throw MachGraphError.fileNotFound(
+            language.select(
+                "Fixtures/demo_arm64_sample (demo binary fixture not found)",
+                "Fixtures/demo_arm64_sample（未找到演示样本二进制文件）"
+            )
+        )
     }
 
-    private func optionValue(_ flag: String, in args: [String]) -> String? {
-        guard let idx = args.firstIndex(of: flag), idx + 1 < args.count else { return nil }
-        return args[idx + 1]
+    private static func encodeInstructionJSON(_ insn: A64DecodedInstruction) -> [String: Any] {
+        [
+            "address": insn.address.rawValue,
+            "addressHex": insn.address.hexString,
+            "rawWord": insn.rawWord,
+            "rawWordHex": String(format: "%08x", insn.rawWord),
+            "mnemonic": insn.mnemonicText,
+            "operands": insn.operandText,
+            "disassembly": insn.formattedDisassembly
+        ]
+    }
+
+    fileprivate static func encodeJSONObject(_ object: Any) throws -> String {
+        let data = try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public static func validateAndResolveLanguage(from args: [String]) throws -> MachLanguage {
+        var idx = 0
+        while idx < args.count {
+            let tok = args[idx]
+            if tok == "--lang" || tok == "--language" {
+                guard idx + 1 < args.count, let parsed = MachLanguage.parse(args[idx + 1]) else {
+                    throw MachGraphError.invalidCLIArguments(
+                        "Invalid or missing value for '\(tok)'. Expected 'en' or 'zh'."
+                    )
+                }
+                _ = parsed
+                idx += 2
+                continue
+            }
+            if tok.hasPrefix("--lang=") || tok.hasPrefix("--language=") {
+                let raw = tok.split(separator: "=", maxSplits: 1).dropFirst().first.map(String.init)
+                guard let parsed = MachLanguage.parse(raw) else {
+                    throw MachGraphError.invalidCLIArguments(
+                        "Invalid language value in '\(tok)'. Expected 'en' or 'zh'."
+                    )
+                }
+                _ = parsed
+            }
+            idx += 1
+        }
+        return MachLanguage.resolve(arguments: args)
     }
 
     public static func stripLanguageFlags(_ args: [String]) -> [String] {
@@ -336,61 +1603,108 @@ public struct MachCLIRunner: Sendable {
         return result
     }
 
-    public static let helpBanner = """
-    MachGraph 1.1.0 - Native macOS Binary Reverse-Engineering, ARM64 CFG & SSA Decompiler IDE (中文 / EN)
-    Global Options:
-      --lang <zh|en>                                      Set workbench or screenshot language (env: MACHGRAPH_LANG=zh|en)
-    Subcommands:
-      info [--binary <path>]                              Inspect container format, arch, segments, Xrefs & CDHash
-      segments [--binary <path>]                          List mapped VM segments & RWX protections
-      symbols [--binary <path>] [--filter <q>]            List demangled Swift / C++ / ObjC symbols
-      strings [--binary <path>] [--filter <q>]            List extracted UTF-8 / UTF-16 string literals
-      disasm [--binary <path>] [--function <name>]        Disassemble recovered basic blocks with A64 idioms
-      cfg-dot [--binary <path>] [--function <name>]       Export Graphviz DOT control-flow graph
-      decompile [--binary <path>] [--function <name>]     Lift ARM64/ARM64e SSA Micro-IR to structured Pseudo-C
-      xrefs [--binary <path>] [--address <0x...>]         Query incoming & outgoing cross-references
-      entropy [--binary <path>]                           Compute sliding-window Shannon entropy & chi-square metrics
-      codesign [--binary <path>]                          Verify Mach-O SuperBlob, CodeDirectory SHA-256 & entitlements
-      patch-asm --address <0x...> --asm "..." [--output]  Assemble inline ARM64 patch & ad-hoc re-sign
-      resign [--binary <path>] [--output <out>]           Recalculate Mach-O SHA-256 CodeDirectory page hashes
-      audit-plugins [--binary <path>]                     Execute JavaScriptCore binary security audit plugins
-      export-html <out.html> [--binary <path>]            Export Hallmark Cold-Tungsten bilingual HTML triage dossier
-      mcp [--binary <path>]                               Start JSON-RPC 2.0 reverse-engineering MCP server on stdio
-      --export-screenshots <output-dir> [--lang zh|en]    Render 2x Retina Cold-Tungsten workbench screenshots
-    """
+    public static func versionBanner(in language: MachLanguage) -> String {
+        language.select(
+            "MachGraph 1.1.0 (macOS arm64 · Mach-O & Universal Loader + ARM64 Disassembler & CFG · 中文/EN)",
+            "MachGraph 1.1.0 (macOS arm64 · Mach-O 与通用二进制加载器 + ARM64 反汇编与控制流图 · 中文/EN)"
+        )
+    }
+
+    public static var helpBanner: String {
+        helpBanner(in: .en)
+    }
+
+    public static func helpBanner(in language: MachLanguage) -> String {
+        var lines: [String] = []
+        lines.append(
+            language.select(
+                "MachGraph 1.1.0 - macOS ARM64 & Mach-O Binary Inspector, Disassembler & CFG Analyzer (中文 / EN)",
+                "MachGraph 1.1.0 - macOS ARM64 与 Mach-O 二进制检视、反汇编与控制流图分析工具 (中文 / EN)"
+            )
+        )
+        lines.append(
+            language.select(
+                "Usage: machgraph <subcommand> <file> [options]",
+                "用法: machgraph <子命令> <文件> [选项]"
+            )
+        )
+        lines.append(language.select("Global Options:", "全局选项:"))
+        lines.append(
+            language.select(
+                "  --lang <en|zh>                                      Set output or UI language (env: MACHGRAPH_LANG=en|zh)",
+                "  --lang <en|zh>                                      设置命令行或界面语言 (环境变量: MACHGRAPH_LANG=en|zh)"
+            )
+        )
+        lines.append(
+            language.select(
+                "  --demo                                              Load sample fixture Fixtures/demo_arm64_sample with [DEMO] tag",
+                "  --demo                                              显式载入演示样本 Fixtures/demo_arm64_sample 并标注 [演示数据]"
+            )
+        )
+        lines.append(
+            language.select(
+                "  --binary <path>                                     Equivalent flag form for positional <file>",
+                "  --binary <路径>                                     与位置参数 <文件> 等价的文件路径写法"
+            )
+        )
+        lines.append(
+            language.select(
+                "  --help, -h                                          Show this help text",
+                "  --help, -h                                          显示本帮助说明"
+            )
+        )
+        lines.append(
+            language.select(
+                "  --version                                           Show version string",
+                "  --version                                           显示版本信息"
+            )
+        )
+        lines.append(language.select("Subcommands:", "子命令:"))
+        for spec in subcommandSpecs {
+            let argsCol = language.select(spec.usageArgsEN, spec.usageArgsZH)
+            let descCol = language.select(spec.summaryEN, spec.summaryZH)
+            let left = "\(spec.primaryName) \(argsCol)".trimmingCharacters(in: .whitespaces)
+            let padded = left.padding(toLength: max(50, left.count + 2), withPad: " ", startingAt: 0)
+            lines.append("  \(padded)\(descCol)")
+        }
+        return lines.joined(separator: "\n")
+    }
 }
 
 // MARK: - JSON-RPC 2.0 Reverse-Engineering MCP Server (`MachMCPServer`)
 
 public struct MachMCPServer: Sendable {
     public let defaultBinaryPath: String?
+    public let language: MachLanguage
 
-    public init(defaultBinaryPath: String? = nil) {
+    public init(defaultBinaryPath: String? = nil, language: MachLanguage = .en) {
         self.defaultBinaryPath = defaultBinaryPath
+        self.language = language
     }
 
     public static var toolDefinitions: [[String: Any]] {
         [
             [
                 "name": "mach_inspect_binary",
-                "description": "Load a Mach-O / Universal / ELF / PE / WASM binary (or built-in ARM64e fixture) and return architecture, segment, function, Xref, and CodeSignature summary.",
+                "description": "Load a Mach-O / Universal binary from disk and return architecture, segment, function, Xref, and CodeSignature summary.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "binaryPath": ["type": "string", "description": "Optional path to binary on disk."]
-                    ]
+                        "binaryPath": ["type": "string", "description": "Path to binary file on disk."]
+                    ],
+                    "required": ["binaryPath"]
                 ]
             ],
             [
                 "name": "mach_decompile_function",
-                "description": "Lift a recovered ARM64/ARM64e function via Cytron SSA Micro-IR into structured Pseudo-C with zero gotos.",
+                "description": "[Experimental] Emit Pseudo-C for a recovered ARM64/ARM64e function (condition expressions are known to be unreliable).",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "binaryPath": ["type": "string"],
-                        "function": ["type": "string", "description": "Function name substring or hex address (e.g. verify_license or 0x100001028)."]
+                        "function": ["type": "string", "description": "Function name or hex address (e.g. _main or 0x100001028)."]
                     ],
-                    "required": ["function"]
+                    "required": ["binaryPath", "function"]
                 ]
             ],
             [
@@ -402,17 +1716,18 @@ public struct MachMCPServer: Sendable {
                         "binaryPath": ["type": "string"],
                         "address": ["type": "string", "description": "Hex virtual address (e.g. 0x100001028)."]
                     ],
-                    "required": ["address"]
+                    "required": ["binaryPath", "address"]
                 ]
             ],
             [
                 "name": "mach_audit_security",
-                "description": "Execute all 4 sandboxed JavaScriptCore binary security plugins (secret xref scanner, dangerous sink reachability, ARM64e PAC auditor, entitlement auditor).",
+                "description": "[Experimental] Execute JavaScriptCore static binary audit plugins.",
                 "inputSchema": [
                     "type": "object",
                     "properties": [
                         "binaryPath": ["type": "string"]
-                    ]
+                    ],
+                    "required": ["binaryPath"]
                 ]
             ]
         ]
@@ -494,7 +1809,13 @@ public struct MachMCPServer: Sendable {
                 return textResult(summary, isError: false)
 
             case "mach_decompile_function":
-                let query = (arguments["function"] as? String) ?? ""
+                let query = ((arguments["function"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !query.isEmpty else {
+                    return textResult(
+                        language.select("Missing required parameter 'function'.", "缺少必填参数 'function'。"),
+                        isError: true
+                    )
+                }
                 let target: RecoveredFunction?
                 if query.lowercased().hasPrefix("0x"),
                    let raw = UInt64(query.dropFirst(2), radix: 16) {
@@ -507,15 +1828,32 @@ public struct MachMCPServer: Sendable {
                     }
                 }
                 guard let fn = target else {
-                    return textResult("Function '\(query)' not found in image.", isError: true)
+                    return textResult(
+                        language.select(
+                            "Function '\(query)' not found in '\(loaded.index.image.fileName)'.",
+                            "在 '\(loaded.index.image.fileName)' 中未找到函数 '\(query)'。"
+                        ),
+                        isError: true
+                    )
                 }
-                let output = MachMicroDecompilerEngine().decompile(function: fn, in: loaded.index)
+                let output = MachMicroDecompilerEngine().decompile(function: fn, in: loaded.index, language: language)
                 return textResult(output.fullSourceText, isError: false)
 
             case "mach_query_xrefs":
-                let rawAddr = (arguments["address"] as? String) ?? "0x0"
+                guard let rawAddr = arguments["address"] as? String, !rawAddr.isEmpty else {
+                    return textResult(
+                        language.select("Missing required parameter 'address'.", "缺少必填参数 'address'。"),
+                        isError: true
+                    )
+                }
                 let clean = rawAddr.lowercased().hasPrefix("0x") ? String(rawAddr.dropFirst(2)) : rawAddr
-                let addr = VirtualAddress(UInt64(clean, radix: 16) ?? 0)
+                guard let parsedVal = UInt64(clean, radix: 16) else {
+                    return textResult(
+                        language.select("Invalid hex address '\(rawAddr)'.", "无效的十六进制地址 '\(rawAddr)'。"),
+                        isError: true
+                    )
+                }
+                let addr = VirtualAddress(parsedVal)
                 let toList = loaded.index.crossReferences.xrefsTo(address: addr)
                 let fromList = loaded.index.crossReferences.xrefsFrom(address: addr)
                 let text = "to=\(toList.count) from=\(fromList.count)\n" +
@@ -529,29 +1867,44 @@ public struct MachMCPServer: Sendable {
                     continueOnError: true
                 )
                 let data = try JSONEncoder().encode(suite.findings)
-                return textResult(String(decoding: data, as: UTF8.self), isError: false)
+                let warning = language.select(
+                    "// EXPERIMENTAL: Static heuristic audit findings\n",
+                    "// 【实验性】静态启发式安全审计发现\n"
+                )
+                return textResult(warning + String(decoding: data, as: UTF8.self), isError: false)
 
             default:
                 return textResult("Unknown tool '\(name)'", isError: true)
             }
+        } catch let mgErr as MachGraphError {
+            return textResult(mgErr.localizedMessage(in: language), isError: true)
         } catch {
             return textResult(error.localizedDescription, isError: true)
         }
     }
 
     private func resolveBinary(from arguments: [String: Any]) throws -> (data: Data, index: BinaryAnalysisIndex) {
-        let coordinator = BinaryAnalysisCoordinator()
-        if let path = (arguments["binaryPath"] as? String) ?? defaultBinaryPath, !path.isEmpty {
-            let url = URL(fileURLWithPath: path)
-            guard FileManager.default.fileExists(atPath: url.path) else {
-                throw MachGraphError.fileNotFound(path)
-            }
-            let data = try Data(contentsOf: url)
-            let idx = try coordinator.analyzeBinary(data: data, filePath: url.path, fileName: url.lastPathComponent)
-            return (data, idx)
+        let rawPath = ((arguments["binaryPath"] as? String) ?? defaultBinaryPath)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let path = rawPath, !path.isEmpty else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Missing required 'binaryPath' argument for MCP tool call.",
+                    "MCP 工具调用缺少必填参数 'binaryPath'。"
+                )
+            )
         }
-        let data = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
-        let idx = try coordinator.analyzeBinary(data: data, filePath: "<synthetic-arm64e>", fileName: "SyntheticAuthDemo.arm64e")
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw MachGraphError.fileNotFound(path)
+        }
+        let data = try Data(contentsOf: url)
+        let cliOptions = BinaryAnalysisOptions(
+            computeSugiyamaLayouts: false,
+            computePostDominatorTrees: false
+        )
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+        let idx = try coordinator.analyzeBinary(data: data, filePath: url.path, fileName: url.lastPathComponent)
         return (data, idx)
     }
 

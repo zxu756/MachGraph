@@ -191,15 +191,20 @@ public struct FunctionDiscoveryEngine: Sendable {
         self.demangler = SymbolDemangler()
     }
 
-    // MARK: - 1. Executable Section Decoding (ARM64 + WASM/ELF/PE/x86 Fallback)
+    // MARK: - 1. Executable Section Decoding (Strict ARM64 / WASM Instruction Sections Only)
 
-    /// Decodes all executable sections (`__TEXT,__text`, `__TEXT,__stubs`, `.text`, WASM `Code`, etc.)
-    /// into linear instruction streams enriched with multi-instruction idioms and symbol annotations.
+    /// Decodes all executable instruction sections into linear instruction streams enriched with multi-instruction idioms and symbol annotations.
     public func decodeExecutableSections(
         in image: LoadedBinaryImage,
         data: Data?,
         symbolLookup: (@Sendable (VirtualAddress) -> String?)? = nil
-    ) -> [DecodedExecutableSection] {
+    ) throws -> [DecodedExecutableSection] {
+        if !image.architecture.isARM64Family && image.containerFormat != .wasm && image.architecture != .wasm32 {
+            throw MachGraphError.unsupportedArchitecture(
+                "Instruction decoding only supports ARM64/ARM64e (got \(image.architecture.displayName))."
+            )
+        }
+
         let execSections = selectExecutableSections(in: image)
         guard !execSections.isEmpty else { return [] }
 
@@ -208,17 +213,16 @@ public struct FunctionDiscoveryEngine: Sendable {
         results.reserveCapacity(execSections.count)
 
         for sec in execSections where sec.size > 0 {
-            let sectionBytes = extractSectionBytes(section: sec, image: image, data: data)
+            let sectionBytes = try extractSectionBytes(section: sec, image: image, data: data)
 
             if image.architecture.isARM64Family {
-                guard let sectionBytes, sectionBytes.count >= 4 else {
-                    let synthesized = synthesizeFallbackInstructions(
-                        for: sec,
-                        image: image,
-                        symbolLookup: resolvedLookup
+                guard sectionBytes.count >= 4 else {
+                    let off = image.fileOffset(for: sec.vmAddress)?.rawValue ?? sec.fileOffset.rawValue
+                    throw MachGraphError.unexpectedEOF(
+                        offset: off,
+                        requested: 4,
+                        available: sectionBytes.count
                     )
-                    results.append(DecodedExecutableSection(section: sec, instructions: synthesized))
-                    continue
                 }
 
                 let rawDecoded = decoder.decodeBuffer(
@@ -236,7 +240,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                     )
                 )
             } else if image.containerFormat == .wasm || image.architecture == .wasm32 {
-                let wasmInsns = decodeWasmCodeSectionFallback(
+                let wasmInsns = try decodeWasmCodeSectionFallback(
                     section: sec,
                     bytes: sectionBytes,
                     image: image,
@@ -244,13 +248,9 @@ public struct FunctionDiscoveryEngine: Sendable {
                 )
                 results.append(DecodedExecutableSection(section: sec, instructions: wasmInsns))
             } else {
-                let genericInsns = decodeNonARM64NativeFallback(
-                    section: sec,
-                    bytes: sectionBytes,
-                    image: image,
-                    symbolLookup: resolvedLookup
+                throw MachGraphError.unsupportedArchitecture(
+                    "Instruction decoding only supports ARM64/ARM64e (got \(image.architecture.displayName))."
                 )
-                results.append(DecodedExecutableSection(section: sec, instructions: genericInsns))
             }
         }
 
@@ -1430,22 +1430,23 @@ public struct FunctionDiscoveryEngine: Sendable {
         return slice[lastKeepIdx].address.adding(UInt64(4))
     }
 
-    // MARK: - Non-ARM64 Container Fallbacks (WASM 1.0 & x86_64/RISC-V)
+    // MARK: - WebAssembly 1.0 Bytecode Instructionizer
 
     /// Lightweight pure-Swift WebAssembly 1.0 bytecode instructionizer so `.wasm` modules produce real
     /// structured instructions, call edges (`call $idx`), conditional branches (`if` / `br_if`), and CFGs!
     private func decodeWasmCodeSectionFallback(
         section: BinarySection,
-        bytes: Data?,
+        bytes: Data,
         image: LoadedBinaryImage,
         symbolLookup: (@Sendable (VirtualAddress) -> String?)?
-    ) -> [A64DecodedInstruction] {
+    ) throws -> [A64DecodedInstruction] {
+        _ = symbolLookup
         let wasmFuncSymbols = image.symbols
             .filter { $0.kind == .function || $0.kind == .exportedEntry || $0.kind == .importedStub }
             .sorted { $0.address < $1.address }
 
-        guard let bytes, !bytes.isEmpty else {
-            return synthesizeFallbackInstructions(for: section, image: image, symbolLookup: symbolLookup)
+        guard !bytes.isEmpty else {
+            throw MachGraphError.cfgAnalysisError("WASM code section \(section.sectionName) is empty.")
         }
 
         // Map WASM function indices 0..<N to VirtualAddress in symbol order (imports first, then code functions)
@@ -1458,7 +1459,7 @@ public struct FunctionDiscoveryEngine: Sendable {
         var output: [A64DecodedInstruction] = []
         var reader = BinarySliceReader(data: bytes, endianness: .little)
         guard let bodyCount64 = try? reader.readULEB128(), bodyCount64 > 0, bodyCount64 <= 65_536 else {
-            return synthesizeFallbackInstructions(for: section, image: image, symbolLookup: symbolLookup)
+            throw MachGraphError.malformedHeader("Invalid WASM code section function count in \(section.sectionName).")
         }
 
         for bodyIdx in 0..<Int(bodyCount64) {
@@ -1584,9 +1585,10 @@ public struct FunctionDiscoveryEngine: Sendable {
             try? reader.seek(to: bodyStartPos + bodySize)
         }
 
-        return output.isEmpty
-            ? synthesizeFallbackInstructions(for: section, image: image, symbolLookup: symbolLookup)
-            : output
+        guard !output.isEmpty else {
+            throw MachGraphError.cfgAnalysisError("WASM code section \(section.sectionName) decoded zero instructions.")
+        }
+        return output
     }
 
     private func makeSyntheticWasmInsn(
@@ -1614,175 +1616,41 @@ public struct FunctionDiscoveryEngine: Sendable {
         )
     }
 
-    private func decodeNonARM64NativeFallback(
-        section: BinarySection,
-        bytes: Data?,
-        image: LoadedBinaryImage,
-        symbolLookup: (@Sendable (VirtualAddress) -> String?)?
-    ) -> [A64DecodedInstruction] {
-        guard let bytes, !bytes.isEmpty else {
-            return synthesizeFallbackInstructions(for: section, image: image, symbolLookup: symbolLookup)
-        }
-
-        // Minimal x86_64/RISC-V structural recognizer for Fat x86_64 slices (recognizes NOP 0x90, RET 0xC3, CALL rel32 0xE8, JMP rel32 0xE9, INT3 0xCC)
-        if image.architecture == .x86_64 {
-            var out: [A64DecodedInstruction] = []
-            var idx = 0
-            let base = bytes.startIndex
-            let count = bytes.count
-            while idx < count {
-                let b = bytes[base + idx]
-                let addr = section.vmAddress.adding(UInt64(idx))
-                if b == 0xC3 {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0xC3, mnemonic: .ret, mnemonicText: "retq", operands: [], operandText: "", group: .branchAndSystem, flow: .returnControl))
-                    idx += 1
-                } else if b == 0x90 {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0x90, mnemonic: .nop, mnemonicText: "nop", operands: [], operandText: "", group: .branchAndSystem, flow: .sequential))
-                    idx += 1
-                } else if b == 0xCC {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0xCC, mnemonic: .brk, mnemonicText: "int3", operands: [], operandText: "", group: .branchAndSystem, flow: .trapOrSupervisor(immediate: 3)))
-                    idx += 1
-                } else if (b == 0xE8 || b == 0xE9) && idx + 5 <= count {
-                    let rel32 = Int32(bitPattern:
-                        UInt32(bytes[base + idx + 1])
-                        | (UInt32(bytes[base + idx + 2]) << 8)
-                        | (UInt32(bytes[base + idx + 3]) << 16)
-                        | (UInt32(bytes[base + idx + 4]) << 24)
-                    )
-                    let target = addr.adding(Int64(5) + Int64(rel32))
-                    let sym = symbolLookup?(target)
-                    let isCall = (b == 0xE8)
-                    out.append(
-                        A64DecodedInstruction(
-                            address: addr,
-                            rawWord: UInt32(b),
-                            mnemonic: isCall ? .bl : .b,
-                            mnemonicText: isCall ? "callq" : "jmpq",
-                            operands: [.branchTarget(target)],
-                            operandText: sym ?? target.compactHexString,
-                            group: .branchAndSystem,
-                            flow: isCall ? .directCall(target: target) : .unconditionalJump(target: target),
-                            autoComment: sym
-                        )
-                    )
-                    idx += 5
-                } else if b == 0x55 {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0x55, mnemonic: .stp, mnemonicText: "pushq", operands: [], operandText: "%rbp", group: .loadStore, flow: .sequential))
-                    idx += 1
-                } else if b == 0x5D {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0x5D, mnemonic: .ldp, mnemonicText: "popq", operands: [], operandText: "%rbp", group: .loadStore, flow: .sequential))
-                    idx += 1
-                } else if b == 0x48 && idx + 3 <= count && bytes[base + idx + 1] == 0x89 && bytes[base + idx + 2] == 0xE5 {
-                    out.append(A64DecodedInstruction(address: addr, rawWord: 0xE58948, mnemonic: .mov, mnemonicText: "movq", operands: [], operandText: "%rsp, %rbp", group: .dataProcessingReg, flow: .sequential))
-                    idx += 3
-                } else {
-                    out.append(
-                        A64DecodedInstruction(
-                            address: addr,
-                            rawWord: UInt32(b),
-                            mnemonic: .unknown,
-                            mnemonicText: ".byte",
-                            operands: [.unsignedImmediate(UInt64(b))],
-                            operandText: String(format: "0x%02x", b),
-                            group: .unknown,
-                            flow: .sequential
-                        )
-                    )
-                    idx += 1
-                }
-            }
-            return out
-        }
-
-        return synthesizeFallbackInstructions(for: section, image: image, symbolLookup: symbolLookup)
-    }
-
-    private func synthesizeFallbackInstructions(
-        for section: BinarySection,
-        image: LoadedBinaryImage,
-        symbolLookup: (@Sendable (VirtualAddress) -> String?)?
-    ) -> [A64DecodedInstruction] {
-        var starts = Set<VirtualAddress>()
-        for s in image.functionStarts where section.addressRange.contains(s) {
-            starts.insert(s)
-        }
-        for sym in image.symbols where section.addressRange.contains(sym.address) {
-            starts.insert(sym.address)
-        }
-        if let ep = image.entryPoint, section.addressRange.contains(ep) {
-            starts.insert(ep)
-        }
-        if starts.isEmpty {
-            starts.insert(section.vmAddress)
-        }
-
-        let sortedStarts = starts.sorted()
-        return sortedStarts.map { addr in
-            let label = symbolLookup?(addr) ?? addr.compactHexString
-            return A64DecodedInstruction(
-                address: addr,
-                rawWord: 0xD65F_03C0,
-                mnemonic: .ret,
-                mnemonicText: "ret",
-                operands: [],
-                operandText: "",
-                group: .branchAndSystem,
-                flow: .returnControl,
-                autoComment: "Synthesized entry stub (\(label))"
-            )
-        }
-    }
-
     // MARK: - Shared Low-Level Byte & Symbol Utilities
 
     private func selectExecutableSections(in image: LoadedBinaryImage) -> [BinarySection] {
-        let nonCodeSectionNames: Set<String> = [
-            "__const", "__cstring", "__ustring", "__eh_frame", "__unwind_info", "__gcc_except_tab",
-            "__objc_methname", "__objc_classname", "__objc_methtype", "__objc_const", "__objc_data",
-            ".rodata", ".rdata", ".data", ".bss", ".pdata", ".xdata", ".eh_frame"
-        ]
-
-        // Prefer sections explicitly classified as `.code` or `.stubs` so read-only data/string/ObjC/unwind
-        // sections residing inside an `r-x` `__TEXT` Mach-O segment are never disassembled as fake functions.
-        let explicitCodeOrStubs = image.sections.filter {
-            ($0.kind == .code || $0.kind == .stubs) &&
-            $0.size > 0 &&
-            !nonCodeSectionNames.contains($0.sectionName.lowercased())
-        }
-        if !explicitCodeOrStubs.isEmpty {
-            return explicitCodeOrStubs.sorted { $0.vmAddress < $1.vmAddress }
-        }
-
-        let execOther = image.sections.filter {
-            $0.kind == .other &&
-            $0.permissions.contains(.execute) &&
-            $0.size > 0 &&
-            !nonCodeSectionNames.contains($0.sectionName.lowercased())
-        }
-        if !execOther.isEmpty {
-            return execOther.sorted { $0.vmAddress < $1.vmAddress }
-        }
-
-        let fallbackNames: Set<String> = ["__text", "__stubs", ".text", ".plt", "code"]
-        return image.sections
-            .filter { fallbackNames.contains($0.sectionName.lowercased()) && $0.size > 0 }
-            .sorted { $0.vmAddress < $1.vmAddress }
+        image.executableSections().sorted { $0.vmAddress < $1.vmAddress }
     }
 
     private func extractSectionBytes(
         section: BinarySection,
         image: LoadedBinaryImage,
         data: Data?
-    ) -> Data? {
-        guard let data, !data.isEmpty, section.size > 0, section.kind != .bss else { return nil }
-        guard let absOff = image.fileOffset(for: section.vmAddress) else { return nil }
+    ) throws -> Data {
+        guard let data, !data.isEmpty else {
+            throw MachGraphError.cfgAnalysisError(
+                "Missing raw binary bytes for executable section \(section.segmentName),\(section.sectionName)."
+            )
+        }
+        guard section.size > 0, section.kind != .bss else {
+            return Data()
+        }
+        guard let absOff = image.fileOffset(for: section.vmAddress) else {
+            throw MachGraphError.cfgAnalysisError(
+                "Unable to map virtual address \(section.vmAddress.compactHexString) to file offset for \(section.segmentName),\(section.sectionName)."
+            )
+        }
+        guard section.size <= UInt64(Int.max) else {
+            throw MachGraphError.malformedHeader("Executable section \(section.segmentName),\(section.sectionName) size overflows Int.")
+        }
         let start = Int(absOff.rawValue)
-        guard start >= 0 && start < data.count else { return nil }
-        let maxAvail = data.count - start
-        let clampedLen = min(Int(min(section.size, UInt64(Int.max))), maxAvail)
-        guard clampedLen > 0 else { return nil }
+        let requested = Int(section.size)
+        guard start >= 0, start <= data.count, requested <= data.count - start else {
+            let avail = start >= 0 && start <= data.count ? (data.count - start) : 0
+            throw MachGraphError.unexpectedEOF(offset: absOff.rawValue, requested: requested, available: avail)
+        }
         let baseIdx = data.startIndex + start
-        return Data(data[baseIdx..<(baseIdx + clampedLen)])
+        return Data(data[baseIdx..<(baseIdx + requested)])
     }
 
     private func readUnsignedInteger(

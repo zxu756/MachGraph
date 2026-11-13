@@ -202,45 +202,112 @@ public enum MachGraphError: Error, LocalizedError, Sendable, Equatable {
     case invalidCLIArguments(String)
 
     public var errorDescription: String? {
+        localizedMessage(in: MachLanguage.resolve())
+    }
+
+    public func localizedMessage(in language: MachLanguage) -> String {
         switch self {
         case .fileNotFound(let path):
-            return "Binary or project file not found: \(path)"
+            return language.select(
+                "Binary or project file not found: \(path)",
+                "找不到二进制文件或工程文件: \(path)"
+            )
         case .ioFailure(let msg):
-            return "I/O failure: \(msg)"
+            return language.select(
+                "I/O failure: \(msg)",
+                "文件读写失败: \(msg)"
+            )
         case .unexpectedEOF(let offset, let requested, let available):
-            return "Unexpected EOF at offset 0x\(String(offset, radix: 16)) (requested \(requested) bytes, available \(available))"
+            return language.select(
+                "Unexpected EOF / truncated binary at offset 0x\(String(offset, radix: 16)) (requested \(requested) bytes, available \(available))",
+                "文件意外结束或已被截断，偏移 0x\(String(offset, radix: 16))（需要 \(requested) 字节，仅剩 \(available) 字节）"
+            )
         case .invalidMagic(let expected, let actualHex):
-            return "Invalid container magic (expected \(expected), got \(actualHex))"
+            return language.select(
+                "Unsupported or invalid file magic (expected \(expected), got \(actualHex))",
+                "不支持或无效的文件魔数（期望 \(expected)，实际为 \(actualHex)）"
+            )
         case .unsupportedContainer(let msg):
-            return "Unsupported binary container: \(msg)"
+            let zhDetail: String
+            if msg.contains("ET_REL") {
+                zhDetail = "不支持 ELF64 可重定位目标文件 (ET_REL)；请传入可执行文件 (ET_EXEC) 或共享库 (ET_DYN)。"
+            } else {
+                zhDetail = msg
+            }
+            return language.select(
+                "Unsupported binary container: \(msg)",
+                "不支持的二进制容器格式: \(zhDetail)"
+            )
         case .unsupportedArchitecture(let msg):
-            return "Unsupported CPU architecture: \(msg)"
+            return language.select(
+                "Unsupported CPU architecture: \(msg)",
+                "不支持的处理器架构: \(msg)"
+            )
         case .malformedLoadCommand(let idx, let detail):
-            return "Malformed load command #\(idx): \(detail)"
+            return language.select(
+                "Malformed load command #\(idx): \(detail)",
+                "损坏的加载命令 #\(idx): \(detail)"
+            )
         case .malformedHeader(let detail):
-            return "Malformed binary header: \(detail)"
+            return language.select(
+                "Malformed binary header: \(detail)",
+                "损坏的二进制文件头: \(detail)"
+            )
         case .invalidFixupChain(let detail):
-            return "Invalid dyld chained fixup: \(detail)"
+            return language.select(
+                "Invalid dyld chained fixup: \(detail)",
+                "无效的 dyld 链式修正记录: \(detail)"
+            )
         case .decoderError(let addr, let detail):
-            return "Instruction decode error at \(addr.compactHexString): \(detail)"
+            return language.select(
+                "Instruction decode error at \(addr.compactHexString): \(detail)",
+                "指令解码错误（地址 \(addr.compactHexString)）: \(detail)"
+            )
         case .assemblerError(let line, let insn, let reason):
-            return "Inline assembler error on line \(line) ('\(insn)'): \(reason)"
+            return language.select(
+                "Inline assembler error on line \(line) ('\(insn)'): \(reason)",
+                "汇编错误（第 \(line) 行 '\(insn)'）: \(reason)"
+            )
         case .cfgAnalysisError(let msg):
-            return "CFG recovery failure: \(msg)"
+            return language.select(
+                "Analysis / target lookup error: \(msg)",
+                "静态分析或目标查找失败: \(msg)"
+            )
         case .decompilerError(let msg):
-            return "Micro-IR decompiler failure: \(msg)"
+            return language.select(
+                "Decompiler error: \(msg)",
+                "反编译器错误: \(msg)"
+            )
         case .patchBoundsError(let offset, let length, let fileSize):
-            return "Patch out of bounds at 0x\(String(offset, radix: 16))+\(length) (binary size \(fileSize))"
+            return language.select(
+                "Patch out of bounds at 0x\(String(offset, radix: 16))+\(length) (binary size \(fileSize))",
+                "补丁越界 0x\(String(offset, radix: 16))+\(length)（文件大小 \(fileSize)）"
+            )
         case .patchFormatError(let msg):
-            return "Patch container format error: \(msg)"
+            return language.select(
+                "Patch container format error: \(msg)",
+                "补丁容器格式错误: \(msg)"
+            )
         case .codeSignError(let msg):
-            return "Mach-O code signature error: \(msg)"
+            return language.select(
+                "Mach-O code signature error: \(msg)",
+                "Mach-O 代码签名错误: \(msg)"
+            )
         case .databaseError(let code, let msg):
-            return "SQLite store error (\(code)): \(msg)"
+            return language.select(
+                "SQLite store error (\(code)): \(msg)",
+                "SQLite 存储错误 (\(code)): \(msg)"
+            )
         case .pluginSandboxError(let id, let msg):
-            return "Plugin '\(id)' sandbox error: \(msg)"
+            return language.select(
+                "Plugin '\(id)' sandbox error: \(msg)",
+                "插件 '\(id)' 沙箱错误: \(msg)"
+            )
         case .invalidCLIArguments(let msg):
-            return "Invalid CLI usage: \(msg)"
+            return language.select(
+                "Invalid CLI usage: \(msg)",
+                "命令行参数用法错误: \(msg)"
+            )
         }
     }
 }

@@ -196,13 +196,14 @@ public enum MachOConstants {
 
     public static func classifySection(segmentName: String, sectionName: String, flags: UInt32, permissions: MemoryPermissions) -> BinarySectionKind {
         let secType = flags & sectionTypeMask
+        let hasInsnAttr = (flags & (sAttrPureInstructions | sAttrSomeInstructions)) != 0
         let lowerSeg = segmentName.lowercased()
         let lowerSec = sectionName.lowercased()
 
         if secType == sZerofill || secType == sGBZerofill || secType == sThreadLocalZerofill || lowerSec == "__bss" || lowerSec == "__common" {
             return .bss
         }
-        if secType == sSymbolStubs || lowerSec.contains("stubs") || lowerSec == "__PLT" {
+        if secType == sSymbolStubs || (hasInsnAttr && (lowerSec.contains("stubs") || lowerSec == "__plt")) {
             return .stubs
         }
         if secType == sCStringLiterals || lowerSec == "__cstring" || lowerSec == "__ustring" || lowerSec == "__oslogstring" {
@@ -224,7 +225,7 @@ public enum MachOConstants {
         if lowerSeg == "__linkedit" || lowerSeg == "__dwarf" || lowerSec.contains("debug") {
             return .debug
         }
-        if (flags & sAttrPureInstructions) != 0 || (flags & sAttrSomeInstructions) != 0 || lowerSec == "__text" || permissions.contains(.execute) {
+        if hasInsnAttr {
             return .code
         }
         if lowerSeg == "__data_const" || lowerSec == "__const" || (lowerSeg == "__text" && !permissions.contains(.write)) {
@@ -1114,6 +1115,15 @@ public enum MachO64Loader {
                     )
                 }
 
+                if filesize > 0 {
+                    guard fileoff <= UInt64(sliceData.count),
+                          filesize <= UInt64(sliceData.count) - fileoff else {
+                        let req = Int(min(filesize, UInt64(Int.max)))
+                        let avail = fileoff <= UInt64(sliceData.count) ? (sliceData.count - Int(fileoff)) : 0
+                        throw MachGraphError.unexpectedEOF(offset: fileoff, requested: req, available: avail)
+                    }
+                }
+
                 let segInitPerms = MachOConstants.mapPermissions(initprot)
                 let segMaxPerms = MachOConstants.mapPermissions(maxprot)
                 var segmentSections: [BinarySection] = []
@@ -1140,8 +1150,16 @@ public enum MachO64Loader {
                         flags: sectFlags,
                         permissions: segInitPerms
                     )
+                    if kind != .bss && sectSize > 0 {
+                        guard UInt64(sectOffset) <= UInt64(sliceData.count),
+                              sectSize <= UInt64(sliceData.count) - UInt64(sectOffset) else {
+                            let req = Int(min(sectSize, UInt64(Int.max)))
+                            let avail = UInt64(sectOffset) <= UInt64(sliceData.count) ? (sliceData.count - Int(sectOffset)) : 0
+                            throw MachGraphError.unexpectedEOF(offset: UInt64(sectOffset), requested: req, available: avail)
+                        }
+                    }
                     let entropy: Double
-                    if kind != .bss && sectSize > 0 && Int(sectOffset) + Int(min(sectSize, UInt64(sliceData.count))) <= sliceData.count {
+                    if kind != .bss && sectSize > 0 {
                         entropy = StringAndEntropyScanner.sectionEntropy(
                             sliceData: sliceData,
                             offset: Int(sectOffset),
@@ -1365,12 +1383,22 @@ public enum MachO64Loader {
             entryPoint = unixThreadEntryVA
         }
 
+        func ensureSliceBlobBounds(offset: Int, size: Int) throws {
+            guard size > 0 else { return }
+            guard offset >= 0, offset <= sliceData.count, size <= sliceData.count - offset else {
+                let avail = (offset >= 0 && offset <= sliceData.count) ? (sliceData.count - offset) : 0
+                throw MachGraphError.unexpectedEOF(
+                    offset: UInt64(max(0, offset)),
+                    requested: size,
+                    available: avail
+                )
+            }
+        }
+
         // Parse LC_FUNCTION_STARTS ULEB128 delta table
         var functionStarts: [VirtualAddress] = []
-        if let fsRange = functionStartsRange,
-           fsRange.size > 0,
-           fsRange.offset >= 0,
-           fsRange.offset + fsRange.size <= sliceData.count {
+        if let fsRange = functionStartsRange, fsRange.size > 0 {
+            try ensureSliceBlobBounds(offset: fsRange.offset, size: fsRange.size)
             var fsReader = try BinarySliceReader(
                 data: sliceData,
                 offset: fsRange.offset,
@@ -1390,10 +1418,8 @@ public enum MachO64Loader {
 
         // Parse Dyld Chained Fixups and/or Legacy LC_DYLD_INFO(_ONLY)
         var chainedFixups: [ChainedFixupRecord] = []
-        if let cfRange = chainedFixupsRange,
-           cfRange.size > 0,
-           cfRange.offset >= 0,
-           cfRange.offset + cfRange.size <= sliceData.count {
+        if let cfRange = chainedFixupsRange, cfRange.size > 0 {
+            try ensureSliceBlobBounds(offset: cfRange.offset, size: cfRange.size)
             let parsedFixups = try DyldFixupsAndTrieParser.parseChainedFixups(
                 sliceData: sliceData,
                 sliceFileOffset: sliceFileOffset,
@@ -1405,6 +1431,11 @@ public enum MachO64Loader {
             chainedFixups.append(contentsOf: parsedFixups)
         }
         if let di = dyldInfoRanges {
+            try ensureSliceBlobBounds(offset: di.rebase.offset, size: di.rebase.size)
+            try ensureSliceBlobBounds(offset: di.bind.offset, size: di.bind.size)
+            try ensureSliceBlobBounds(offset: di.weakBind.offset, size: di.weakBind.size)
+            try ensureSliceBlobBounds(offset: di.lazyBind.offset, size: di.lazyBind.size)
+            try ensureSliceBlobBounds(offset: di.exportTrie.offset, size: di.exportTrie.size)
             let legacyFixups = try DyldFixupsAndTrieParser.parseLegacyDyldInfo(
                 sliceData: sliceData,
                 sliceFileOffset: sliceFileOffset,
@@ -1428,13 +1459,12 @@ public enum MachO64Loader {
         // Parse LC_SYMTAB nlist_64 records
         var rawNlistEntries: [RawNlistRecord] = []
         var collectedSymbols: [BinarySymbol] = []
-        if let st = symtabRange,
-           st.nsyms > 0,
-           st.symoff >= 0,
-           st.symoff + st.nsyms * 16 <= sliceData.count,
-           st.stroff >= 0,
-           st.stroff <= sliceData.count {
-            let clampedStrSize = min(st.strsize, sliceData.count - st.stroff)
+        if let st = symtabRange, st.nsyms > 0 {
+            try ensureSliceBlobBounds(offset: st.symoff, size: st.nsyms * 16)
+            if st.strsize > 0 {
+                try ensureSliceBlobBounds(offset: st.stroff, size: st.strsize)
+            }
+            let clampedStrSize = max(0, min(st.strsize, sliceData.count - max(0, st.stroff)))
             let strPoolReader = try BinarySliceReader(
                 data: sliceData,
                 offset: st.stroff,
@@ -1495,13 +1525,13 @@ public enum MachO64Loader {
                     let kind: SymbolKind
                     if isObjC {
                         kind = .objcMethod
-                    } else if isSwift && (targetSection?.kind == .code || targetSection?.permissions.contains(.execute) == true) {
+                    } else if isSwift && targetSection?.kind == .code {
                         kind = .swiftFunction
                     } else if let entry = entryPoint, entry.rawValue == nValue {
                         kind = .exportedEntry
                     } else if targetSection?.kind == .stubs {
                         kind = .importedStub
-                    } else if targetSection?.kind == .code || targetSection?.permissions.contains(.execute) == true {
+                    } else if targetSection?.kind == .code {
                         kind = (nType & MachOConstants.nExt) != 0 ? .function : .localSymbol
                     } else {
                         kind = .globalVariable
@@ -1525,7 +1555,8 @@ public enum MachO64Loader {
                             address: VirtualAddress(nValue),
                             size: 0,
                             sectionIndex: secIdx,
-                            libraryOrdinal: libOrdinal
+                            libraryOrdinal: libOrdinal,
+                            provenance: .symtab
                         )
                     )
                 }
@@ -1533,10 +1564,8 @@ public enum MachO64Loader {
         }
 
         // Resolve LC_DYSYMTAB indirect symbol table for __stubs and __got / pointer sections
-        if let dysym = dysymtabRange,
-           dysym.nindirectsyms > 0,
-           dysym.indirectsymoff >= 0,
-           dysym.indirectsymoff + dysym.nindirectsyms * 4 <= sliceData.count {
+        if let dysym = dysymtabRange, dysym.nindirectsyms > 0 {
+            try ensureSliceBlobBounds(offset: dysym.indirectsymoff, size: dysym.nindirectsyms * 4)
             var indReader = try BinarySliceReader(
                 data: sliceData,
                 offset: dysym.indirectsymoff,
@@ -1579,7 +1608,8 @@ public enum MachO64Loader {
                                 address: stubVA,
                                 size: UInt64(stubStride),
                                 sectionIndex: sec.index,
-                                libraryOrdinal: targetNlist.libraryOrdinal
+                                libraryOrdinal: targetNlist.libraryOrdinal,
+                                provenance: .indirectSymtab
                             )
                         )
                     }
@@ -1609,7 +1639,8 @@ public enum MachO64Loader {
                                 address: slotVA,
                                 size: 8,
                                 sectionIndex: sec.index,
-                                libraryOrdinal: targetNlist.libraryOrdinal
+                                libraryOrdinal: targetNlist.libraryOrdinal,
+                                provenance: .indirectSymtab
                             )
                         )
                     }
@@ -1617,7 +1648,7 @@ public enum MachO64Loader {
             }
         }
 
-        // Synthesize GOT symbols & ld_prime stub symbols from Chained Fixup binds when indirect table omits them
+        // Infer GOT symbols & ld_prime stub symbols from Chained Fixup binds when indirect table omits them
         let bindFixupsBySlot: [VirtualAddress: ChainedFixupRecord] = Dictionary(
             chainedFixups.compactMap { rec in
                 (rec.kind == .bind || rec.kind == .authBind) && rec.symbolName != nil ? (rec.location, rec) : nil
@@ -1636,7 +1667,8 @@ public enum MachO64Loader {
                         address: slotVA,
                         size: 8,
                         sectionIndex: sec.index,
-                        libraryOrdinal: bindRec.libraryOrdinal
+                        libraryOrdinal: bindRec.libraryOrdinal,
+                        provenance: .chainedFixups
                     )
                 )
             }
@@ -1661,10 +1693,8 @@ public enum MachO64Loader {
 
         // Parse Export Trie (LC_DYLD_EXPORTS_TRIE or LC_DYLD_INFO.export_off)
         let activeTrieRange = exportsTrieRange ?? dyldInfoRanges?.exportTrie
-        if let trieRange = activeTrieRange,
-           trieRange.size > 0,
-           trieRange.offset >= 0,
-           trieRange.offset + trieRange.size <= sliceData.count {
+        if let trieRange = activeTrieRange, trieRange.size > 0 {
+            try ensureSliceBlobBounds(offset: trieRange.offset, size: trieRange.size)
             let trieSlice = Data(sliceData[(sliceData.startIndex + trieRange.offset)..<(sliceData.startIndex + trieRange.offset + trieRange.size)])
             let exportedSymbols = try ExportTrieParser.parse(
                 trieData: trieSlice,
@@ -1676,12 +1706,14 @@ public enum MachO64Loader {
 
         // Parse Code Signature & CMS Certificates
         let codeSignature: CodeSignatureSummary
-        if let csRange = codeSignatureRange,
-           csRange.size >= 8,
-           csRange.offset >= 0,
-           csRange.offset + csRange.size <= sliceData.count {
-            let sigSlice = Data(sliceData[(sliceData.startIndex + csRange.offset)..<(sliceData.startIndex + csRange.offset + csRange.size)])
-            codeSignature = (try? CodeSignatureAndCMSParser.parse(signatureData: sigSlice)) ?? .unsigned
+        if let csRange = codeSignatureRange, csRange.size > 0 {
+            try ensureSliceBlobBounds(offset: csRange.offset, size: csRange.size)
+            if csRange.size >= 8 {
+                let sigSlice = Data(sliceData[(sliceData.startIndex + csRange.offset)..<(sliceData.startIndex + csRange.offset + csRange.size)])
+                codeSignature = (try? CodeSignatureAndCMSParser.parse(signatureData: sigSlice)) ?? .unsigned
+            } else {
+                codeSignature = .unsigned
+            }
         } else {
             codeSignature = .unsigned
         }
@@ -1718,7 +1750,8 @@ public enum MachO64Loader {
                     binding: .global,
                     address: entry,
                     size: 0,
-                    sectionIndex: secIdx
+                    sectionIndex: secIdx,
+                    provenance: .entryPoint
                 )
             )
         }
@@ -1796,7 +1829,7 @@ public enum MachO64Loader {
             words.append(w)
         }
 
-        var synthesized: [BinarySymbol] = []
+        var inferredStubs: [BinarySymbol] = []
         var idx = 0
         while idx + 2 < words.count {
             let stubVA = section.vmAddress.adding(UInt64(idx * 4))
@@ -1841,7 +1874,7 @@ public enum MachO64Loader {
                let bindRec = bindFixupsBySlot[slot],
                let symName = bindRec.symbolName,
                !symName.isEmpty {
-                synthesized.append(
+                inferredStubs.append(
                     BinarySymbol(
                         name: symName,
                         demangledName: MachOSymbolDemangler.demangle(symName),
@@ -1850,12 +1883,13 @@ public enum MachO64Loader {
                         address: stubVA,
                         size: stubByteSize,
                         sectionIndex: section.index,
-                        libraryOrdinal: bindRec.libraryOrdinal
+                        libraryOrdinal: bindRec.libraryOrdinal,
+                        provenance: .chainedFixups
                     )
                 )
             }
         }
-        return synthesized
+        return inferredStubs
     }
 
     private static func symbolPriority(_ kind: SymbolKind) -> Int {
@@ -1876,26 +1910,39 @@ public enum MachO64Loader {
         functionStarts: [VirtualAddress],
         sections: [BinarySection]
     ) -> [BinarySymbol] {
-        // Deduplicate by address, preferring richer symbol kinds and non-synthetic names
+        // Deduplicate by address, preferring richer symbol kinds while preserving LC_SYMTAB provenance
         var bestByAddress: [VirtualAddress: BinarySymbol] = [:]
         bestByAddress.reserveCapacity(symbols.count)
 
         for sym in symbols {
             if let existing = bestByAddress[sym.address] {
+                let mergedProvenance: SymbolProvenance = (existing.provenance == .symtab || sym.provenance == .symtab)
+                    ? .symtab
+                    : existing.provenance
                 let newPrio = symbolPriority(sym.kind)
                 let oldPrio = symbolPriority(existing.kind)
-                if newPrio > oldPrio || (newPrio == oldPrio && sym.size > existing.size) {
-                    bestByAddress[sym.address] = sym
-                }
+                let winner = (newPrio > oldPrio || (newPrio == oldPrio && sym.size > existing.size)) ? sym : existing
+                bestByAddress[sym.address] = BinarySymbol(
+                    name: winner.name,
+                    demangledName: winner.demangledName,
+                    kind: winner.kind,
+                    binding: winner.binding,
+                    address: winner.address,
+                    size: max(existing.size, sym.size),
+                    sectionIndex: winner.sectionIndex ?? existing.sectionIndex,
+                    libraryOrdinal: winner.libraryOrdinal ?? existing.libraryOrdinal,
+                    provenance: (winner.provenance == .symtab) ? .symtab : mergedProvenance
+                )
             } else {
                 bestByAddress[sym.address] = sym
             }
         }
 
-        // Synthesize sub_<hex> symbols for stripped functions discovered via LC_FUNCTION_STARTS
+        // Infer sub_<hex> entries for stripped functions discovered via LC_FUNCTION_STARTS
+        let insnAttrMask = MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions
         for fnStart in functionStarts where bestByAddress[fnStart] == nil {
             if let sec = sections.first(where: { $0.addressRange.contains(fnStart) }),
-               sec.kind == .code || sec.permissions.contains(.execute) {
+               (sec.flags & insnAttrMask) != 0 {
                 let subName = String(format: "sub_%llx", fnStart.rawValue)
                 bestByAddress[fnStart] = BinarySymbol(
                     name: subName,
@@ -1904,7 +1951,8 @@ public enum MachO64Loader {
                     binding: .local,
                     address: fnStart,
                     size: 0,
-                    sectionIndex: sec.index
+                    sectionIndex: sec.index,
+                    provenance: .functionStarts
                 )
             }
         }
@@ -1950,7 +1998,8 @@ public enum MachO64Loader {
                     address: cur.address,
                     size: computedSize,
                     sectionIndex: cur.sectionIndex,
-                    libraryOrdinal: cur.libraryOrdinal
+                    libraryOrdinal: cur.libraryOrdinal,
+                    provenance: cur.provenance
                 )
             )
         }

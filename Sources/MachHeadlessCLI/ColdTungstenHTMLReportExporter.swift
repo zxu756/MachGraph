@@ -17,7 +17,8 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
         analysisIndex: BinaryAnalysisIndex,
         binaryData: Data,
         decompiledFunctions: [DecompiledFunctionOutput]? = nil,
-        auditFindings: [SecurityAuditFinding]? = nil
+        auditFindings: [SecurityAuditFinding]? = nil,
+        isDemo: Bool = false
     ) throws -> String {
         let image = analysisIndex.image
         let decompiler = MachMicroDecompilerEngine()
@@ -140,8 +141,10 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
         }.joined(separator: "\n")
 
         let svgBars = renderEntropySVG(samples: entropyProfile.samples)
-        let h1En = "\(titleEn) (\(archText))"
-        let h1Zh = "\(titleZh) (\(archText))"
+        let demoPrefixEn = isDemo ? "[DEMO] " : ""
+        let demoPrefixZh = isDemo ? "[演示数据] " : ""
+        let h1En = "\(demoPrefixEn)\(titleEn) (\(archText))"
+        let h1Zh = "\(demoPrefixZh)\(titleZh) (\(archText))"
 
         return """
         <!DOCTYPE html>
@@ -149,7 +152,7 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta name="description" content="MachGraph v1.1.0 Cold-Tungsten native binary reverse-engineering, ARM64 CFG, SSA Pseudo-C decompiler, and security plugin audit dossier.">
+          <meta name="description" content="MachGraph v1.1.0 Cold-Tungsten macOS ARM64 and Mach-O binary inspection, CFG, and triage report.">
           <title>MachGraph v1.1.0 Binary Triage Dossier: \(escapeHTML(titleEn))</title>
           <style>
             /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
@@ -459,7 +462,7 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
             </section>
 
             <section class="panel">
-              <h2 data-en="SSA Micro-IR Structured Pseudo-C Decompilation" data-zh="SSA 微IR 结构化伪C反编译输出">SSA Micro-IR Structured Pseudo-C Decompilation</h2>
+              <h2 data-en="Experimental Pseudo-C Decompilation (Condition Expressions Unverified)" data-zh="【实验性】伪C反编译输出（条件表达式未经验证）">Experimental Pseudo-C Decompilation (Condition Expressions Unverified)</h2>
               \(pseudoCSections)
             </section>
 

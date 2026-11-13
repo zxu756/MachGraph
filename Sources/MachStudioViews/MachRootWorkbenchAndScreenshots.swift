@@ -490,39 +490,36 @@ public struct MachWorkbenchRootView: View {
             Button {
                 viewModel.isFileImporterPresented = true
             } label: {
-                Label(localizer.L("Open", "打开"), systemImage: "folder")
+                Label(localizer.L("Open File", "打开文件"), systemImage: "folder")
             }
             .buttonStyle(TungstenToolbarButtonStyle(compact: true))
             .fixedSize(horizontal: true, vertical: false)
 
-            // Built-in Multi-Format Binary Target Switcher
-            Menu {
-                ForEach(MachDemoFixturePreset.allCases) { preset in
-                    Button(preset.localizedTitle(in: localizer.language)) {
-                        viewModel.loadPreset(preset, seedDemoState: preset == .arm64eMachO, emitToast: true)
-                    }
-                }
+            Button {
+                viewModel.loadDemoBinary(emitToast: true)
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "cpu.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text(localizer.L("Target: \(shortPresetLabel(viewModel.activeFixturePreset))", "目标: \(shortPresetLabel(viewModel.activeFixturePreset))"))
-                        .font(ColdTungstenTypography.microBadgeMono(size: 10.5, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
-                }
-                .foregroundStyle(ColdTungstenPalette.signalEmerald)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(ColdTungstenPalette.gunmetalSlate)
-                .overlay(
-                    RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
-                        .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
-                )
-                .fixedSize(horizontal: true, vertical: false)
+                Label(localizer.L("Load Demo", "载入演示"), systemImage: "cpu")
             }
-            .menuStyle(.borderlessButton)
+            .buttonStyle(TungstenToolbarButtonStyle(
+                role: viewModel.isDemoMode ? .cautionAmber : .standard,
+                isActive: viewModel.isDemoMode,
+                compact: true
+            ))
             .fixedSize(horizontal: true, vertical: false)
+
+            if viewModel.isDemoMode {
+                Text(localizer.L("DEMO", "演示数据"))
+                    .font(ColdTungstenTypography.microBadgeMono(size: 10.0, weight: .bold))
+                    .foregroundStyle(ColdTungstenPalette.warmCopper)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(ColdTungstenPalette.warmCopper.opacity(0.16))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusCompact)
+                            .strokeBorder(ColdTungstenPalette.warmCopper.opacity(0.75), lineWidth: ColdTungstenMetrics.borderHairline)
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+            }
 
             Button {
                 viewModel.presentXrefsPopoverAtCursor()
@@ -618,21 +615,13 @@ public struct MachWorkbenchRootView: View {
         tab.localizedTitle(in: localizer.language)
     }
 
-    private func shortPresetLabel(_ preset: MachDemoFixturePreset) -> String {
-        switch preset {
-        case .arm64eMachO: return "arm64e"
-        case .universalFat: return "Fat"
-        case .elf64AArch64: return "ELF64"
-        case .pe32PlusARM64: return "PE32+"
-        case .wasmModule: return "WASM"
-        }
-    }
-
     // MARK: - Active Center Studio Dispatcher
 
     @ViewBuilder
     private var activeCenterStudioContent: some View {
-        if cursorBus.isSplitViewActive {
+        if viewModel.loadedImage == nil {
+            emptyWorkbenchWelcomeView
+        } else if cursorBus.isSplitViewActive {
             SynchronizedDecompilerSplitStudioView(
                 viewModel: viewModel,
                 leftPaneMode: cursorBus.activePane == .cfgGraph ? .cfgGraph : .disassembly
@@ -655,6 +644,52 @@ public struct MachWorkbenchRootView: View {
                 PluginSecurityAuditStudioView(viewModel: viewModel)
             }
         }
+    }
+
+    private var emptyWorkbenchWelcomeView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "doc.badge.gearshape")
+                .font(.system(size: 36, weight: .regular))
+                .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
+
+            Text(localizer.L("No Binary Loaded", "尚未加载二进制文件"))
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(ColdTungstenPalette.steelWhite)
+
+            Text(
+                localizer.L(
+                    "Open a local macOS Mach-O / Universal binary (e.g. /bin/ls) to inspect headers, sections, ARM64 disassembly, and control-flow graphs, or explicitly load the bundled sample fixture.",
+                    "请打开本地 macOS Mach-O / 通用二进制文件（例如 /bin/ls）以检视头部、节区、ARM64 反汇编与控制流图，或显式载入仓库自带的演示样本。"
+                )
+            )
+            .font(ColdTungstenTypography.secondaryCaption)
+            .foregroundStyle(ColdTungstenPalette.coolPewter)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 520)
+
+            HStack(spacing: 12) {
+                Button {
+                    viewModel.isFileImporterPresented = true
+                } label: {
+                    Label(localizer.L("Open File...", "打开文件..."), systemImage: "folder")
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(TungstenToolbarButtonStyle(role: .accentSapphire, isActive: true))
+
+                Button {
+                    viewModel.loadDemoBinary(emitToast: true)
+                } label: {
+                    Label(localizer.L("Load Demo (DEMO)", "载入演示 (DEMO)"), systemImage: "cpu")
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(TungstenToolbarButtonStyle(role: .cautionAmber))
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(ColdTungstenPalette.gunmetalSlate)
     }
 
     // MARK: - Bottom Engineering Telemetry Status Bar
@@ -900,7 +935,7 @@ public enum MachRetinaScreenshotExporter {
         app.setActivationPolicy(.prohibited)
         app.appearance = NSAppearance(named: .darkAqua)
 
-        let viewModel = MachStudioViewModel(initialBinaryURL: nil, emitStartupToast: false)
+        let viewModel = MachStudioViewModel(initialBinaryURL: nil, loadDemo: true, emitStartupToast: false)
 
         let windowRect = NSRect(x: -12_000, y: -12_000, width: pointWidth, height: pointHeight)
         let window = NSWindow(
@@ -953,7 +988,8 @@ public enum MachRetinaScreenshotExporter {
             analysisIndex: index,
             binaryData: viewModel.overlayBuffer.materializedData(),
             decompiledFunctions: orderedDecompiled,
-            auditFindings: viewModel.securityFindings
+            auditFindings: viewModel.securityFindings,
+            isDemo: viewModel.isDemoMode
         )
         let htmlURL = outputDirectoryURL.appendingPathComponent("demo-mach-triage.html")
         try htmlString.write(to: htmlURL, atomically: true, encoding: .utf8)

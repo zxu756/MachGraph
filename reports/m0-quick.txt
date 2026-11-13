@@ -1,0 +1,19 @@
+=== MachGraph M0 Quick Acceptance ===
+Date (UTC): 2026-11-13T23:50:06Z
+macOS:      macOS 27.0.1 (26A434) arm64
+Binary:     /Users/xu/Projects/MachGraph/.build/debug/MachGraph
+
+[PASS] Row 1: info /bin/ls --json matches otool -arch arm64e -l (5 segments, 11 sections, fileName=ls)
+[PASS] Row 2: disasm /bin/ls vs llvm-objdump: total=3846 agree=3845 (99.97%) unknown=1 wrong=0
+[PASS] Row 3: info and disasm without file exit 2 with empty stdout (EN + ZH)
+[PASS] Row 4: disasm /bin/ls --nosuchoption exits 2 with empty stdout (EN + ZH)
+[PASS] Row 5: missing function exits non-zero with empty stdout; decompile emits line-1 warning (EN + ZH)
+[PASS] Row 6: all 16 subcommands in --help (EN + ZH) route headlessly on /usr/bin/true
+[PASS] Row 7: MCP mach_inspect_binary without binaryPath returns isError:true
+[PASS] Row 8: disasm /usr/bin/ssh decoded 115546 instructions with 0 lines from __info_plist
+[PASS] Row 9: /dev/null, 0-byte file, plain text, truncated /bin/ls (8000/30000 B), and ELF ET_REL rejected with empty stdout (EN + ZH)
+[PASS] Row 10: semicolon-separated 4-statement A64 program assembled all 4 words (16 bytes)
+[PASS] Row 11: MachStudioViewModel default startup loads zero binary unless file or Load Demo is requested
+[PASS] Row 12: 0 matches for SyntheticAuthDemo/Synthesized/synthesizeFallback/MACHGRAPH-PRO in Sources/, README*, docs/
+
+=== ALL 12 M0 ACCEPTANCE CHECKS PASSED in 4.08s (< 10.00s budget) ===

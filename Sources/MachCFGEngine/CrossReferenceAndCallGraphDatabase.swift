@@ -832,14 +832,13 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
     }
 }
 
-// MARK: - Thread-Safe In-Memory Binary Byte Cache (Supports 1-Arg `analyzeBinary(image)`)
+// MARK: - Thread-Safe In-Memory Binary Byte Cache (Explicit Registrations Only)
 
 private final class LockedBinaryByteRegistry: @unchecked Sendable {
     static let shared = LockedBinaryByteRegistry()
 
     private let lock = NSLock()
     private var storageBySHA256: [String: Data] = [:]
-    private var didPopulateBuiltInFixtures = false
 
     func register(data: Data, sha256Hex: String? = nil) {
         let digest = (sha256Hex ?? BinaryHashAndEntropy.sha256Hex(of: data)).lowercased()
@@ -851,43 +850,8 @@ private final class LockedBinaryByteRegistry: @unchecked Sendable {
     func lookup(sha256Hex: String) -> Data? {
         let key = sha256Hex.lowercased()
         lock.lock()
-        if let hit = storageBySHA256[key] {
-            lock.unlock()
-            return hit
-        }
-        let alreadyPopulated = didPopulateBuiltInFixtures
-        lock.unlock()
-
-        guard !alreadyPopulated else { return nil }
-
-        // Lazily materialize built-in synthetic test/demo fixtures once if an in-memory `LoadedBinaryImage`
-        // was passed to `analyzeBinary(_ image:)` without explicit `data` or disk backing!
-        let builtIns: [Data] = [
-            SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false, includeCMSCertificates: false),
-            SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true, includeCMSCertificates: false),
-            SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false, includeCMSCertificates: true),
-            SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true, includeCMSCertificates: true),
-            SyntheticBinaryFixtureBuilder.buildUniversalFatBinary(),
-            SyntheticBinaryFixtureBuilder.buildUniversalFat64Binary(),
-            SyntheticBinaryFixtureBuilder.buildLegacyDyldInfoMachOBinary(),
-            SyntheticBinaryFixtureBuilder.buildELF64Binary(),
-            SyntheticBinaryFixtureBuilder.buildPE32PlusARM64Binary(),
-            SyntheticBinaryFixtureBuilder.buildWasmBinary()
-        ]
-
-        lock.lock()
-        if !didPopulateBuiltInFixtures {
-            for blob in builtIns {
-                let h = BinaryHashAndEntropy.sha256Hex(of: blob).lowercased()
-                if storageBySHA256[h] == nil {
-                    storageBySHA256[h] = blob
-                }
-            }
-            didPopulateBuiltInFixtures = true
-        }
-        let resolved = storageBySHA256[key]
-        lock.unlock()
-        return resolved
+        defer { lock.unlock() }
+        return storageBySHA256[key]
     }
 }
 
@@ -925,7 +889,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
             preferredSliceIndex: preferredSliceIndex
         )
         Self.registerInMemoryBinaryData(data, sha256Hex: image.sha256Hex)
-        return analyzeBinary(image, data: data, options: explicitOptions)
+        return try analyzeBinary(image, data: data, options: explicitOptions)
     }
 
     /// Convenience loader + analyzer from disk `URL`.
@@ -945,7 +909,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
             fileName: fileURL.lastPathComponent,
             preferredSliceIndex: preferredSliceIndex
         )
-        return analyzeBinary(image, data: data, options: explicitOptions)
+        return try analyzeBinary(image, data: data, options: explicitOptions)
     }
 
     /// Explicit `rawData:` label alias for callers passing `(image, rawData: bytes)`.
@@ -953,25 +917,30 @@ public struct BinaryAnalysisCoordinator: Sendable {
         _ image: LoadedBinaryImage,
         rawData: Data,
         options explicitOptions: BinaryAnalysisOptions? = nil
-    ) -> BinaryAnalysisIndex {
-        analyzeBinary(image, data: rawData, options: explicitOptions)
+    ) throws -> BinaryAnalysisIndex {
+        try analyzeBinary(image, data: rawData, options: explicitOptions)
     }
 
-    /// Executes the end-to-end static binary analysis pipeline on `image`:
-    ///   1. Executable section disassembly + multi-instruction idiom & constant propagation,
-    ///   2. Multi-source function boundary & switch jump-table recovery,
-    ///   3. Basic-block leader partitioning + CFG edge construction,
-    ///   4. Lengauer-Tarjan $O(E \alpha(V))$ dominators + Cooper-Harvey-Kennedy DF + `ipdom` + natural loops,
-    ///   5. 5-phase Sugiyama hierarchical CFG layout solving,
-    ///   6. Bidirectional cross-reference (`XrefRecord`) indexing + whole-program Call Graph + dangerous sink BFS.
+    /// Executes the end-to-end static binary analysis pipeline on `image`.
     public func analyzeBinary(
         _ image: LoadedBinaryImage,
         data: Data? = nil,
         options explicitOptions: BinaryAnalysisOptions? = nil
-    ) -> BinaryAnalysisIndex {
+    ) throws -> BinaryAnalysisIndex {
         let startTime = CFAbsoluteTimeGetCurrent()
         let activeOptions = explicitOptions ?? self.options
         let binaryBytes = resolveBackingBytes(for: image, explicitData: data)
+
+        if !image.architecture.isARM64Family && image.containerFormat != .wasm && image.architecture != .wasm32 {
+            throw MachGraphError.unsupportedArchitecture(
+                "Disassembly and CFG analysis only support ARM64/ARM64e (got \(image.architecture.displayName))."
+            )
+        }
+        if !image.executableSections().isEmpty && binaryBytes == nil {
+            throw MachGraphError.cfgAnalysisError(
+                "Cannot analyze \(image.fileName): raw binary bytes are unavailable."
+            )
+        }
 
         let discoveryEngine = FunctionDiscoveryEngine(configuration: activeOptions.discoveryConfiguration)
         let cfgEngine = CFGBuilderEngine(configuration: activeOptions.cfgConfiguration)
@@ -979,7 +948,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
         let layoutSolver = SugiyamaCFGLayoutSolver(configuration: activeOptions.layoutConfiguration)
 
         // 1. Decode all executable sections
-        let decodedSections = discoveryEngine.decodeExecutableSections(
+        let decodedSections = try discoveryEngine.decodeExecutableSections(
             in: image,
             data: binaryBytes
         )

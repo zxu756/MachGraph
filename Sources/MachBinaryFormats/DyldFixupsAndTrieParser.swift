@@ -1024,7 +1024,8 @@ public enum ExportTrieParser {
                             address: .zero,
                             size: 0,
                             sectionIndex: nil,
-                            libraryOrdinal: dylibOrd
+                            libraryOrdinal: dylibOrd,
+                            provenance: .exportTrie
                         )
                     )
                 }
@@ -1045,7 +1046,8 @@ public enum ExportTrieParser {
                             binding: binding,
                             address: stubVA,
                             size: 0,
-                            sectionIndex: stubSecIdx
+                            sectionIndex: stubSecIdx,
+                            provenance: .exportTrie
                         )
                     )
                     emitted.append(
@@ -1056,7 +1058,8 @@ public enum ExportTrieParser {
                             binding: .local,
                             address: resolverVA,
                             size: 0,
-                            sectionIndex: resolverSecIdx
+                            sectionIndex: resolverSecIdx,
+                            provenance: .exportTrie
                         )
                     )
                 }
@@ -1085,7 +1088,8 @@ public enum ExportTrieParser {
                             binding: binding,
                             address: symbolVA,
                             size: 0,
-                            sectionIndex: secIdx
+                            sectionIndex: secIdx,
+                            provenance: .exportTrie
                         )
                     )
                 }

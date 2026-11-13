@@ -2,96 +2,100 @@
 
 **English** | **[简体中文](README.zh-CN.md)**
 
-**Zero-CLI-Wrapper Native Binary Reverse-Engineering IDE, ARM64 SSA Decompiler & Patch Workbench for macOS (Apple Silicon) · `v1.1.0` Bilingual (`中文 / EN`)**
+Pure-Swift ARM64/ARM64e disassembler, inline mini-assembler, and Universal/Mach-O 64 binary parser for macOS (`arm64`), with a headless bilingual CLI (`--lang en|zh`) and a stdio JSON-RPC 2.0 MCP server.
 
-![MachGraph Sugiyama CFG Canvas](docs/screenshot-cfg-canvas.png)
-
-`MachGraph v1.1.0` (`74,303 LOC` of strict Swift 6 across 11 modular libraries + native desktop IDE + 145 automated Swift Testing checks) is a standalone Apple Silicon reverse-engineering workbench built from first principles **without shelling out to `otool`, `objdump`, `nm`, `llvm-mc`, or `c++filt`**. Every container loader, ARM64/ARM64e PAC instruction decoder, two-pass inline mini-assembler, Lengauer-Tarjan dominator & Sugiyama Control-Flow Graph layout solver, Cytron SSA Micro-IR -> structured zero-`goto` Pseudo-C decompiler, sparse Copy-on-Write hex patcher, Mach-O `LC_CODE_SIGNATURE` SHA-256 re-signer, `.machproj` SQLite WAL database, and `JavaScriptCore` security analyzer sandbox runs natively in-process.
-
-### What's New in `v1.1.0`
-- **Live In-App Bilingual (`中文 / EN`) Switching**: Instant zero-restart language switching via the Cold-Tungsten **`中文 | EN`** toolbar pill, **`⇧⌘L`** menu command (`Toggle Language / 切换语言`), `⌘,` Preferences language bar, CLI `--lang zh|en`, or `MACHGRAPH_LANG=zh|en` (auto-detecting Simplified Chinese on `zh*` macOS locales).
-- **Bilingual Offline HTML Binary Triage Dossier**: Standalone Cold-Tungsten HTML reports (`docs/demo-mach-triage.html`) include an interactive top-right **`中文 | EN`** segmented switch backed by `localStorage` and `navigator.language` auto-detection.
-- **2x Retina Bilingual Screenshots (`2720 × 1680`)**: Offscreen Retina export pipeline (`--export-screenshots <dir> --lang zh|en`) with CJK-tuned typography and zero ellipsis truncation across all 7 reverse-engineering studios.
+> **Reproducible Baseline (`2026-11-14`, `macOS 27.0.1 (26A434) arm64`, logged in [`reports/m0-quick.txt`](reports/m0-quick.txt)):**
+> Mach-O container parsing, dyld chained fixups, embedded code-signature hashing, and ARM64 instruction decoding run natively in Swift without invoking `otool`, `llvm-objdump`, `nm`, or `codesign`.
+> - **`/bin/ls` (`arm64e` slice):** `5` segments and `11` sections match `otool -arch arm64e -l /bin/ls` item-for-item (`vmaddr`, `vmsize`, `fileoff`, `filesize`, `addr`, `size`, `offset`); across all `3,846` instructions in `__TEXT,__text`, mnemonic agreement with `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` (with standard ARM64 alias normalization: `movz`/`movn`/`orr` -> `mov`, `udf` -> `.inst`) is **`3,845 / 3,846` (`99.97%`)**, with **`0` wrong mnemonics** and `1` unrecognized word (`.inst`).
+> - **`/usr/bin/ssh` (`arm64e` slice):** **`115,546` instructions** decoded strictly from instruction-attributed sections (`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`), with **`0` lines** decoded from non-instruction data sections such as `__TEXT,__info_plist`.
+> - **Reproduce on any Apple Silicon Mac:** `./Scripts/test.sh milestone 0` (or `./Scripts/acceptance/m0-quick.sh`). Full multi-binary corpus differential benchmarking (`standard` / `full`) is scheduled for Milestone `M1`.
 
 ---
 
-## Architecture (`74,303 LOC` Across 11 SwiftPM Modules + Executable + Test Suite)
+## Verified Capabilities (`M0` Baseline)
 
-| Module | LOC | Responsibility |
-|---|---:|---|
-| `MachBinaryFormats` | `9,200` | Universal Fat/Fat64, Mach-O 64, Dyld Chained Fixups (`ARM64E` PAC + `PTR_64`), Export Trie, Embedded `LC_CODE_SIGNATURE` CMS/DER/CDHash, ObjC 2.0 Runtime & Swift 5 Type Descriptors, ELF64, PE32+, WebAssembly 1.0 |
-| `MachMicroDecompiler` | `8,868` | ARM64 -> Micro-IR lifter, Cytron dominance-frontier SSA $\phi$-placement, dead-store & copy propagation, structured `if / else / while / do-while / switch` Pseudo-C emitter (`0` `goto`s) + optional Ghidra 12.1.4 side-by-side bridge |
-| `MachA64Decoder` | `8,817` | Handwritten ARMv8-A / ARMv8.3-A (`arm64e` PAC + LSE Atomics + SIMD/FP) decoder, two-pass inline ARM64 mini-assembler, `ADRP+ADD`/`ADRP+LDR` idiom recognizer, and pure-Swift `$s` + Itanium `_Z` + ObjC symbol demangler |
-| `MachCFGEngine` | `8,207` | Function boundary & switch jump-table recovery, Lengauer-Tarjan dominator tree & `IDF+` dominance frontiers, natural loop detector, bidirectional Xref & Call Graph SCC index, Brandes-Köpf Sugiyama zero-overlap CFG layout |
-| `MachProjectStore` | `7,551` | `.machproj` SQLite3 WAL persistence (`v1..v4` checksummed migrations), dual-indexed Xref queries, persistent Undo/Redo journal across cold restarts, atomic checkpoints, JSON / Ghidra / IDA / C-header / Markdown dossier export |
-| `MachStudioViews` | `7,382` | Infinite pan/zoom Sugiyama CFG canvas + minimap radar, synchronized ARM64 <-> Pseudo-C split studio, 16-byte Sparse CoW Hex & Inline ARM64 Patcher, Strings/ObjC/Swift runtime browser, Sliding-Window Entropy & CodeSign studio |
-| `MachPatchAndHexEngine` | `6,393` | $O(\log P)$ Sparse Copy-on-Write byte overlay, Horspool masked wildcard search, safety-checked inline ARM64 patcher + veneer stubs, IPS/IPS32/BPS1 patch codecs, Mach-O `CodeDirectory` SHA-256 re-signer, Shannon & $\chi^2$ entropy profiler |
-| `MachWorkbenchShell` | `5,592` | Cold Tungsten Steel (`#0F1216`) bilingual (`中文 / EN`) workbench shell, synchronized cross-pane `VirtualAddress` cursor bus, `⌘K` Command Palette, `G` Go-To-Address/Symbol expression parser, `X` Xref jump modal, `⌘,` multi-tab preferences |
-| `MachGraphModels` | `3,638` | Zero-copy `BinarySliceReader`, `VirtualAddress`/`FileOffset` arithmetic, ARM64 AST, CFG/Dominator/Loop models, SSA Micro-IR, Pseudo-C AST, Patch & SQLite WAL domain types, `MachLanguage` & `MachLocalizer` |
-| `MachPluginSDK` | `2,937` | Capability-gated `JavaScriptCore` reverse-engineering plugin host with 4 built-in security analyzers (Hardcoded Secret/Key Scanner, Dangerous C Sink Auditor, ARM64E PAC Gadget Inspector, Entitlement Privilege Escalation Analyzer) |
-| `MachHeadlessCLI` | `1,194` | 15-subcommand headless CLI (`--lang zh|en`), JSON-RPC 2.0 MCP server (`stdio`) for AI coding agents, and Hallmark-clean standalone Cold-Tungsten bilingual HTML triage report exporter |
-| `MachGraph` + `MachGraphTests` | `4,524` | Unified desktop/CLI/MCP entry point (`368` LOC) + **145 Swift Testing `@Test` checks across 7 suites** (`4,156` LOC, `~1.0s`, `0` failures) |
+| Area | Subcommands | What Is Verified in `M0` |
+|---|---|---|
+| **Universal & Mach-O 64 Container Parsing** | `info`, `segments` | Parses Fat/Fat64 slices, `mach_header_64`, `LC_SEGMENT_64` segments/sections, `LC_UUID`, `LC_BUILD_VERSION`, `LC_MAIN`, and imported dylibs (`--json` & text). Rejects empty files, plain text, truncated Mach-O slices, and unsupported ELF `ET_REL` relocatable object files with non-zero exit codes. |
+| **Chained Fixups, Symbols, Strings & CodeSign** | `fixups`, `symbols`, `strings`, `codesign`, `entropy` | Parses `LC_DYLD_CHAINED_FIXUPS` binds/rebases (`fixups`), separates `LC_SYMTAB` symbols from `[inferred:...]` `LC_FUNCTION_STARTS` / `LC_DYSYMTAB` stub entries (`symbols`), scans printable strings (`strings`), computes section Shannon entropy (`entropy`), and verifies embedded `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` & CDHash (`codesign`). |
+| **ARM64 / ARM64e Disassembly & Xrefs** | `disasm`, `xrefs`, `cfg-dot` | Disassembles only sections carrying `S_ATTR_PURE_INSTRUCTIONS` or `S_ATTR_SOME_INSTRUCTIONS`, supports `--symbol` / `--function`, `--address`, and `--count`, queries resolved call/branch/data cross-references (`xrefs`), and exports Graphviz DOT control-flow graphs (`cfg-dot`). Missing targets fail with exit code `1` and empty `stdout`. |
+| **Inline ARM64 Mini-Assembler & Ad-Hoc Re-Signing** | `patch-asm`, `resign` | Assembles semicolon-separated ARM64 instruction sequences (`pacibsp; stp ...; mov ...; retab`) into machine words, writes a patched Mach-O copy, and refreshes the ad-hoc `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory`. |
+| **Bilingual CLI, HTML Dossier & MCP Server** | `export-html`, `mcp` | Supports `--lang en|zh` and `MACHGRAPH_LANG=en|zh`, exports standalone bilingual (`中文 \| EN`) HTML binary triage reports (`export-html`), and serves JSON-RPC 2.0 MCP requests over `stdio` (`mcp`), requiring an explicit `binaryPath` on every tool call. |
 
 ---
 
-## 2x Retina Workbench Gallery (`2720 × 1680`)
-
-| Sugiyama CFG, Lengauer-Tarjan Dominators & Minimap | Synchronized ARM64 Disassembly & SSA Pseudo-C Split |
-|---|---|
-| ![CFG Canvas](docs/screenshot-cfg-canvas.png) | ![Decompiler Split](docs/screenshot-decompiler-split.png) |
-
-| Sparse CoW Hex, Inline ARM64 Assembler & SHA-256 Re-Signer | Sliding-Window Entropy Spectrum, CodeSign & JSC Security Audit |
-|---|---|
-| ![Hex Patcher](docs/screenshot-hex-patcher.png) | ![Entropy & Audit](docs/screenshot-entropy-audit.png) |
-
----
-
-## Install & Build
-
-### Homebrew Cask
+## Build & Run Verification
 
 ```bash
-brew tap zxu756/tap
-brew install --cask zxu756/tap/machgraph
+swift build --product MachGraph
+./Scripts/acceptance/m0-quick.sh
+./Scripts/acceptance/readme-commands.sh
 ```
 
-### Build From Source
+Unified test runner (`Scripts/test.sh`):
 
 ```bash
-git clone https://github.com/zxu756/MachGraph.git
-cd MachGraph
-swift test --no-parallel
-./Scripts/build-app.sh
-open build/MachGraph.app
+./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachHeadlessCLI
+./Scripts/test.sh milestone 0
 ```
 
 ---
 
-## Headless CLI & MCP Server Usage
+## CLI & MCP Usage Examples
+
+Every command below runs against a real binary (no hidden fallback data; omitting `<file>` without `--demo` exits with code `2`) and is replayed verbatim in [`Scripts/acceptance/readme-commands.sh`](Scripts/acceptance/readme-commands.sh):
 
 ```bash
-# Launch desktop IDE directly in Simplified Chinese or English (or press Shift+Cmd+L in-app)
-MachGraph --lang zh
-MACHGRAPH_LANG=en MachGraph
+# Inspect Mach-O container metadata, segments, dyld chained fixups, symbols, and code signature
+.build/debug/MachGraph info /bin/ls
+.build/debug/MachGraph info /bin/ls --json
+.build/debug/MachGraph segments /bin/ls
+.build/debug/MachGraph fixups /bin/ls --json
+.build/debug/MachGraph symbols /bin/ls
+.build/debug/MachGraph codesign /bin/ls
 
-# Inspect Universal / Mach-O 64 / ELF64 / PE32+ / WASM container, segments, Xrefs, and CDHash
-MachGraph info --binary /bin/ls
+# Disassemble /bin/ls from its LC_MAIN entry symbol or inspect the compiled ARM64 fixture by address
+.build/debug/MachGraph disasm /bin/ls --symbol entry --count 12
+.build/debug/MachGraph disasm Fixtures/demo_arm64_sample --address 0x100000460 --count 10
 
-# Disassemble a function with inline ADRP+ADD / PAC / Xref annotations
-MachGraph disasm --binary /bin/ls --function _main
+# Assemble a 4-instruction ARM64 sequence onto a temporary copy and ad-hoc re-sign
+cp Fixtures/demo_arm64_sample /tmp/machgraph_readme_sample
+.build/debug/MachGraph patch-asm /tmp/machgraph_readme_sample \
+  --address 0x100000460 \
+  --asm "pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab" \
+  --force \
+  --output /tmp/machgraph_readme_patched \
+  --json
+rm -f /tmp/machgraph_readme_sample /tmp/machgraph_readme_patched
 
-# Lift ARM64 machine code into structured zero-goto SSA Pseudo-C
-MachGraph decompile --binary /bin/ls --function _main
+# Export a standalone bilingual (中文 | EN) HTML binary triage report for /bin/ls
+.build/debug/MachGraph export-html /bin/ls --output /tmp/machgraph_ls_triage.html
+rm -f /tmp/machgraph_ls_triage.html
 
-# Run all 4 built-in JavaScriptCore security audit plugins
-MachGraph audit-plugins --binary /bin/ls
+# Bilingual CLI output (--lang zh|en) and explicit [DEMO] sample mode
+.build/debug/MachGraph --help --lang zh
+.build/debug/MachGraph info --demo --lang zh
 
-# Export a standalone Cold-Tungsten bilingual (中文 | EN) HTML binary triage dossier
-MachGraph export-html triage-report.html --binary /bin/ls
-
-# Start JSON-RPC 2.0 MCP Server over stdio for Claude Code / Codex / OpenCode / Antigravity
-MachGraph mcp
+# Query the stdio JSON-RPC 2.0 MCP server with an explicit binaryPath
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{"binaryPath":"/bin/ls"}}}\n' \
+  | .build/debug/MachGraph mcp
 ```
+
+---
+
+## Planned Milestones & Experimental / Frozen Modules
+
+The following roadmap items and in-tree modules have **not** yet completed differential acceptance and are excluded from the verified feature table above:
+
+- **M1 — Corpus Differential Harness:** `Scripts/acceptance/differential.py` and `macho-differential.py` across `quick` (`/bin/ls`), `standard` (`ls`, `ssh`, `vim`), and `full` (`/bin`, `/usr/bin`, `/usr/sbin`, `/usr/libexec`) system binary corpora.
+- **M2 — SIMD Integer Vector Decoder & Operand Parity:** Complete coverage for unrecognized AdvSIMD integer mnemonics (currently emitted as `.inst`), LLVM canonical `mov` alias emission, and operand-level round-trip assembly checks.
+- **M3 — Metadata & Demangler Differential Verification:** Full `LC_SYMTAB` parity with `nm -arch arm64e` (including undefined `U` import records), Swift `$s` (`swift-demangle`) and Itanium `_Z` (`c++filt`) demangling benchmarks, ObjC metadata (`otool -ov`), and entitlement plist parity.
+- **M4 — Control-Flow Graph Invariants & Performance:** CFG basic-block invariants, Ghidra block-boundary comparison, and `ssh`/`vim` whole-binary CFG construction profiling.
+- **M5 — Expanded MCP Tool Surface & SwiftPM Library API:** Adding `mach_disasm_function`, `mach_list_symbols`, `mach_cfg`, and `mach_find_strings` to `mcp`, plus standalone SwiftPM consumer examples.
+- **Experimental / Frozen Until Post-M5:**
+  - **Pseudo-C Decompiler (`decompile` / `MachMicroDecompiler`):** **Experimental** — condition expressions, loop bounds, and switch recovery are known to produce incorrect output on real binaries. `decompile` emits an explicit reliability warning on line 1 (`// EXPERIMENTAL: Decompiler output — condition expressions are known to be unreliable.`); rely on `disasm` for ground truth. (An optional local Ghidra `analyzeHeadless` comparison helper also lives in this module when explicitly configured.)
+  - **Security Audit Plugins (`audit-plugins` / `MachPluginSDK`):** Heuristic `JavaScriptCore` rules have known false positives and false negatives and have not yet been calibrated against a ground-truth benchmark.
+  - **Desktop App (`MachStudioViews` / `MachWorkbenchShell`), `.machproj` Store & Non-Mach-O Loaders (`ELF64` / `PE32+` / `WASM`):** Launching `MachGraph` without CLI arguments opens an empty workspace (`Open File...` or explicit `Load Demo (DEMO)`). Full GUI verification, `.machproj` persistence, and non-Mach-O reference differential tests are deferred until after `M5`.
 
 ---
 

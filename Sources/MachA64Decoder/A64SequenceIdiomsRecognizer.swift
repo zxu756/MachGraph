@@ -7,7 +7,7 @@ public enum A64IdiomKind: String, Sendable, Codable, Hashable, CaseIterable {
     case adrpAddAddress = "ADRP+ADD Page Offset Address"
     case adrpLoadPointer = "ADRP+LDR GOT/Pointer Load"
     case adrpStoreData = "ADRP+STR Global Data Store"
-    case movWideConstant = "MOVZ/MOVN+MOVK Synthesized Constant"
+    case movWideConstant = "MOVZ/MOVN+MOVK Wide Constant"
     case darwinSyscall = "Darwin XNU Supervisor Syscall"
     case dyldImportStub = "Mach-O Import Stub Thunk"
     case switchTableDispatch = "PC-Relative Switch Table Dispatch"

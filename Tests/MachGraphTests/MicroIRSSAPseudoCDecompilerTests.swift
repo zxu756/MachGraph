@@ -531,4 +531,23 @@ struct MicroIRSSAPseudoCDecompilerTests {
         #expect(!result.fullSourceText.isEmpty)
         #expect(result.ghidraSideBySideSource == nil)
     }
+
+    @Test("G18: Decompiler output starts line 1 with explicit experimental warning about unreliable condition expressions (EN + ZH)")
+    func decompilerEmitsExperimentalWarningOnFirstLine() throws {
+        let data = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false)
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "ExperimentalBanner.arm64")
+        let fn = try #require(index.function(named: "_verify_license"))
+
+        let outEN = MachMicroDecompilerEngine().decompile(function: fn, in: index, language: .en)
+        let firstLineEN = try #require(outEN.fullSourceText.split(separator: "\n", omittingEmptySubsequences: false).first)
+        #expect(String(firstLineEN) == "// EXPERIMENTAL: Decompiler output — condition expressions are known to be unreliable.")
+        #expect(outEN.renderedLines.first?.lineNumber == 1)
+        #expect(outEN.renderedLines.first?.text == String(firstLineEN))
+
+        let outZH = MachMicroDecompilerEngine().decompile(function: fn, in: index, language: .zhHans)
+        let firstLineZH = try #require(outZH.fullSourceText.split(separator: "\n", omittingEmptySubsequences: false).first)
+        #expect(String(firstLineZH) == "// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。")
+        #expect(outZH.renderedLines.first?.lineNumber == 1)
+        #expect(outZH.renderedLines.first?.text == String(firstLineZH))
+    }
 }

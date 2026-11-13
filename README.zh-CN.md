@@ -2,103 +2,107 @@
 
 **[English](README.md)** | **简体中文**
 
-**零外部 CLI 封装的 macOS (Apple Silicon) 原生二进制逆向工程 IDE、ARM64 SSA 反编译器与字节补丁工作台 · `v1.1.0` 中英双语版 (`中文 / EN`)**
+纯 Swift 实现的 macOS (`arm64`) ARM64/ARM64e 反汇编器、内联微型汇编器与 Universal/Mach-O 64 二进制解析工具，内置中英双语命令行（`--lang zh|en`）与 stdio JSON-RPC 2.0 MCP 服务端。
 
-![MachGraph Sugiyama 控制流图工作台](docs/screenshot-cfg-canvas-zh.png)
-
-`MachGraph v1.1.0`（基于严格 Swift 6 并发安全模型构建，涵盖 11 个模块化核心库、原生桌面 IDE 与 145 项自动化测试，总计 `74,303` 行代码）是一款专为 Apple Silicon 打造的纯原生逆向工程工作台。**全套引擎完全在进程内原生实现，零外部调用 `otool`、`objdump`、`nm`、`llvm-mc` 或 `c++filt`**：从多容器二进制解析器、手写 ARM64/ARM64e PAC 指令解码器、双遍内联汇编器、Lengauer-Tarjan 支配树与 Sugiyama 零重叠控制流图布局求解器、Cytron SSA 微中间表示（Micro-IR）到无 `goto` 结构化伪 C 反编译器、稀疏写时复制（Sparse CoW）十六进制补丁引擎、Mach-O `LC_CODE_SIGNATURE` SHA-256 临时重签名器、`.machproj` SQLite WAL 持久化工程库，以及 `JavaScriptCore` 能力门控安全审计沙箱，均由纯 Swift 独立驱动。
-
-### `v1.1.0` 核心更新
-- **应用内实时 `中文 / EN` 双语热切换**：点击顶部冷钨钢工具栏 **`中文 | EN`** 胶囊开关、按快捷键 **`⇧⌘L`**（菜单栏 `切换语言 / Toggle Language`）或在 **`⌘,`** 偏好设置中切换，即可零重启实时重绘全部 7 大逆向工作区、命令面板与状态栏；支持 `--lang zh|en`、`MACHGRAPH_LANG=zh|en`、`UserDefaults` 记忆及简体中文系统环境自动识别。
-- **中英双语单文件离线 HTML 逆向分诊报告**：导出的冷钨钢 HTML 分诊报告（`docs/demo-mach-triage.html`）内置右上角 **`中文 | EN`** 交互切换胶囊，支持 `localStorage` 偏好记忆与浏览器 `navigator.language` 中文自动默认。
-- **2x Retina 高清中文工作台实拍图 (`2720 × 1680`)**：专门针对中文排版优化字距与胶囊留白，7 大分析面板与检查器实现 **0% 省略号截断**。
+> **可复现基线（`2026-11-14`，`macOS 27.0.1 (26A434) arm64`，原始记录见 [`reports/m0-quick.txt`](reports/m0-quick.txt)）：**
+> Mach-O 容器解析、dyld 链式修正、内嵌代码签名哈希计算与 ARM64 指令解码均由纯 Swift 在进程内完成，默认分析路径不调用 `otool`、`llvm-objdump`、`nm` 或 `codesign` 等外部命令。
+> - **`/bin/ls`（`arm64e` 切片）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令与 `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` 对照（经标准 ARM64 别名归一：`movz`/`movn`/`orr` 归为 `mov`，`udf` 归为 `.inst`），助记符一致数为 **`3,845 / 3,846`（`99.97%`）**，**判错 `0` 条**，未识别指令 `1` 条（输出 `.inst`）。
+> - **`/usr/bin/ssh`（`arm64e` 切片）：** 仅对带指令属性的节（`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`）解码出 **`115,546` 条指令**，非指令数据节（如 `__TEXT,__info_plist`）输出为 **`0` 行**。
+> - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）。跨系统二进制大语料（`standard` / `full`）的自动化对照脚本排在里程碑 `M1`。
 
 ---
 
-## 模块化架构（11 个 SwiftPM 核心模块 + 桌面/CLI 入口 + 测试套件，共 `74,303 LOC`）
+## 已通过 `M0` 验收的能力
 
-| 模块 | 代码行数 | 核心职责 |
-|---|---:|---|
-| `MachBinaryFormats` | `9,200` | Universal Fat/Fat64、Mach-O 64、Dyld 链式修正（`ARM64E` PAC + `PTR_64`）、导出前缀树（Export Trie）、内嵌 `LC_CODE_SIGNATURE` CMS/DER/CDHash、ObjC 2.0 运行时与 Swift 5 类型描述符、ELF64、PE32+、WebAssembly 1.0 原生加载器 |
-| `MachMicroDecompiler` | `8,868` | ARM64 -> Micro-IR 语义提升器、Cytron 支配边界 SSA $\phi$ 节点插入、死存储消除与拷贝传播、无 `goto` 结构化 `if / else / while / do-while / switch` 伪 C 生成器，以及可选 Ghidra 12.1.4 对照桥接 |
-| `MachA64Decoder` | `8,817` | 手写 ARMv8-A / ARMv8.3-A（`arm64e` PAC 指针认证 + LSE 原子指令 + SIMD/浮点）解码器、双遍内联 ARM64 微型汇编器、`ADRP+ADD`/`ADRP+LDR` 惯用法识别器，以及纯 Swift `$s` / Itanium `_Z` / ObjC 符号反修饰器 |
-| `MachCFGEngine` | `8,207` | 函数边界与 Switch 跳转表恢复、Lengauer-Tarjan 支配树与 `IDF+` 支配边界计算、自然循环检测、双向交叉引用（Xref）与调用图强连通分量（SCC）索引、Brandes-Köpf Sugiyama 零重叠分层控制流图布局 |
-| `MachProjectStore` | `7,551` | `.machproj` SQLite3 WAL 工程持久化（`v1..v4` 校验和增量迁移）、双索引交叉引用查询、跨冷启动持久化的撤销/重做（Undo/Redo）事务日志、原子快照与差异对比、JSON / Ghidra / IDA / C 头文件 / Markdown 报告导出 |
-| `MachStudioViews` | `7,382` | 无限平移缩放 Sugiyama 控制流图画布与缩略雷达、ARM64 反汇编 <-> SSA 伪 C 双向同步分屏工作台、16 列稀疏 CoW 十六进制与内联 ARM64 补丁器、字符串/ObjC/Swift 运行时浏览器、滑动窗口香农熵谱与代码签名工作台 |
-| `MachPatchAndHexEngine` | `6,393` | $O(\log P)$ 稀疏写时复制字节覆写缓冲区、Horspool 掩码通配符搜索、带跳转目标安全性预检的内联 ARM64 补丁器与跳板（Veneer）桩生成、IPS/IPS32/BPS1 补丁编解码、Mach-O `CodeDirectory` SHA-256 页哈希重签名、香农熵与 $\chi^2$ 随机性剖析 |
-| `MachWorkbenchShell` | `5,592` | 冷钨钢（Cold Tungsten Steel `#0F1216`）中英双语（`中文 / EN`）工作台外壳、跨面板同步 `VirtualAddress` 光标总线、`⌘K` 模糊搜索命令面板、`G` 地址/符号算术跳转解析器、`X` 交叉引用弹窗、`⌘,` 多标签偏好设置 |
-| `MachGraphModels` | `3,638` | 零拷贝 `BinarySliceReader`、`VirtualAddress`/`FileOffset` 类型安全地址算术、ARM64 语法树、CFG/支配树/循环模型、SSA Micro-IR、伪 C AST、补丁与 SQLite WAL 领域模型、`MachLanguage` 与 `MachLocalizer` 双语引擎 |
-| `MachPluginSDK` | `2,937` | 能力门控（Capability-Gated）`JavaScriptCore` 逆向插件沙箱，内置 4 款安全审计插件（硬编码密钥与授权令牌扫描器、危险 C 汇聚点可达性审计器、ARM64e PAC 与 JOP/ROP 检查器、macOS 权限声明与签名审计器） |
-| `MachHeadlessCLI` | `1,194` | 15 子命令无头 CLI（支持 `--lang zh|en`）、面向 AI 编程代理的 JSON-RPC 2.0 MCP 服务器（`stdio`），以及 Hallmark 零告警冷钨钢中英双语单文件 HTML 逆向分诊报告导出器 |
-| `MachGraph` + `MachGraphTests` | `4,524` | 统一桌面 IDE / CLI / MCP 可执行入口（`368` LOC）+ **覆盖 7 大测试套件的 145 项 Swift Testing `@Test` 自动化测试**（`4,156` LOC，约 `1.0s` 跑完，`0` 失败） |
+| 领域 | 子命令 | `M0` 已验证范围 |
+|---|---|---|
+| **Universal 与 Mach-O 64 容器解析** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN` 与动态库依赖（支持文本与 `--json`）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
+| **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），计算节香农熵（`entropy`），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
+| **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤，查询调用/跳转/数据交叉引用（`xrefs`），导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
+| **内联 ARM64 微型汇编与临时重签名** | `patch-asm`、`resign` | 支持分号分隔的多条 ARM64 汇编语句（如 `pacibsp; stp ...; mov ...; retab`）逐条编码写入副本，并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。 |
+| **中英双语命令行、HTML 报告与 MCP 服务端** | `export-html`、`mcp` | 支持 `--lang zh|en` 与 `MACHGRAPH_LANG=zh|en`（简体中文环境自动默认中文），导出单文件离线双语（`中文 \| EN`）HTML 分诊报告（`export-html`），并提供基于 `stdio` 的 JSON-RPC 2.0 MCP 服务端（`mcp`，所有工具调用均要求显式传入 `binaryPath`）。 |
 
 ---
 
-## 2x Retina 高清中文工作台画廊 (`2720 × 1680`)
-
-| Sugiyama 分层控制流图、Lengauer-Tarjan 支配树与缩略雷达 | ARM64 反汇编与无 `goto` SSA 伪 C 同步分屏工作台 |
-|---|---|
-| ![控制流图工作台](docs/screenshot-cfg-canvas-zh.png) | ![同步分屏伪C反编译](docs/screenshot-decompiler-split-zh.png) |
-
-| 稀疏 CoW 十六进制、双遍内联 ARM64 汇编与 SHA-256 重签名 | 滑动窗口香农熵谱、代码签名超级块与 JSC 安全审计 |
-|---|---|
-| ![十六进制与内联补丁](docs/screenshot-hex-patcher-zh.png) | ![熵谱与安全审计](docs/screenshot-entropy-audit-zh.png) |
-
----
-
-## 安装与源码编译
-
-### Homebrew Cask 一键安装
+## 编译与运行验收脚本
 
 ```bash
-brew tap zxu756/tap
-brew install --cask zxu756/tap/machgraph
+swift build --product MachGraph
+./Scripts/acceptance/m0-quick.sh
+./Scripts/acceptance/readme-commands.sh
 ```
 
-### 从源码构建 `.app` 应用包
+统一测试入口（`Scripts/test.sh`）：
 
 ```bash
-git clone https://github.com/zxu756/MachGraph.git
-cd MachGraph
-swift test --no-parallel
-./Scripts/build-app.sh
-open build/MachGraph.app
+./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachHeadlessCLI
+./Scripts/test.sh milestone 0
 ```
 
-### 语言解析优先级与热切换
-`MachGraph` 按以下确定性优先级决定启动界面语言，并支持运行中随时按 **`⇧⌘L`** 或点击顶部 **`中文 | EN`** 胶囊无缝切换：
+---
+
+## 命令行与 MCP 示例
+
+以下每条命令均直接作用于真实二进制文件（无隐藏演示回退；未传 `<文件>` 且未显式指定 `--demo` 时退出码为 `2`），并在 [`Scripts/acceptance/readme-commands.sh`](Scripts/acceptance/readme-commands.sh) 中逐条原样回放验证：
+
+```bash
+# 查看 /bin/ls 的容器摘要、段节映射、dyld 链式修正、符号表与代码签名（文本与 JSON）
+.build/debug/MachGraph info /bin/ls
+.build/debug/MachGraph info /bin/ls --json
+.build/debug/MachGraph segments /bin/ls
+.build/debug/MachGraph fixups /bin/ls --json
+.build/debug/MachGraph symbols /bin/ls
+.build/debug/MachGraph codesign /bin/ls
+
+# 从 LC_MAIN 入口符号反汇编 /bin/ls，或按地址反汇编仓库内的真实编译样本
+.build/debug/MachGraph disasm /bin/ls --symbol entry --count 12
+.build/debug/MachGraph disasm Fixtures/demo_arm64_sample --address 0x100000460 --count 10
+
+# 将分号分隔的 4 条 ARM64 指令汇编写入样本副本并执行 SHA-256 临时重签名
+cp Fixtures/demo_arm64_sample /tmp/machgraph_readme_sample
+.build/debug/MachGraph patch-asm /tmp/machgraph_readme_sample \
+  --address 0x100000460 \
+  --asm "pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab" \
+  --force \
+  --output /tmp/machgraph_readme_patched \
+  --json
+rm -f /tmp/machgraph_readme_sample /tmp/machgraph_readme_patched
+
+# 为 /bin/ls 导出单文件离线中英双语（中文 | EN）HTML 二进制分诊报告
+.build/debug/MachGraph export-html /bin/ls --output /tmp/machgraph_ls_triage.html
+rm -f /tmp/machgraph_ls_triage.html
+
+# 简体中文命令行输出（--lang zh|en）与显式 [演示数据] 样本模式（--demo）
+.build/debug/MachGraph --help --lang zh
+.build/debug/MachGraph info --demo --lang zh
+
+# 通过 stdio JSON-RPC 2.0 调用 MCP 服务端（必须显式提供 binaryPath）
+printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{"binaryPath":"/bin/ls"}}}\n' \
+  | .build/debug/MachGraph mcp
+```
+
+### 语言解析优先级
+`MachGraph` 按以下确定性顺序解析界面与命令行语言（桌面端运行中可按 **`⇧⌘L`** 或点击顶部 **`中文 | EN`** 切换）：
 1. 命令行参数：`--lang zh` / `--lang en`
 2. 环境变量：`MACHGRAPH_LANG=zh` / `MACHGRAPH_LANG=en`
-3. 用户偏好持久化：`UserDefaults`（`io.github.zxu756.MachGraph.language`）
-4. 系统首选语言：`Locale.preferredLanguages.first` 以 `"zh"` 开头时自动默认简体中文（`zh-Hans`），否则为英文（`en`）
+3. 用户偏好：`UserDefaults`（`io.github.zxu756.MachGraph.language`）
+4. 系统首选语言：`Locale.preferredLanguages.first` 以 `"zh"` 开头时默认简体中文，否则默认英文
 
 ---
 
-## 无头命令行（Headless CLI）与 MCP 服务器用法
+## 后续里程碑计划与实验性/冻结模块说明
 
-```bash
-# 指定简体中文或英文直接启动桌面工作台（应用内可随时按 ⇧⌘L 切换）
-MachGraph --lang zh
-MACHGRAPH_LANG=en MachGraph
+以下路线图事项及仓库内既有模块**尚未**完成独立参考工具对照验收，不计入上方已验证能力表：
 
-# 解析 Universal / Mach-O 64 / ELF64 / PE32+ / WASM 容器头、段映射、交叉引用计数与 CDHash
-MachGraph info --binary /bin/ls
-
-# 反汇编指定函数，自动标注 ADRP+ADD 页址折叠、ARM64e PAC 指令与交叉引用
-MachGraph disasm --binary /bin/ls --function _main
-
-# 将 ARM64 机器码经 Cytron SSA Micro-IR 提升为结构化无 goto 伪 C 代码
-MachGraph decompile --binary /bin/ls --function _main
-
-# 运行全部 4 款内置 JavaScriptCore 二进制安全审计插件
-MachGraph audit-plugins --binary /bin/ls
-
-# 导出单文件离线冷钨钢中英双语 (中文 | EN) HTML 二进制分诊报告
-MachGraph export-html triage-report.html --binary /bin/ls
-
-# 启动基于 stdio 的 JSON-RPC 2.0 MCP 服务器（可直接接入 Claude Code / Codex / OpenCode / Antigravity）
-MachGraph mcp
-```
+- **M1 — 语料对照测试进仓库：** 新增 `Scripts/acceptance/differential.py` 与 `macho-differential.py`，覆盖 `quick`（`/bin/ls`）、`standard`（`ls`、`ssh`、`vim`）与 `full`（`/bin`、`/usr/bin`、`/usr/sbin`、`/usr/libexec`）三档系统二进制语料。
+- **M2 — SIMD 整数向量指令补齐与操作数对照：** 补齐当前输出为 `.inst` 的 AdvSIMD 整数向量指令族，统一 `mov` 系列首选别名，并加入操作数级对照与解码->汇编回环验证。
+- **M3 — 元数据与符号解混淆对照：** `symbols --json` 与 `nm -arch arm64e` 完整集合对齐（含未定义外部导入符号 `U`）、Swift `$s`（对照 `swift-demangle`）与 C++ `_Z`（对照 `c++filt`）解混淆基准、ObjC 元数据（对照 `otool -ov`）及 entitlements 键值对照。
+- **M4 — 控制流图不变量与性能：** 基本块划分不变量校验、与 Ghidra 基本块边界对比，以及 `ssh` / `vim` 全量建图性能剖析与优化。
+- **M5 — MCP 工具补齐与 SwiftPM 库接口：** 为 `mcp` 增补 `mach_disasm_function`、`mach_list_symbols`、`mach_cfg`、`mach_find_strings`，并提供可独立编译运行的 SwiftPM 库调用示例。
+- **实验性及 M5 前冻结模块：**
+  - **伪 C 反编译器（`decompile` / `MachMicroDecompiler`）：** **实验性功能**——条件表达式、循环上下界与 `switch` 多路分支还原在真实二进制上已知不可靠。`decompile` 输出第 1 行固定打印警告（`// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。`），分析请以 `disasm` 反汇编结果为准。（该模块内另含可选的本地 Ghidra `analyzeHeadless` 对照桥接，仅在用户显式配置本地 Ghidra 路径时调用外部进程。）
+  - **安全审计插件（`audit-plugins` / `MachPluginSDK`）：** 基于启发式规则的 `JavaScriptCore` 插件已知存在误报与漏报，尚未完成带标准答案样本集的检出率/误报率标定。
+  - **桌面图形界面（`MachStudioViews` / `MachWorkbenchShell`）、`.machproj` 工程库与非 Mach-O 加载器（`ELF64` / `PE32+` / `WASM`）：** 无参启动桌面端默认进入空状态工作台（仅提供“打开文件...”与带 `演示数据` 标记的显式演示加载），完整界面改造、持久化工程库与非 Mach-O 格式对照验收排在 `M5` 之后。
 
 ---
 

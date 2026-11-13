@@ -226,7 +226,7 @@ extension WorkbenchPaneTab {
         case .disassembly:
             return language.select("Disassembly", "反汇编")
         case .pseudoC:
-            return language.select("Pseudo-C", "伪C反编译")
+            return language.select("Pseudo-C (Exp)", "伪C (实验)")
         case .hexPatcher:
             return language.select("Hex & Patch", "十六进制与补丁")
         case .stringsAndObjC:

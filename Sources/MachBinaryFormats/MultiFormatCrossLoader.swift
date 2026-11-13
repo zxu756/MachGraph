@@ -105,6 +105,11 @@ public enum ELF64Loader {
         var reader = BinarySliceReader(data: data, endianness: endianness)
         try reader.seek(to: 16)
         let eType = try reader.readUInt16()
+        if eType == 1 {
+            throw MachGraphError.unsupportedContainer(
+                "ELF64 relocatable object files (ET_REL) are not supported; pass an executable (ET_EXEC) or shared object (ET_DYN)."
+            )
+        }
         let eMachine = try reader.readUInt16()
         _ = try reader.readUInt32() // e_version
         let eEntry = try reader.readUInt64()

@@ -8,6 +8,7 @@ import MachMicroDecompiler
 import MachPluginSDK
 import MachProjectStore
 import MachHeadlessCLI
+import MachStudioViews
 import MachWorkbenchShell
 
 @Suite("JavaScriptCore Plugin SDK, Headless CLI, JSON-RPC MCP Server & Cold-Tungsten Workbench")
@@ -196,13 +197,19 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
 
     // MARK: - 2. Headless CLI (`MachCLIRunner`)
 
-    @Test("MachCLIRunner executes --help, version, info, segments, symbols, and strings subcommands")
+    @Test("MachCLIRunner executes --help, version, info, segments, symbols, and strings subcommands on an explicit binary path")
     func cliRunnerHelpVersionInfoSegmentsSymbolsAndStrings() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let targetBin = tempDir.appendingPathComponent("fixture.arm64e")
+        try SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true).write(to: targetBin)
+
         let cli = MachCLIRunner()
 
         let helpOut = try await cli.execute(arguments: ["--help"])
         #expect(helpOut.contains("MachGraph 1.1.0"))
         #expect(helpOut.contains("decompile"))
+        #expect(helpOut.contains("fixups"))
         #expect(helpOut.contains("--lang"))
 
         let verOut = try await cli.execute(arguments: ["version"])
@@ -211,46 +218,52 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         let verZhOut = try await cli.execute(arguments: ["--lang", "zh", "version"])
         #expect(verZhOut.contains("MachGraph 1.1.0"))
 
-        let infoOut = try await cli.execute(arguments: ["info"])
+        let infoOut = try await cli.execute(arguments: ["info", targetBin.path])
         #expect(infoOut.contains("Format:"))
         #expect(infoOut.contains("arm64e"))
 
-        let segOut = try await cli.execute(arguments: ["segments"])
+        let segOut = try await cli.execute(arguments: ["segments", targetBin.path])
         #expect(segOut.contains("__TEXT"))
         #expect(segOut.contains("__LINKEDIT"))
 
-        let symOut = try await cli.execute(arguments: ["symbols", "--filter", "verify_license"])
+        let symOut = try await cli.execute(arguments: ["symbols", targetBin.path, "--filter", "verify_license"])
         #expect(symOut.contains("verify_license"))
 
-        let strOut = try await cli.execute(arguments: ["strings", "--filter", "MACHGRAPH-PRO"])
+        let strOut = try await cli.execute(arguments: ["strings", targetBin.path, "--filter", "MACHGRAPH-PRO"])
         #expect(strOut.contains("MACHGRAPH-PRO-2026"))
     }
 
-    @Test("MachCLIRunner executes disasm, cfg-dot, decompile, xrefs, entropy, and codesign subcommands")
+    @Test("MachCLIRunner executes disasm, cfg-dot, decompile, xrefs, entropy, and codesign subcommands on an explicit binary path")
     func cliRunnerDisasmCfgDotDecompileXrefsEntropyAndCodesign() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let targetBin = tempDir.appendingPathComponent("fixture.arm64e")
+        try SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true).write(to: targetBin)
+
         let cli = MachCLIRunner()
 
-        let disasmOut = try await cli.execute(arguments: ["disasm", "--function", "verify_license"])
+        let disasmOut = try await cli.execute(arguments: ["disasm", targetBin.path, "--function", "verify_license"])
         #expect(disasmOut.contains("; Function"))
         #expect(disasmOut.contains("bl"))
 
-        let dotOut = try await cli.execute(arguments: ["cfg-dot", "--function", "verify_license"])
+        let dotOut = try await cli.execute(arguments: ["cfg-dot", targetBin.path, "--function", "verify_license"])
         #expect(dotOut.contains("digraph"))
         #expect(dotOut.contains("->"))
 
-        let decompOut = try await cli.execute(arguments: ["decompile", "--function", "verify_license"])
+        let decompOut = try await cli.execute(arguments: ["decompile", targetBin.path, "--function", "verify_license", "--lang", "en"])
+        #expect(decompOut.hasPrefix("// EXPERIMENTAL:"))
         #expect(decompOut.contains("MACHGRAPH-PRO-2026"))
         #expect(!decompOut.contains("goto "))
 
-        let xrefsOut = try await cli.execute(arguments: ["xrefs", "--address", "0x100001000"])
+        let xrefsOut = try await cli.execute(arguments: ["xrefs", targetBin.path, "--address", "0x100001000"])
         #expect(xrefsOut.contains("XREFS TO"))
         #expect(xrefsOut.contains("XREFS FROM"))
 
-        let entropyOut = try await cli.execute(arguments: ["entropy"])
+        let entropyOut = try await cli.execute(arguments: ["entropy", targetBin.path])
         #expect(entropyOut.contains("OverallEntropy="))
         #expect(entropyOut.contains("ChiSquare="))
 
-        let csOut = try await cli.execute(arguments: ["codesign"])
+        let csOut = try await cli.execute(arguments: ["codesign", targetBin.path])
         #expect(csOut.contains("Signed=true"))
         #expect(csOut.contains("Verified=true"))
     }
@@ -292,8 +305,8 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(resignOut.contains("Valid=true"))
         #expect(FileManager.default.fileExists(atPath: resignedBin.path))
 
-        let auditOut = try await cli.execute(arguments: ["audit-plugins"])
-        #expect(auditOut.contains("MACHGRAPH") || auditOut.contains("[HIGH]") || auditOut.contains("[CRITICAL]"))
+        let auditOut = try await cli.execute(arguments: ["audit-plugins", inputBin.path, "--lang", "en"])
+        #expect(auditOut.contains("[HIGH]") || auditOut.contains("[CRITICAL]"))
 
         let htmlOut = try await cli.execute(arguments: [
             "export-html",
@@ -347,8 +360,14 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(unknownMethodStr.contains("-32601"))
     }
 
-    @Test("MachMCPServer executes all 4 reverse-engineering MCP tools end-to-end")
+    @Test("MachMCPServer executes all 4 reverse-engineering MCP tools end-to-end on an explicit binaryPath")
     func mcpServerExecutesInspectDecompileXrefsAndAuditSecurityTools() throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let targetBin = tempDir.appendingPathComponent("mcp_target.arm64e")
+        try SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true).write(to: targetBin)
+        let escapedPath = targetBin.path.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+
         let mcp = MachMCPServer()
 
         func callTool(_ name: String, argsJSON: String) throws -> (isError: Bool, text: String) {
@@ -362,23 +381,26 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
             return (isErr, text)
         }
 
-        let inspect = try callTool("mach_inspect_binary", argsJSON: "{}")
+        let inspect = try callTool("mach_inspect_binary", argsJSON: #"{"binaryPath":"\#(escapedPath)"}"#)
         #expect(!inspect.isError)
-        #expect(inspect.text.contains("SyntheticAuthDemo.arm64e"))
+        #expect(inspect.text.contains("mcp_target.arm64e"))
         #expect(inspect.text.contains("functions="))
 
-        let decomp = try callTool("mach_decompile_function", argsJSON: #"{"function":"verify_license"}"#)
+        let decomp = try callTool("mach_decompile_function", argsJSON: #"{"binaryPath":"\#(escapedPath)","function":"verify_license"}"#)
         #expect(!decomp.isError)
+        #expect(decomp.text.hasPrefix("// EXPERIMENTAL:"))
         #expect(decomp.text.contains("MACHGRAPH-PRO-2026"))
         #expect(!decomp.text.contains("goto "))
 
-        let xrefs = try callTool("mach_query_xrefs", argsJSON: #"{"address":"0x100001000"}"#)
+        let xrefs = try callTool("mach_query_xrefs", argsJSON: #"{"binaryPath":"\#(escapedPath)","address":"0x100001000"}"#)
         #expect(!xrefs.isError)
         #expect(xrefs.text.contains("to="))
 
-        let audit = try callTool("mach_audit_security", argsJSON: "{}")
+        let audit = try callTool("mach_audit_security", argsJSON: #"{"binaryPath":"\#(escapedPath)"}"#)
         #expect(!audit.isError)
-        let decodedFindings = try JSONDecoder().decode([SecurityAuditFinding].self, from: Data(audit.text.utf8))
+        #expect(audit.text.hasPrefix("// EXPERIMENTAL:"))
+        let jsonLines = audit.text.split(separator: "\n").dropFirst().joined(separator: "\n")
+        let decodedFindings = try JSONDecoder().decode([SecurityAuditFinding].self, from: Data(jsonLines.utf8))
         #expect(!decodedFindings.isEmpty)
     }
 
@@ -873,5 +895,122 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(html.contains("startsWith('zh')"))
         #expect(html.contains("冷钨钢二进制逆向分诊报告"))
         #expect(!html.contains("\u{2014}"))
+    }
+
+    // MARK: - 7. M0 Honest Contract Tests (G14, G15, G16, G17, G10, G19, MCP)
+
+    @Test("M0 Item 1 (G14/G15/G16): CLI rejects missing binary, unknown options, and missing target function, while supporting positional paths and --demo")
+    func cliHonestArgumentsMissingFileUnknownOptionAndMissingTarget() async throws {
+        let cli = MachCLIRunner()
+
+        await #expect(throws: MachGraphError.self) {
+            _ = try await cli.execute(arguments: ["info"])
+        }
+        await #expect(throws: MachGraphError.self) {
+            _ = try await cli.execute(arguments: ["disasm"])
+        }
+        await #expect(throws: MachGraphError.self) {
+            _ = try await cli.execute(arguments: ["disasm", "/bin/ls", "--nosuchoption"])
+        }
+        await #expect(throws: MachGraphError.self) {
+            _ = try await cli.execute(arguments: ["disasm", "/bin/ls", "--function", "nosuchfunction"])
+        }
+        await #expect(throws: MachGraphError.self) {
+            _ = try await cli.execute(arguments: ["decompile", "/bin/ls", "--symbol", "nosuchfunction"])
+        }
+
+        let posInfo = try await cli.execute(arguments: ["info", "/bin/ls"])
+        let flagInfo = try await cli.execute(arguments: ["info", "--binary", "/bin/ls"])
+        #expect(posInfo == flagInfo)
+        #expect(posInfo.contains("ls"))
+
+        let demoEN = try await cli.execute(arguments: ["info", "--demo", "--lang", "en"])
+        #expect(demoEN.contains("[DEMO]"))
+        let demoZH = try await cli.execute(arguments: ["info", "--demo", "--lang", "zh"])
+        #expect(demoZH.contains("[演示数据]"))
+    }
+
+    @Test("M0 Item 2 (G17): Every subcommand listed under Subcommands in --help is recognized by MachCLIRunner")
+    func cliAllHelpSubcommandsAreRoutable() async throws {
+        let cli = MachCLIRunner()
+        let helpOut = try await cli.execute(arguments: ["--help", "--lang", "en"])
+        var inSubcommands = false
+        var listedCommands: [String] = []
+        for rawLine in helpOut.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = String(rawLine)
+            if line.hasPrefix("Subcommands:") {
+                inSubcommands = true
+                continue
+            }
+            if inSubcommands {
+                if !line.hasPrefix("  ") {
+                    break
+                }
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if let firstToken = trimmed.split(separator: " ").first {
+                    listedCommands.append(String(firstToken))
+                }
+            }
+        }
+        #expect(!listedCommands.isEmpty)
+        for cmd in listedCommands where cmd != "mcp" {
+            do {
+                _ = try await cli.execute(arguments: [cmd, "/usr/bin/true"])
+            } catch {
+                let msg = error.localizedDescription
+                #expect(!msg.contains("Unknown subcommand"), "Subcommand '\(cmd)' threw Unknown subcommand: \(msg)")
+            }
+        }
+    }
+
+    @Test("M0 Item 6 (G10): info --json, fixups --json, and symbols --json emit real structured output on /bin/ls")
+    func cliFixupsAndJSONOutputOnBinLs() async throws {
+        let cli = MachCLIRunner()
+
+        let infoJSON = try await cli.execute(arguments: ["info", "/bin/ls", "--json"])
+        let infoObj = try #require(JSONSerialization.jsonObject(with: Data(infoJSON.utf8)) as? [String: Any])
+        #expect(infoObj["fileName"] as? String == "ls")
+        let segs = try #require(infoObj["segments"] as? [[String: Any]])
+        let secs = try #require(infoObj["sections"] as? [[String: Any]])
+        #expect(!segs.isEmpty)
+        #expect(!secs.isEmpty)
+
+        let fixupsJSON = try await cli.execute(arguments: ["fixups", "/bin/ls", "--json"])
+        let fixupsObj = try #require(JSONSerialization.jsonObject(with: Data(fixupsJSON.utf8)) as? [String: Any])
+        #expect(fixupsObj["fileName"] as? String == "ls")
+        #expect(fixupsObj["fixups"] != nil)
+
+        let symsJSON = try await cli.execute(arguments: ["symbols", "/bin/ls", "--json"])
+        let symsObj = try #require(JSONSerialization.jsonObject(with: Data(symsJSON.utf8)) as? [String: Any])
+        let realSyms = try #require(symsObj["realSymbols"] as? [[String: Any]])
+        let inferredSyms = try #require(symsObj["inferredSymbols"] as? [[String: Any]])
+        #expect(!realSyms.isEmpty)
+        #expect(!inferredSyms.isEmpty)
+    }
+
+    @Test("M0 Row 7: MachMCPServer mach_inspect_binary without binaryPath returns isError: true")
+    func mcpMissingBinaryPathReturnsIsErrorTrue() throws {
+        let mcp = MachMCPServer()
+        let req = #"{"jsonrpc":"2.0","id":77,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{}}}"#
+        let rawResp = try #require(mcp.handleJSONRPCLine(req))
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(rawResp.utf8)) as? [String: Any])
+        let res = try #require(obj["result"] as? [String: Any])
+        #expect(res["isError"] as? Bool == true)
+    }
+
+    @Test("M0 Item 9 (G19): MachStudioViewModel starts empty on default launch and sets isDemoMode when loadDemoBinary is called")
+    @MainActor
+    func studioViewModelStartsEmptyOnDefaultLaunch() throws {
+        let vm = MachStudioViewModel(initialBinaryURL: nil, loadDemo: false, emitStartupToast: false)
+        #expect(vm.loadedImage == nil)
+        #expect(vm.analysisIndex == nil)
+        #expect(vm.functions.isEmpty)
+        #expect(!vm.isDemoMode)
+
+        vm.loadDemoBinary(emitToast: false)
+        #expect(vm.loadedImage != nil)
+        #expect(vm.loadedImage?.fileName == "demo_arm64_sample")
+        #expect(vm.isDemoMode)
+        #expect(!vm.functions.isEmpty)
     }
 }

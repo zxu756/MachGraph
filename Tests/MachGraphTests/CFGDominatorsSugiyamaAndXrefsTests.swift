@@ -34,7 +34,7 @@ struct CFGDominatorsSugiyamaAndXrefsTests {
         let image = try UniversalBinaryDispatcher.load(data: data, fileName: "CFGTarget.arm64e")
         let engine = FunctionDiscoveryEngine()
 
-        let decodedSections = engine.decodeExecutableSections(in: image, data: data)
+        let decodedSections = try engine.decodeExecutableSections(in: image, data: data)
         #expect(!decodedSections.isEmpty)
 
         let boundaries = engine.discoverFunctions(in: image, decodedSections: decodedSections, data: data)
@@ -534,5 +534,39 @@ struct CFGDominatorsSugiyamaAndXrefsTests {
         let cgDOT = index.exportCallGraphDOT()
         #expect(cgDOT.contains("digraph"))
         #expect(cgDOT.contains("_verify_license") || cgDOT.contains("verify_license"))
+    }
+
+    @Test("G2: decodeExecutableSections fails when section bytes are unavailable instead of fabricating ret instructions")
+    func missingSectionBytesThrowsInsteadOfFabricatingRetStubs() throws {
+        let data = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false, identifier: "com.test.g2.unique")
+        let loaded = try UniversalBinaryDispatcher.load(data: data, filePath: "<in-memory-g2>", fileName: "G2.arm64")
+        #expect(throws: MachGraphError.self) {
+            _ = try FunctionDiscoveryEngine().decodeExecutableSections(in: loaded, data: nil)
+        }
+    }
+
+    @Test("G3: analyzeBinary(image) without backing bytes fails instead of lazily generating built-in synthetic binaries")
+    func analyzeBinaryWithoutBackingDataDoesNotMaterializeSyntheticFixtures() throws {
+        let defaultBuiltIn = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false, includeCMSCertificates: true)
+        let image = try UniversalBinaryDispatcher.load(
+            data: defaultBuiltIn,
+            filePath: "<in-memory-unregistered>",
+            fileName: "Unregistered.arm64"
+        )
+        #expect(throws: MachGraphError.self) {
+            _ = try BinaryAnalysisCoordinator().analyzeBinary(image)
+        }
+    }
+
+    @Test("G9: Non-ARM64 x86_64 slice is rejected with unsupportedArchitecture rather than toy 5-byte recognizer")
+    func nonARM64X86SliceThrowsUnsupportedArchitecture() throws {
+        let fatData = SyntheticBinaryFixtureBuilder.buildUniversalFatBinary()
+        #expect(throws: MachGraphError.self) {
+            _ = try BinaryAnalysisCoordinator().analyzeBinary(
+                data: fatData,
+                fileName: "UniversalFat.x86_64",
+                preferredSliceIndex: 0
+            )
+        }
     }
 }

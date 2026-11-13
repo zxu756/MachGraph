@@ -1798,6 +1798,13 @@ public struct PseudoCCodeFormatter: Sendable {
         self.indentWidth = max(2, indentWidth)
     }
 
+    public static func experimentalWarningComment(in language: MachLanguage) -> String {
+        language.select(
+            "// EXPERIMENTAL: Decompiler output — condition expressions are known to be unreliable.",
+            "// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。"
+        )
+    }
+
     public func formatFunction(
         functionAddress: VirtualAddress,
         functionName: String,
@@ -1805,7 +1812,8 @@ public struct PseudoCCodeFormatter: Sendable {
         returnType: CTypeExpr,
         parameters: [NamedParameterDecl],
         body: [PseudoCStatement],
-        inlineComments: [VirtualAddress: String] = [:]
+        inlineComments: [VirtualAddress: String] = [:],
+        language: MachLanguage = MachLanguage.resolve()
     ) -> (signatureLine: String, lines: [PseudoCLineSpan], fullSourceText: String) {
         let knownVariableNames = collectKnownVariableNames(parameters: parameters, body: body)
         let signatureLine = buildSignatureLine(
@@ -1816,6 +1824,7 @@ public struct PseudoCCodeFormatter: Sendable {
         )
 
         var rawLines: [(indent: Int, content: String, address: VirtualAddress?)] = []
+        rawLines.append((0, Self.experimentalWarningComment(in: language), functionAddress))
 
         if let fnComment = inlineComments[functionAddress] {
             rawLines.append((0, "// \(fnComment)", functionAddress))
@@ -2243,6 +2252,10 @@ public struct MachMicroDecompilerEngine: Sendable {
         self.codeFormatter = PseudoCCodeFormatter()
     }
 
+    public static func experimentalWarningComment(in language: MachLanguage) -> String {
+        PseudoCCodeFormatter.experimentalWarningComment(in: language)
+    }
+
     /// Decompiles `function` using full whole-binary `BinaryAnalysisIndex` context (strings, GOT imports, ObjC metadata, idiomatic sequences, and callee arities).
     public func decompile(
         function: RecoveredFunction,
@@ -2250,7 +2263,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         renames: [VirtualAddress: String] = [:],
         comments: [VirtualAddress: String] = [:],
         structDefinitions: [String: CustomStructDefinition] = [:],
-        ghidraSideBySideSource: String? = nil
+        ghidraSideBySideSource: String? = nil,
+        language: MachLanguage = MachLanguage.resolve()
     ) -> DecompiledFunctionOutput {
         runPipeline(
             function: function,
@@ -2260,7 +2274,8 @@ public struct MachMicroDecompilerEngine: Sendable {
             renames: renames,
             comments: comments,
             structDefinitions: structDefinitions,
-            ghidraSideBySideSource: ghidraSideBySideSource
+            ghidraSideBySideSource: ghidraSideBySideSource,
+            language: language
         )
     }
 
@@ -2271,7 +2286,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         symbolRenames: [UserSymbolRename],
         inlineComments: [UserInlineComment] = [],
         customStructs: [CustomStructDefinition] = [],
-        ghidraSideBySideSource: String? = nil
+        ghidraSideBySideSource: String? = nil,
+        language: MachLanguage = MachLanguage.resolve()
     ) -> DecompiledFunctionOutput {
         var renameMap: [VirtualAddress: String] = [:]
         for r in symbolRenames where !r.customName.isEmpty {
@@ -2291,7 +2307,8 @@ public struct MachMicroDecompilerEngine: Sendable {
             renames: renameMap,
             comments: commentMap,
             structDefinitions: structMap,
-            ghidraSideBySideSource: ghidraSideBySideSource
+            ghidraSideBySideSource: ghidraSideBySideSource,
+            language: language
         )
     }
 
@@ -2302,7 +2319,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         renames: [VirtualAddress: String] = [:],
         comments: [VirtualAddress: String] = [:],
         structDefinitions: [String: CustomStructDefinition] = [:],
-        ghidraSideBySideSource: String? = nil
+        ghidraSideBySideSource: String? = nil,
+        language: MachLanguage = MachLanguage.resolve()
     ) -> DecompiledFunctionOutput {
         runPipeline(
             function: function,
@@ -2312,7 +2330,8 @@ public struct MachMicroDecompilerEngine: Sendable {
             renames: renames,
             comments: comments,
             structDefinitions: structDefinitions,
-            ghidraSideBySideSource: ghidraSideBySideSource
+            ghidraSideBySideSource: ghidraSideBySideSource,
+            language: language
         )
     }
 
@@ -2322,7 +2341,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         includeThunks: Bool = false,
         renames: [VirtualAddress: String] = [:],
         comments: [VirtualAddress: String] = [:],
-        structDefinitions: [String: CustomStructDefinition] = [:]
+        structDefinitions: [String: CustomStructDefinition] = [:],
+        language: MachLanguage = MachLanguage.resolve()
     ) -> [DecompiledFunctionOutput] {
         let targets = includeThunks
             ? analysisIndex.functions
@@ -2333,7 +2353,8 @@ public struct MachMicroDecompilerEngine: Sendable {
                 in: analysisIndex,
                 renames: renames,
                 comments: comments,
-                structDefinitions: structDefinitions
+                structDefinitions: structDefinitions,
+                language: language
             )
         }
     }
@@ -2345,7 +2366,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         includeThunks: Bool = false,
         renames: [VirtualAddress: String] = [:],
         comments: [VirtualAddress: String] = [:],
-        structDefinitions: [String: CustomStructDefinition] = [:]
+        structDefinitions: [String: CustomStructDefinition] = [:],
+        language: MachLanguage = MachLanguage.resolve()
     ) -> [DecompiledFunctionOutput] {
         let targets = includeThunks ? functions : functions.filter { !$0.isThunk }
         return targets.map { fn in
@@ -2354,7 +2376,8 @@ public struct MachMicroDecompilerEngine: Sendable {
                 in: image,
                 renames: renames,
                 comments: comments,
-                structDefinitions: structDefinitions
+                structDefinitions: structDefinitions,
+                language: language
             )
         }
     }
@@ -2369,7 +2392,8 @@ public struct MachMicroDecompilerEngine: Sendable {
         renames: [VirtualAddress: String],
         comments: [VirtualAddress: String],
         structDefinitions: [String: CustomStructDefinition],
-        ghidraSideBySideSource: String?
+        ghidraSideBySideSource: String?,
+        language: MachLanguage
     ) -> DecompiledFunctionOutput {
         // Stage 1: Lift ARM64 CFG + Idioms + Strings/ObjC/Stubs -> Micro-IR
         let lifted = lifter.lift(
@@ -2419,7 +2443,8 @@ public struct MachMicroDecompilerEngine: Sendable {
             returnType: ssaOptimized.inferredReturnType,
             parameters: ssaOptimized.inferredParameters,
             body: structuredStatements,
-            inlineComments: comments
+            inlineComments: comments,
+            language: language
         )
 
         let confidence = Self.computeStructuralConfidenceScore(

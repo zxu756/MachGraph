@@ -37,9 +37,20 @@ public struct A64MiniAssembler: Sendable {
         _ instructionText: String,
         at address: VirtualAddress = .zero
     ) throws -> UInt32 {
-        let stripped = Self.stripComments(from: instructionText).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stripped.isEmpty else {
+        let withoutComments = Self.stripComments(from: instructionText).trimmingCharacters(in: .whitespacesAndNewlines)
+        let clauses = withoutComments
+            .split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        guard let stripped = clauses.first else {
             throw MachGraphError.assemblerError(line: 1, instruction: instructionText, reason: "Empty instruction text")
+        }
+        if clauses.count > 1 {
+            throw MachGraphError.assemblerError(
+                line: 1,
+                instruction: instructionText,
+                reason: "Multiple semicolon-separated statements passed to assembleSingle; use assembleProgram"
+            )
         }
 
         // Allow optional leading label on single-line input (e.g. "loop: b loop")
@@ -73,8 +84,8 @@ public struct A64MiniAssembler: Sendable {
         )
     }
 
-    /// Two-pass ARM64 program assembler supporting labels (`entry:`, `.L_loop:`), `//` and `;` comments,
-    /// `.word`/`.inst`/`.quad`/`.p2align` directives, and full decoded instruction round-tripping.
+    /// Two-pass ARM64 program assembler supporting labels (`entry:`, `.L_loop:`), semicolon (`;`) statement separators,
+    /// `//` line comments, `.word`/`.inst`/`.quad`/`.p2align` directives, and full decoded instruction round-tripping.
     public func assembleProgram(
         _ source: String,
         baseAddress: VirtualAddress = VirtualAddress(0x1_0000_0000)
@@ -84,81 +95,87 @@ public struct A64MiniAssembler: Sendable {
         var labels: [String: VirtualAddress] = [:]
         var currentOffset: UInt64 = 0
 
-        // Pass 1: Strip comments, collect labels, and compute exact VirtualAddress of each statement
+        // Pass 1: Strip // comments, split semicolon-separated statements, collect labels, and compute VirtualAddress
         for (idx, rawLine) in rawLines.enumerated() {
             let lineNum = idx + 1
-            var content = Self.stripComments(from: rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
-            if content.isEmpty { continue }
+            let lineWithoutComments = Self.stripComments(from: rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
+            if lineWithoutComments.isEmpty { continue }
 
-            while let colonIdx = Self.leadingLabelColonIndex(in: content) {
-                let labelName = String(content[..<colonIdx]).trimmingCharacters(in: .whitespaces)
-                guard Self.isValidLabelIdentifier(labelName) else {
-                    throw MachGraphError.assemblerError(
-                        line: lineNum,
-                        instruction: rawLine,
-                        reason: "Invalid label identifier '\(labelName)'"
+            let clauses = lineWithoutComments.split(separator: ";", omittingEmptySubsequences: false)
+            for rawClause in clauses {
+                var content = String(rawClause).trimmingCharacters(in: .whitespacesAndNewlines)
+                if content.isEmpty { continue }
+
+                while let colonIdx = Self.leadingLabelColonIndex(in: content) {
+                    let labelName = String(content[..<colonIdx]).trimmingCharacters(in: .whitespaces)
+                    guard Self.isValidLabelIdentifier(labelName) else {
+                        throw MachGraphError.assemblerError(
+                            line: lineNum,
+                            instruction: rawLine,
+                            reason: "Invalid label identifier '\(labelName)'"
+                        )
+                    }
+                    if labels[labelName] != nil {
+                        throw MachGraphError.assemblerError(
+                            line: lineNum,
+                            instruction: rawLine,
+                            reason: "Duplicate label definition '\(labelName)'"
+                        )
+                    }
+                    labels[labelName] = baseAddress.adding(currentOffset)
+                    content = String(content[content.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+                }
+
+                if content.isEmpty { continue }
+
+                let (mnemonic, operands) = Self.splitMnemonicAndOperands(content)
+                let stmtAddr = baseAddress.adding(currentOffset)
+
+                switch mnemonic {
+                case ".word", ".inst", ".long":
+                    guard !operands.isEmpty else {
+                        throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "\(mnemonic) requires at least one expression")
+                    }
+                    statements.append(.wordDirective(values: operands, address: stmtAddr, lineNumber: lineNum, raw: content))
+                    currentOffset &+= UInt64(operands.count * 4)
+
+                case ".quad", ".8byte":
+                    guard !operands.isEmpty else {
+                        throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "\(mnemonic) requires at least one 64-bit expression")
+                    }
+                    statements.append(.quadDirective(values: operands, address: stmtAddr, lineNumber: lineNum, raw: content))
+                    currentOffset &+= UInt64(operands.count * 8)
+
+                case ".p2align", ".align":
+                    guard let firstOp = operands.first, let power = UInt64(firstOp), power <= 12 else {
+                        throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "Invalid alignment exponent")
+                    }
+                    let alignBytes = UInt64(1) << power
+                    guard alignBytes >= 4 else { continue }
+                    let alignedAddr = stmtAddr.alignedUp(to: alignBytes)
+                    let padBytes = alignedAddr.rawValue - stmtAddr.rawValue
+                    let nopCount = Int(padBytes / 4)
+                    if nopCount > 0 {
+                        statements.append(.nopPadding(count: nopCount, address: stmtAddr))
+                        currentOffset &+= UInt64(nopCount * 4)
+                    }
+
+                case ".global", ".globl", ".text", ".data", ".cfi_startproc", ".cfi_endproc":
+                    // Benign assembler metadata directives ignored cleanly
+                    continue
+
+                default:
+                    statements.append(
+                        .instruction(
+                            mnemonic: mnemonic,
+                            operands: operands,
+                            address: stmtAddr,
+                            lineNumber: lineNum,
+                            raw: content
+                        )
                     )
+                    currentOffset &+= 4
                 }
-                if labels[labelName] != nil {
-                    throw MachGraphError.assemblerError(
-                        line: lineNum,
-                        instruction: rawLine,
-                        reason: "Duplicate label definition '\(labelName)'"
-                    )
-                }
-                labels[labelName] = baseAddress.adding(currentOffset)
-                content = String(content[content.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-            }
-
-            if content.isEmpty { continue }
-
-            let (mnemonic, operands) = Self.splitMnemonicAndOperands(content)
-            let stmtAddr = baseAddress.adding(currentOffset)
-
-            switch mnemonic {
-            case ".word", ".inst", ".long":
-                guard !operands.isEmpty else {
-                    throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "\(mnemonic) requires at least one expression")
-                }
-                statements.append(.wordDirective(values: operands, address: stmtAddr, lineNumber: lineNum, raw: content))
-                currentOffset &+= UInt64(operands.count * 4)
-
-            case ".quad", ".8byte":
-                guard !operands.isEmpty else {
-                    throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "\(mnemonic) requires at least one 64-bit expression")
-                }
-                statements.append(.quadDirective(values: operands, address: stmtAddr, lineNumber: lineNum, raw: content))
-                currentOffset &+= UInt64(operands.count * 8)
-
-            case ".p2align", ".align":
-                guard let firstOp = operands.first, let power = UInt64(firstOp), power <= 12 else {
-                    throw MachGraphError.assemblerError(line: lineNum, instruction: rawLine, reason: "Invalid alignment exponent")
-                }
-                let alignBytes = UInt64(1) << power
-                guard alignBytes >= 4 else { continue }
-                let alignedAddr = stmtAddr.alignedUp(to: alignBytes)
-                let padBytes = alignedAddr.rawValue - stmtAddr.rawValue
-                let nopCount = Int(padBytes / 4)
-                if nopCount > 0 {
-                    statements.append(.nopPadding(count: nopCount, address: stmtAddr))
-                    currentOffset &+= UInt64(nopCount * 4)
-                }
-
-            case ".global", ".globl", ".text", ".data", ".cfi_startproc", ".cfi_endproc":
-                // Benign assembler metadata directives ignored cleanly
-                continue
-
-            default:
-                statements.append(
-                    .instruction(
-                        mnemonic: mnemonic,
-                        operands: operands,
-                        address: stmtAddr,
-                        lineNumber: lineNum,
-                        raw: content
-                    )
-                )
-                currentOffset &+= 4
             }
         }
 
@@ -257,11 +274,16 @@ public struct A64MiniAssembler: Sendable {
         let chars = Array(line)
         var i = 0
         while i < chars.count {
-            if chars[i] == ";" {
-                break
-            }
             if chars[i] == "/" && i + 1 < chars.count && chars[i + 1] == "/" {
                 break
+            }
+            if chars[i] == "/" && i + 1 < chars.count && chars[i + 1] == "*" {
+                i += 2
+                while i + 1 < chars.count && !(chars[i] == "*" && chars[i + 1] == "/") {
+                    i += 1
+                }
+                i += 2
+                continue
             }
             result.append(chars[i])
             i += 1

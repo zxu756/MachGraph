@@ -180,7 +180,7 @@ public struct PseudoCDecompilerStudioView: View {
                     .font(.system(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)
 
-                Text(compactForSplit ? localizer.L("SSA Pseudo-C", "SSA 伪C") : localizer.L("SSA Micro-IR Pseudo-C Decompiler", "SSA 微IR 伪C反编译器"))
+                Text(compactForSplit ? localizer.L("Experimental Pseudo-C", "【实验性】伪C") : localizer.L("Experimental Pseudo-C (Unverified Conditions)", "【实验性】伪C反编译（条件表达式未验证）"))
                     .font(ColdTungstenTypography.panelHeaderTitle)
                     .foregroundStyle(ColdTungstenPalette.steelWhite)
                     .fixedSize()

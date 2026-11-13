@@ -13,72 +13,7 @@ import MachProjectStore
 import MachWorkbenchShell
 import SwiftUI
 
-// MARK: - Built-In Binary Target Presets & Search Modes
-
-public enum MachDemoFixturePreset: String, CaseIterable, Identifiable, Sendable {
-    case arm64eMachO = "Mach-O 64 (arm64e PAC)"
-    case universalFat = "Universal Fat (arm64e + x86_64)"
-    case elf64AArch64 = "ELF64 (AArch64 Linux)"
-    case pe32PlusARM64 = "PE32+ (Windows ARM64)"
-    case wasmModule = "WebAssembly 1.0 Module"
-
-    public var id: String { rawValue }
-
-    public var virtualPath: String {
-        switch self {
-        case .arm64eMachO:
-            return "/Applications/MachGraphTarget.app/Contents/MacOS/MachGraphTarget"
-        case .universalFat:
-            return "/Applications/MachGraphUniversal.app/Contents/MacOS/MachGraphUniversal"
-        case .elf64AArch64:
-            return "/opt/firmware/libmach_crypto_a64.so"
-        case .pe32PlusARM64:
-            return "C:/Program Files/MachAgent/MachTelemetryArm64.exe"
-        case .wasmModule:
-            return "/srv/sandbox/license_verifier.wasm"
-        }
-    }
-
-    public var fileName: String {
-        switch self {
-        case .arm64eMachO: return "MachGraphTarget"
-        case .universalFat: return "MachGraphUniversal"
-        case .elf64AArch64: return "libmach_crypto_a64.so"
-        case .pe32PlusARM64: return "MachTelemetryArm64.exe"
-        case .wasmModule: return "license_verifier.wasm"
-        }
-    }
-
-    public func buildBinaryData() -> Data {
-        switch self {
-        case .arm64eMachO:
-            return SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
-        case .universalFat:
-            return SyntheticBinaryFixtureBuilder.buildUniversalFatBinary()
-        case .elf64AArch64:
-            return SyntheticBinaryFixtureBuilder.buildELF64Binary()
-        case .pe32PlusARM64:
-            return SyntheticBinaryFixtureBuilder.buildPE32PlusARM64Binary()
-        case .wasmModule:
-            return SyntheticBinaryFixtureBuilder.buildWasmBinary()
-        }
-    }
-
-    public func localizedTitle(in language: MachLanguage) -> String {
-        switch self {
-        case .arm64eMachO:
-            return language.select("Mach-O 64 (arm64e PAC)", "Mach-O 64 (arm64e PAC)")
-        case .universalFat:
-            return language.select("Universal Fat (arm64e + x86_64)", "通用二进制 Fat (arm64e + x86_64)")
-        case .elf64AArch64:
-            return language.select("ELF64 (AArch64 Linux)", "ELF64 (AArch64 Linux)")
-        case .pe32PlusARM64:
-            return language.select("PE32+ (Windows ARM64)", "PE32+ (Windows ARM64)")
-        case .wasmModule:
-            return language.select("WebAssembly 1.0 Module", "WebAssembly 1.0 模块")
-        }
-    }
-}
+// MARK: - Search Modes & Metadata Sub-Tabs
 
 public enum HexStudioSearchMode: String, CaseIterable, Identifiable, Sendable {
     case wildcardHex = "Hex Wildcard"
@@ -157,7 +92,7 @@ public final class MachStudioViewModel: ObservableObject {
 
     // MARK: Core Binary & Static Analysis State
 
-    @Published public var activeFixturePreset: MachDemoFixturePreset = .arm64eMachO
+    @Published public private(set) var isDemoMode: Bool = false
     @Published public private(set) var baseBinaryData: Data = Data()
     @Published public private(set) var loadedImage: LoadedBinaryImage?
     @Published public private(set) var analysisIndex: BinaryAnalysisIndex?
@@ -173,22 +108,22 @@ public final class MachStudioViewModel: ObservableObject {
     @Published public private(set) var baseSignatureReport: CodeSignatureVerificationReport?
     @Published public private(set) var lastReSignResult: MachOReSignResult?
 
-    @Published public var patchTargetAddressText: String = "0x100001038"
-    @Published public var inlineAssemblyInput: String = "paciasp; mov w0, #1; retaa"
-    @Published public var patchNoteInput: String = "Force _verify_license PAC-authenticated true return"
+    @Published public var patchTargetAddressText: String = ""
+    @Published public var inlineAssemblyInput: String = ""
+    @Published public var patchNoteInput: String = ""
     @Published public var allowBranchTargetClobber: Bool = false
     @Published public var padNOPToOriginalInstructionSpan: Bool = false
     @Published public private(set) var livePatchPreview: InlineARM64PatchPreview?
     @Published public private(set) var patchPreviewError: String?
-    @Published public private(set) var lastExportedPatchSummary: String = "IPS / BPS ready (1 active CoW extent)"
+    @Published public private(set) var lastExportedPatchSummary: String = ""
     @Published public private(set) var unifiedHexDiffPreview: String = ""
 
-    @Published public var hexScrollOffset: FileOffset = FileOffset(0x1000)
-    @Published public var selectedHexByteOffset: FileOffset = FileOffset(0x1038)
+    @Published public var hexScrollOffset: FileOffset = FileOffset(0)
+    @Published public var selectedHexByteOffset: FileOffset = FileOffset(0)
     @Published public var hexInspectorEndianness: BinaryEndianness = .little
     @Published public var selectedStructForHexEvalID: UUID?
     @Published public var hexSearchMode: HexStudioSearchMode = .wildcardHex
-    @Published public var hexSearchQuery: String = "7F 23 03 D5"
+    @Published public var hexSearchQuery: String = ""
     @Published public private(set) var hexSearchHits: [BinarySearchHit] = []
     @Published public private(set) var hexSearchErrorMessage: String?
 
@@ -250,12 +185,10 @@ public final class MachStudioViewModel: ObservableObject {
 
     // MARK: - Initialization
 
-    public init(initialBinaryURL: URL? = nil, emitStartupToast: Bool = true) {
-        let initialData = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
-        self.overlayBuffer = (try? SparseCoWByteOverlayBuffer(baseData: initialData))
-            ?? (try! SparseCoWByteOverlayBuffer(baseData: Data([0xCF, 0xFA, 0xED, 0xFE])))
+    public init(initialBinaryURL: URL? = nil, loadDemo: Bool = false, emitStartupToast: Bool = true) {
+        self.overlayBuffer = try! SparseCoWByteOverlayBuffer(baseData: Data())
 
-        let memDB = try! MachProjectDatabase.openInMemory(projectName: "MachGraphTarget")
+        let memDB = try! MachProjectDatabase.openInMemory(projectName: "Untitled")
         let undoCtrl = MachUndoRedoController(database: memDB)
         let snapMgr = AnalysisSnapshotAndDiffManager(database: memDB, undoRedoController: undoCtrl)
 
@@ -267,9 +200,9 @@ public final class MachStudioViewModel: ObservableObject {
         self.preferencesStore = prefs
         self.cursorBus = SynchronizedAddressCursorBus(
             initialLocation: SynchronizedCursorLocation(
-                virtualAddress: VirtualAddress(0x100001038),
-                fileOffset: FileOffset(0x1038),
-                functionAddress: VirtualAddress(0x100001038),
+                virtualAddress: .zero,
+                fileOffset: FileOffset(0),
+                functionAddress: nil,
                 blockID: 0,
                 originPane: .cfgGraph
             ),
@@ -296,17 +229,9 @@ public final class MachStudioViewModel: ObservableObject {
         let probe = bridge.probeInstallation()
         self.ghidraProbe = probe
         let loc = MachLocalizer.shared
-        self.patchNoteInput = loc.L(
-            "Force _verify_license PAC-authenticated true return",
-            "强制 _verify_license 返回经 PAC 签名的真值 (w0=1)"
-        )
-        self.lastExportedPatchSummary = loc.L(
-            "IPS / BPS ready (1 active CoW extent)",
-            "IPS / BPS 就绪 (1 个活动 CoW 脏区间)"
-        )
         self.scratchpadStatusText = loc.L(
-            "JSVirtualMachine sandbox ready (4 built-in plugins verified)",
-            "JSVirtualMachine 沙箱就绪 (已校验 4 个内置插件)"
+            "JSVirtualMachine sandbox ready",
+            "JSVirtualMachine 沙箱就绪"
         )
         self.ghidraStatusText = probe.isAvailable
             ? loc.L(
@@ -314,16 +239,16 @@ public final class MachStudioViewModel: ObservableObject {
                 "已检测到 Ghidra \(probe.ghidraVersion ?? "12.1.4") + OpenJDK 21"
             )
             : loc.L(
-                "Pure-Swift SSA Decompiler active (Ghidra optional)",
-                "纯 Swift SSA 反编译器运行中 (Ghidra 为可选组件)"
+                "Experimental Pseudo-C active (Ghidra not detected)",
+                "实验性伪C反编译运行中 (未检测到 Ghidra)"
             )
 
         bindReactivePipelines()
 
         if let initialBinaryURL, FileManager.default.fileExists(atPath: initialBinaryURL.path) {
             loadBinaryFromDisk(url: initialBinaryURL, emitToast: emitStartupToast)
-        } else {
-            loadPreset(.arm64eMachO, seedDemoState: true, emitToast: emitStartupToast)
+        } else if loadDemo {
+            loadDemoBinary(emitToast: emitStartupToast)
         }
     }
 
@@ -372,8 +297,8 @@ public final class MachStudioViewModel: ObservableObject {
                 )
                 if self.lastScratchpadResult == nil {
                     self.scratchpadStatusText = lang.select(
-                        "JSVirtualMachine sandbox ready (4 built-in plugins verified)",
-                        "JSVirtualMachine 沙箱就绪 (已校验 4 个内置插件)"
+                        "JSVirtualMachine sandbox ready",
+                        "JSVirtualMachine 沙箱就绪"
                     )
                 }
                 if !self.isRunningGhidraHeadless {
@@ -383,49 +308,39 @@ public final class MachStudioViewModel: ObservableObject {
                             "已检测到 Ghidra \(self.ghidraProbe.ghidraVersion ?? "12.1.4") + OpenJDK 21"
                         )
                         : lang.select(
-                            "Pure-Swift SSA Decompiler active (Ghidra optional)",
-                            "纯 Swift SSA 反编译器运行中 (Ghidra 为可选组件)"
+                            "Experimental Pseudo-C active (Ghidra not detected)",
+                            "实验性伪C反编译运行中 (未检测到 Ghidra)"
                         )
                 }
-                if self.lastExportedPatchSummary.hasPrefix("IPS / BPS") {
-                    self.lastExportedPatchSummary = lang.select(
-                        "IPS / BPS ready (1 active CoW extent)",
-                        "IPS / BPS 就绪 (1 个活动 CoW 脏区间)"
-                    )
-                }
+                self.recomputeCFGLayoutsAndDecompilation()
                 self.recomputeLivePatchPreview()
             }
             .store(in: &cancellables)
     }
 
-    // MARK: - Loading Binaries (Synthetic Fixtures, Fat Slices & Disk Files)
+    // MARK: - Loading Binaries (Disk Files & Explicit Demo Sample)
 
-    public func loadPreset(
-        _ preset: MachDemoFixturePreset,
-        preferredSliceIndex: Int? = nil,
-        seedDemoState: Bool = true,
-        emitToast: Bool = true
-    ) {
-        activeFixturePreset = preset
-        let data = preset.buildBinaryData()
+    public func loadDemoBinary(emitToast: Bool = true) {
         do {
+            let demoURL = try MachCLIRunner.locateDemoBinaryURL(language: MachLocalizer.shared.language)
+            let data = try Data(contentsOf: demoURL, options: [.mappedIfSafe])
             try ingestBinaryData(
                 data,
-                filePath: preset.virtualPath,
-                fileName: preset.fileName,
-                preferredSliceIndex: preferredSliceIndex,
-                seedDemoState: seedDemoState && (preset == .arm64eMachO || preset == .universalFat)
+                filePath: demoURL.path,
+                fileName: demoURL.lastPathComponent,
+                preferredSliceIndex: nil,
+                isDemo: true
             )
             if emitToast, let img = loadedImage {
                 toastController.enqueue(
-                    kind: .success,
+                    kind: .info,
                     title: MGL(
-                        "Loaded \(img.fileName) (\(img.architecture.displayName))",
-                        "已加载 \(img.fileName) (\(img.architecture.displayName))"
+                        "[DEMO] Loaded \(img.fileName) (\(img.architecture.displayName))",
+                        "[演示数据] 已加载 \(img.fileName) (\(img.architecture.displayName))"
                     ),
                     detail: MGL(
-                        "Recovered \(functions.count) functions, \(xrefCount) xrefs, and \(securityFindings.count) audit findings",
-                        "已恢复 \(functions.count) 个函数、\(xrefCount) 条交叉引用与 \(securityFindings.count) 项审计发现"
+                        "Sample fixture binary · \(functions.count) functions, \(xrefCount) xrefs",
+                        "演示样本二进制 · \(functions.count) 个函数，\(xrefCount) 条交叉引用"
                     ),
                     autoDismiss: true
                 )
@@ -433,7 +348,7 @@ public final class MachStudioViewModel: ObservableObject {
         } catch {
             toastController.enqueue(
                 kind: .error,
-                title: MGL("Binary Load Failed", "二进制加载失败"),
+                title: MGL("Demo Binary Load Failed", "演示样本加载失败"),
                 detail: error.localizedDescription
             )
         }
@@ -451,7 +366,7 @@ public final class MachStudioViewModel: ObservableObject {
                 filePath: url.path,
                 fileName: url.lastPathComponent,
                 preferredSliceIndex: preferredSliceIndex,
-                seedDemoState: false
+                isDemo: false
             )
             if emitToast, let img = loadedImage {
                 toastController.enqueue(
@@ -481,7 +396,7 @@ public final class MachStudioViewModel: ObservableObject {
                 filePath: current.filePath,
                 fileName: current.fileName,
                 preferredSliceIndex: index,
-                seedDemoState: false
+                isDemo: isDemoMode
             )
             toastController.enqueue(
                 kind: .info,
@@ -498,9 +413,8 @@ public final class MachStudioViewModel: ObservableObject {
         filePath: String,
         fileName: String,
         preferredSliceIndex: Int?,
-        seedDemoState: Bool
+        isDemo: Bool
     ) throws {
-        self.baseBinaryData = data
         let image = try UniversalBinaryDispatcher.load(
             data: data,
             filePath: filePath,
@@ -510,7 +424,7 @@ public final class MachStudioViewModel: ObservableObject {
         BinaryAnalysisCoordinator.registerInMemoryBinaryData(data, sha256Hex: image.sha256Hex)
 
         let coordinator = BinaryAnalysisCoordinator()
-        let index = coordinator.analyzeBinary(image, data: data)
+        let index = try coordinator.analyzeBinary(image, data: data)
 
         let freshDB = try MachProjectDatabase.openInMemory(
             projectName: fileName,
@@ -524,6 +438,8 @@ public final class MachStudioViewModel: ObservableObject {
         let freshUndo = MachUndoRedoController(database: freshDB)
         let freshSnapshots = AnalysisSnapshotAndDiffManager(database: freshDB, undoRedoController: freshUndo)
 
+        self.baseBinaryData = data
+        self.isDemoMode = isDemo
         self.projectDB = freshDB
         self.undoRedo = freshUndo
         self.snapshotManager = freshSnapshots
@@ -541,20 +457,13 @@ public final class MachStudioViewModel: ObservableObject {
 
         cursorBus.attachProjectDatabase(freshDB, restoreSavedCursor: false)
 
-        if seedDemoState {
-            seedCanonicalReverseEngineeringWorkspace(image: image, index: index)
-        } else {
-            seedDefaultStructsOnly()
-        }
-
         recomputeCFGLayoutsAndDecompilation()
         refreshOverlayDerivedTelemetry()
         runSecurityAuditSuite(emitToast: false)
         refreshDatabaseAnnotationsAndStats()
 
-        // Focus `_verify_license` by default when available, else entry function
-        let preferredFn = index.function(named: "_verify_license")
-            ?? index.functions.first(where: { !$0.isThunk && $0.blocks.count >= 3 })
+        let preferredFn = index.function(named: "_main")
+            ?? index.functions.first(where: { !$0.isThunk && $0.blocks.count >= 2 })
             ?? index.functions.first
 
         if let preferredFn {
@@ -573,114 +482,6 @@ public final class MachStudioViewModel: ObservableObject {
         cursorBus.clearNavigationHistory()
         recomputeLivePatchPreview()
         executeHexSearch()
-    }
-
-    // MARK: - Canonical Demo Workspace Seeding (Structs, Bookmarks, CoW Patch & Re-Sign)
-
-    private func seedDefaultStructsOnly() {
-        let licenseStruct = CustomStructDefinition(
-            name: "MGLicensePacket",
-            totalByteSize: 24,
-            alignment: 8,
-            fields: [
-                CustomStructField(name: "magic_tag", offset: 0, byteSize: 4, typeExpr: .intType(bits: 32, signed: false), comment: "0x4D475052 header"),
-                CustomStructField(name: "tier_flags", offset: 4, byteSize: 4, typeExpr: .intType(bits: 32, signed: false), comment: "Feature bitmask"),
-                CustomStructField(name: "token_ptr", offset: 8, byteSize: 8, typeExpr: .cString, comment: "UTF-8 license key pointer"),
-                CustomStructField(name: "checksum_xor", offset: 16, byteSize: 8, typeExpr: .intType(bits: 64, signed: false), comment: "Rolling FNV/XOR digest")
-            ]
-        )
-        let authFrame = CustomStructDefinition(
-            name: "MGAuthControllerIvars",
-            totalByteSize: 24,
-            alignment: 8,
-            fields: [
-                CustomStructField(name: "isa_pac_ptr", offset: 0, byteSize: 8, typeExpr: .objcObject(className: "Class"), comment: "ARM64eisa pointer"),
-                CustomStructField(name: "_sessionKey", offset: 8, byteSize: 8, typeExpr: .cString, comment: "Active bearer key"),
-                CustomStructField(name: "_retryCount", offset: 16, byteSize: 4, typeExpr: .intType(bits: 32, signed: true), comment: "Failed auth counter"),
-                CustomStructField(name: "status_pad", offset: 20, byteSize: 4, typeExpr: .intType(bits: 32, signed: false), comment: "Alignment slot")
-            ]
-        )
-        try? undoRedo.saveCustomStruct(licenseStruct)
-        try? undoRedo.saveCustomStruct(authFrame)
-        selectedStructForHexEvalID = licenseStruct.id
-    }
-
-    private func seedCanonicalReverseEngineeringWorkspace(image: LoadedBinaryImage, index: BinaryAnalysisIndex) {
-        seedDefaultStructsOnly()
-        let loc = MachLocalizer.shared
-
-        if let verifyFn = index.function(named: "_verify_license") {
-            try? undoRedo.setInlineComment(
-                at: verifyFn.address,
-                text: loc.L(
-                    "ARM64e PAC-protected license gate; checks token prefix & rolling XOR digest",
-                    "受 ARM64e PAC 保护的授权校验入口；校验令牌前缀与滚动 XOR 摘要"
-                ),
-                isRepeatable: true
-            )
-            _ = try? undoRedo.toggleBookmark(
-                at: verifyFn.address,
-                label: loc.L("License Gate (_verify_license)", "授权校验入口 (_verify_license)"),
-                category: "Auth"
-            )
-
-            // Stage & apply a real 12-byte ARM64e CoW patch at `_verify_license` so the CoW Hex & Patcher
-            // studio immediately showcases live Warm Copper dirty bytes + SHA-256 CDHash recalculation!
-            let safetyCtx = PatchSafetyContext(
-                recoveredFunctions: index.functions,
-                xrefs: index.crossReferences.allRecords
-            )
-            let patcher = InlineARM64InstructionPatcher()
-            if let patchRecord = try? patcher.applyInstructionPatch(
-                virtualAddress: verifyFn.address,
-                withAssembly: "paciasp; mov w0, #1; retaa",
-                in: &overlayBuffer,
-                image: image,
-                safetyContext: safetyCtx,
-                allowClobberingBranchTargets: false,
-                note: loc.L(
-                    "Bypass license check with PAC-signed w0=1 return",
-                    "使用 PAC 签名 w0=1 返回序列绕过授权校验"
-                )
-            ) {
-                try? undoRedo.recordBytePatch(patchRecord)
-                if let resign = try? MachOAdHocReSigner().reSignOverlay(overlayBuffer, image: image) {
-                    self.lastReSignResult = resign
-                }
-            }
-        }
-
-        if let dispatchFn = index.function(named: "_dispatch_command") {
-            _ = try? undoRedo.toggleBookmark(
-                at: dispatchFn.address,
-                label: loc.L("4-Way Switch Jump Table", "四路 Switch 跳转表"),
-                category: "CFG"
-            )
-            try? undoRedo.setInlineComment(
-                at: dispatchFn.address,
-                text: loc.L(
-                    "Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)",
-                    "带边界检查的 __TEXT,__const 四分支跳转表 (操作码 0..3)"
-                ),
-                isRepeatable: false
-            )
-        }
-
-        if let checksumFn = index.function(named: "_compute_checksum") {
-            _ = try? undoRedo.toggleBookmark(
-                at: checksumFn.address,
-                label: loc.L("Rolling XOR Checksum Loop", "滚动 XOR 校验和循环"),
-                category: "Crypto"
-            )
-        }
-
-        _ = try? snapshotManager.createCheckpoint(
-            name: loc.L("Baseline Triage + PAC Bypass Staged", "基线分诊 + PAC 绕过补丁已暂存"),
-            note: loc.L(
-                "Initial static CFG recovery, 2 custom C structs, and CoW ARM64e inline patch",
-                "初始静态 CFG 恢复、2 个自定义 C 结构体与 CoW ARM64e 内联补丁"
-            )
-        )
     }
 
     // MARK: - CFG Sugiyama Layout & SSA Pseudo-C Decompilation
@@ -716,6 +517,7 @@ public final class MachStudioViewModel: ObservableObject {
         let renames = (try? projectDB.allRenames()) ?? customRenames
         let comments = (try? projectDB.allComments()) ?? inlineComments
         let structs = (try? projectDB.allStructs()) ?? customStructs
+        let activeLang = MachLocalizer.shared.language
 
         var layouts: [VirtualAddress: SugiyamaCFGLayout] = [:]
         var decompiled: [VirtualAddress: DecompiledFunctionOutput] = [:]
@@ -730,7 +532,8 @@ public final class MachStudioViewModel: ObservableObject {
                     symbolRenames: renames,
                     inlineComments: comments,
                     customStructs: structs,
-                    ghidraSideBySideSource: ghidraSrc
+                    ghidraSideBySideSource: ghidraSrc,
+                    language: activeLang
                 )
                 decompiled[fn.address] = output
                 try? projectDB.cacheDecompiledFunction(output)
@@ -1136,16 +939,27 @@ public final class MachStudioViewModel: ObservableObject {
         self.ghidraProbe = probe
 
         if !probe.isAvailable {
-            // Synthesize deterministic reference DecompInterface comparison view when headless is offline
-            ghidraDecompiledByFunction[fn.address] = synthesizeReferenceComparisonSource(for: fn)
-            recomputeCFGLayoutsAndDecompilation()
+            isGhidraSideBySideEnabled = false
+            let msg = MGL(
+                "Ghidra headless is not installed or configured in Preferences.",
+                "未在偏好设置中检测到可用的 Ghidra 无头环境。"
+            )
+            ghidraStatusText = msg
+            toastController.enqueue(
+                kind: .error,
+                title: MGL("Ghidra Unavailable", "Ghidra 不可用"),
+                detail: msg
+            )
             return
         }
 
         isRunningGhidraHeadless = true
-        ghidraStatusText = "Running Ghidra 12.1.4 DecompInterface on \(fn.demangledName)..."
+        ghidraStatusText = MGL(
+            "Running Ghidra 12.1.4 DecompInterface on \(fn.demangledName)...",
+            "正在对 \(fn.demangledName) 运行 Ghidra 12.1.4 反编译..."
+        )
         let dataCopy = overlayBuffer.materializedData()
-        let binName = loadedImage?.fileName ?? "MachGraphTarget"
+        let binName = loadedImage?.fileName ?? "binary"
         let fnAddr = fn.address
         let fnName = fn.name
 
@@ -1159,28 +973,26 @@ public final class MachStudioViewModel: ObservableObject {
                     functionName: fnName
                 )
                 self.ghidraDecompiledByFunction[fnAddr] = cSource
-                self.ghidraStatusText = "Ghidra 12.1.4 DecompInterface synced for \(fnName)"
+                self.ghidraStatusText = MGL(
+                    "Ghidra 12.1.4 DecompInterface synced for \(fnName)",
+                    "已同步 \(fnName) 的 Ghidra 12.1.4 反编译结果"
+                )
             } catch {
-                self.ghidraDecompiledByFunction[fnAddr] = self.synthesizeReferenceComparisonSource(for: fn)
-                self.ghidraStatusText = "Showing reference C baseline (\(error.localizedDescription))"
+                self.isGhidraSideBySideEnabled = false
+                let errMsg = MGL(
+                    "Ghidra headless error: \(error.localizedDescription)",
+                    "Ghidra 反编译执行失败: \(error.localizedDescription)"
+                )
+                self.ghidraStatusText = errMsg
+                self.toastController.enqueue(
+                    kind: .error,
+                    title: MGL("Ghidra Decompilation Failed", "Ghidra 反编译失败"),
+                    detail: error.localizedDescription
+                )
             }
             self.isRunningGhidraHeadless = false
             self.recomputeCFGLayoutsAndDecompilation()
         }
-    }
-
-    private func synthesizeReferenceComparisonSource(for fn: RecoveredFunction) -> String {
-        let baseOut = decompiledByFunction[fn.address]
-        var lines: [String] = [
-            "/* Ghidra 12.1.4 Reference DecompInterface Layout */",
-            "/* Function: \(fn.demangledName) @ \(fn.address.hexString) (Blocks: \(fn.blocks.count), PAC: \(fn.usesPAC)) */"
-        ]
-        if let baseOut {
-            lines.append(baseOut.fullSourceText)
-        } else {
-            lines.append("uint64_t \(fn.name)(uint64_t param_1) { return param_1; }")
-        }
-        return lines.joined(separator: "\n")
     }
 
     // MARK: - Persistent Analyst Mutations (`N`, `;`, `B`, Undo/Redo, Snapshots)

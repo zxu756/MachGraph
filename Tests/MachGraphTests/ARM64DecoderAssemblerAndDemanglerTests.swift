@@ -368,6 +368,20 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         }
     }
 
+    @Test("A64MiniAssembler.assembleProgram splits semicolon-separated statements into all 4 machine words and rejects invalid trailing statements")
+    func miniAssemblerProgramSemicolonSeparatedStatementsAndInvalidClauseRejection() throws {
+        let program = try assembler.assembleProgram(
+            "pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab // trailing comment",
+            baseAddress: VirtualAddress(0x1_0000_0000)
+        )
+        #expect(program.words.count == 4)
+        #expect(program.words == [0xD503_237F, 0xA9BF_7BFD, 0xD280_0540, 0xD65F_0FFF])
+
+        #expect(throws: MachGraphError.self) {
+            _ = try assembler.assembleProgram("nop; bogus_trailing_opcode x0, x1")
+        }
+    }
+
     @Test("A64IdiomRecognizer resolves ADRP+ADD pointer materialization and ADRP+LDR GOT loads")
     func idiomRecognizerResolvesADRPAddAndADRPLoadPairs() throws {
         let base = VirtualAddress(0x1_0000_1018)

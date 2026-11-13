@@ -233,7 +233,8 @@ public enum ObjCAndSwiftMetadataParser {
                                 binding: .local,
                                 address: method.implementationAddress,
                                 size: 0,
-                                sectionIndex: secIdx
+                                sectionIndex: secIdx,
+                                provenance: .objcMetadata
                             )
                         )
                     }
@@ -594,7 +595,8 @@ public enum ObjCAndSwiftMetadataParser {
                         binding: .local,
                         address: m.implementationAddress,
                         size: 0,
-                        sectionIndex: secIdx
+                        sectionIndex: secIdx,
+                        provenance: .objcMetadata
                     )
                 )
             }
@@ -613,7 +615,8 @@ public enum ObjCAndSwiftMetadataParser {
                         binding: .local,
                         address: m.implementationAddress,
                         size: 0,
-                        sectionIndex: secIdx
+                        sectionIndex: secIdx,
+                        provenance: .objcMetadata
                     )
                 )
             }
@@ -741,7 +744,8 @@ public enum ObjCAndSwiftMetadataParser {
                         binding: .local,
                         address: accessVA,
                         size: 0,
-                        sectionIndex: secIdx
+                        sectionIndex: secIdx,
+                        provenance: .swiftMetadata
                     )
                 }
             }
