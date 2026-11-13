@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MachGraph Cold-Tungsten native binary reverse-engineering, ARM64 CFG, SSA Pseudo-C decompiler, and security plugin audit dossier.">
+  <title>MachGraph Binary Triage Dossier: MachGraphTarget</title>
+  <style>
+  /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
+  :root {
+    --bg-chassis: #0F1216;
+    --bg-panel: #141920;
+    --bg-elevated: #1B222C;
+    --bg-code: #0B0E12;
+    --border-seam: #2A3442;
+    --ink-primary: #E6EDF3;
+    --ink-secondary: #8B949E;
+    --ink-muted: #656D76;
+    --accent-sapphire: #58A6FF;
+    --status-info-bg: #13233A;
+    --status-ok-fg: #3FB950;
+    --status-ok-bg: #12261E;
+    --status-warn-fg: #D29922;
+    --status-warn-bg: #2B2111;
+    --status-crit-fg: #F85149;
+    --status-crit-bg: #2D1619;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    overflow-x: clip;
+  }
+  body {
+    margin: 0;
+    padding: 32px 24px 56px;
+    background: var(--bg-chassis);
+    color: var(--ink-primary);
+    font-family: var(--font-sans);
+    line-height: 1.5;
+    font-size: 14px;
+  }
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  header.masthead {
+    background: var(--bg-panel);
+    color: var(--ink-primary);
+    border: 1px solid var(--border-seam);
+    border-top: 4px solid var(--accent-sapphire);
+    border-radius: 6px;
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+  .eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent-sapphire);
+    margin: 0 0 8px;
+  }
+  h1, h2, h3 {
+    text-wrap: balance;
+    color: var(--ink-primary);
+    margin: 0;
+  }
+  h1 {
+    font-size: 24px;
+    line-height: 1.25;
+    margin-bottom: 8px;
+  }
+  h2 {
+    font-size: 16px;
+    line-height: 1.3;
+    margin-bottom: 12px;
+  }
+  .subtitle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    margin: 0;
+    color: var(--ink-secondary);
+    font-size: 13px;
+  }
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .kpi-card {
+    background: var(--bg-panel);
+    color: var(--ink-primary);
+    border: 1px solid var(--border-seam);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .kpi-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+  }
+  .kpi-value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 20px;
+    font-weight: 700;
+    margin-top: 4px;
+    color: var(--ink-primary);
+  }
+  section.panel {
+    background: var(--bg-panel);
+    color: var(--ink-primary);
+    border: 1px solid var(--border-seam);
+    border-radius: 6px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border-seam);
+    vertical-align: top;
+  }
+  th {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--ink-secondary);
+    background: var(--bg-elevated);
+  }
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+  }
+  .num { text-align: right; }
+  .muted { color: var(--ink-secondary); }
+  .pill {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+  }
+  .pill-ok { background: var(--status-ok-bg); color: var(--status-ok-fg); }
+  .pill-warn { background: var(--status-warn-bg); color: var(--status-warn-fg); }
+  .pill-crit { background: var(--status-crit-bg); color: var(--status-crit-fg); }
+  .pill-info { background: var(--status-info-bg); color: var(--accent-sapphire); }
+  .pill-neutral { background: var(--bg-elevated); color: var(--ink-secondary); }
+  .code-card {
+    border: 1px solid var(--border-seam);
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .code-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    color: var(--ink-primary);
+    border-bottom: 1px solid var(--border-seam);
+    font-size: 13px;
+  }
+  pre {
+    margin: 0;
+    padding: 12px 16px;
+    background: var(--bg-code);
+    color: var(--ink-primary);
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+    <header class="masthead">
+      <p class="eyebrow">MachGraph v1.0.0 · Cold-Tungsten Binary Triage Dossier</p>
+      <h1>MachGraphTarget (Mach-O 64 / arm64e (PAC))</h1>
+      <p class="subtitle"><span>SHA-256: <span class="mono">f3bca400420d48a4f07167c7d950af607429f6422dfc456926204dc08cc3eab2</span></span><span>Entry: <span class="mono">0x00000001000010fc</span></span><span>CDHash: <span class="mono">598ccc1528cc5a3d07b6bd98a977e6136a1e9a622b80c295704c17d0db6c1257</span></span></p>
+    </header>
+
+    <div class="kpi-strip">
+      <div class="kpi-card">
+        <div class="kpi-label">Recovered Functions</div>
+        <div class="kpi-value">9</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Decoded A64 Insns</div>
+        <div class="kpi-value">86</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Cross-References</div>
+        <div class="kpi-value">54</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Shannon Entropy</div>
+        <div class="kpi-value">0.621 b/B</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Security Findings</div>
+        <div class="kpi-value">10</div>
+      </div>
+    </div>
+
+    <section class="panel">
+      <h2>Memory Segments &amp; Protection Matrix</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Segment</th>
+            <th>VM Address</th>
+            <th class="num">VM Size</th>
+            <th>File Offset</th>
+            <th>Init / Max Prot</th>
+            <th class="num">Sections</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+  <td class="mono">Segment pagezero</td>
+  <td class="mono">0x0000000000000000</td>
+  <td class="mono num">0x100000000</td>
+  <td class="mono">0x0</td>
+  <td class="mono">--- / ---</td>
+  <td class="mono num">0</td>
+</tr>
+<tr>
+  <td class="mono">Segment text</td>
+  <td class="mono">0x0000000100000000</td>
+  <td class="mono num">0x4000</td>
+  <td class="mono">0x0</td>
+  <td class="mono">r-x / r-x</td>
+  <td class="mono num">11</td>
+</tr>
+<tr>
+  <td class="mono">Segment data_const</td>
+  <td class="mono">0x0000000100004000</td>
+  <td class="mono num">0x4000</td>
+  <td class="mono">0x4000</td>
+  <td class="mono">rw- / rw-</td>
+  <td class="mono num">3</td>
+</tr>
+<tr>
+  <td class="mono">Segment data</td>
+  <td class="mono">0x0000000100008000</td>
+  <td class="mono num">0x4000</td>
+  <td class="mono">0x8000</td>
+  <td class="mono">rw- / rw-</td>
+  <td class="mono num">3</td>
+</tr>
+<tr>
+  <td class="mono">Segment linkedit</td>
+  <td class="mono">0x000000010000c000</td>
+  <td class="mono num">0x4000</td>
+  <td class="mono">0xc000</td>
+  <td class="mono">r-- / r--</td>
+  <td class="mono num">0</td>
+</tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>Recovered Control-Flow Functions &amp; Loop Complexity</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Entry</th>
+            <th>Symbol</th>
+            <th class="num">Blocks</th>
+            <th class="num">Cyclomatic</th>
+            <th class="num">Loops</th>
+            <th>ISA Mode</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+  <td class="mono">0x0000000100001000</td>
+  <td class="mono">compute_checksum</td>
+  <td class="mono num">4</td>
+  <td class="mono num">2</td>
+  <td class="mono num">1</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x0000000100001028</td>
+  <td class="mono">verify_license</td>
+  <td class="mono num">5</td>
+  <td class="mono num">3</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-info">arm64e-pac</span></td>
+</tr>
+<tr>
+  <td class="mono">0x000000010000108c</td>
+  <td class="mono">dispatch_command</td>
+  <td class="mono num">8</td>
+  <td class="mono num">5</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x00000001000010d8</td>
+  <td class="mono">-[MGAuthController validateToken:]</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x00000001000010f0</td>
+  <td class="mono">+[MGAuthController sharedController]</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x00000001000010fc</td>
+  <td class="mono">main</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-info">arm64e-pac</span></td>
+</tr>
+<tr>
+  <td class="mono">0x0000000100001400</td>
+  <td class="mono">printf</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x000000010000140c</td>
+  <td class="mono">puts</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+<tr>
+  <td class="mono">0x0000000100001418</td>
+  <td class="mono">strcmp</td>
+  <td class="mono num">1</td>
+  <td class="mono num">1</td>
+  <td class="mono num">0</td>
+  <td><span class="pill pill-neutral">std-a64</span></td>
+</tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="panel">
+      <h2>SSA Micro-IR Structured Pseudo-C Decompilation</h2>
+      <div class="code-card">
+  <div class="code-header">
+    <span class="mono">0x0000000100001000</span>
+    <span>uint32_t compute_checksum(uint8_t *arg0, uint64_t arg1)</span>
+    <span class="mono muted">SSA vars: 13 · DSE: 1</span>
+  </div>
+  <pre><code>uint32_t compute_checksum(uint8_t *arg0, uint64_t arg1) {
+    uint32_t result = 90;
+    uint64_t i = 0;
+    while (i &lt; arg1) {
+        result = result ^ arg0[i];
+        i = i + 1;
+    }
+    return result;
+}</code></pre>
+</div>
+<div class="code-card">
+  <div class="code-header">
+    <span class="mono">0x0000000100001028</span>
+    <span>int32_t verify_license(const char *arg0)</span>
+    <span class="mono muted">SSA vars: 13 · DSE: 6</span>
+  </div>
+  <pre><code>// ARM64e PAC-protected license gate; checks token prefix &amp; rolling XOR digest
+int32_t verify_license(const char *arg0) {
+    int32_t result;
+    // ARM64e PAC-protected license gate; checks token prefix &amp; rolling XOR digest
+    if (arg0 != NULL &amp;&amp; strcmp(arg0, &quot;MACHGRAPH-PRO-2026&quot;) == 0) {
+        compute_checksum(arg0, 18);
+        puts(&quot;License verified: %s&quot;);
+        result = 1;
+    } else {
+        puts(&quot;Invalid license token&quot;);
+        result = 0;
+    }
+    return result;
+}</code></pre>
+</div>
+<div class="code-card">
+  <div class="code-header">
+    <span class="mono">0x000000010000108c</span>
+    <span>uint32_t dispatch_command(uint32_t arg0)</span>
+    <span class="mono muted">SSA vars: 7 · DSE: 0</span>
+  </div>
+  <pre><code>// Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)
+uint32_t dispatch_command(uint32_t arg0) {
+    uint32_t result;
+    // Bounds-checked 4-case jump table in __TEXT,__const (opcodes 0..3)
+    switch (arg0) {
+    case 0:
+        result = 100;
+        break;
+    case 1:
+        result = 200;
+        break;
+    case 2:
+        result = 300;
+        break;
+    case 3:
+        result = 400;
+        break;
+    default:
+        result = 999;
+        break;
+    }
+    return result;
+}</code></pre>
+</div>
+<div class="code-card">
+  <div class="code-header">
+    <span class="mono">0x00000001000010d8</span>
+    <span>bool -[MGAuthController validateToken:](MGAuthController *self, const char *_cmd, id token)</span>
+    <span class="mono muted">SSA vars: 5 · DSE: 1</span>
+  </div>
+  <pre><code>bool -[MGAuthController validateToken:](MGAuthController *self, const char *_cmd, id token) {
+    return verify_license(token);
+}</code></pre>
+</div>
+    </section>
+
+    <section class="panel">
+      <h2>Sliding-Window Shannon Entropy Profile</h2>
+      <svg viewBox="0 0 960 140" width="100%" height="140" role="img" aria-label="Sliding window Shannon entropy profile">
+  <rect x="0" y="0" width="960" height="140" fill="#0B0E12" rx="4" />
+  <rect x="10.0" y="90.1" width="12.7" height="33.9" fill="#58A6FF" rx="1.5" />
+  <rect x="24.7" y="88.3" width="12.7" height="35.7" fill="#58A6FF" rx="1.5" />
+  <rect x="39.4" y="81.1" width="12.7" height="42.9" fill="#58A6FF" rx="1.5" />
+  <rect x="54.1" y="92.0" width="12.7" height="32.0" fill="#58A6FF" rx="1.5" />
+  <rect x="68.8" y="119.2" width="12.7" height="4.8" fill="#58A6FF" rx="1.5" />
+  <rect x="83.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="98.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="112.8" y="94.6" width="12.7" height="29.4" fill="#58A6FF" rx="1.5" />
+  <rect x="127.5" y="94.6" width="12.7" height="29.4" fill="#58A6FF" rx="1.5" />
+  <rect x="142.2" y="118.4" width="12.7" height="5.6" fill="#58A6FF" rx="1.5" />
+  <rect x="156.9" y="118.4" width="12.7" height="5.6" fill="#58A6FF" rx="1.5" />
+  <rect x="171.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="186.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="200.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="215.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="230.3" y="107.0" width="12.7" height="17.0" fill="#58A6FF" rx="1.5" />
+  <rect x="245.0" y="93.8" width="12.7" height="30.2" fill="#58A6FF" rx="1.5" />
+  <rect x="259.7" y="97.6" width="12.7" height="26.4" fill="#58A6FF" rx="1.5" />
+  <rect x="274.4" y="112.1" width="12.7" height="11.9" fill="#58A6FF" rx="1.5" />
+  <rect x="289.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="303.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="318.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="333.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="347.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="362.5" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="377.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="391.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="406.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="421.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="435.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="450.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="465.3" y="112.6" width="12.7" height="11.4" fill="#58A6FF" rx="1.5" />
+  <rect x="480.0" y="111.4" width="12.7" height="12.6" fill="#58A6FF" rx="1.5" />
+  <rect x="494.7" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="509.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="524.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="538.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="553.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="568.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="582.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="597.5" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="612.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="626.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="641.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="656.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="670.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="685.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="700.3" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="715.0" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="729.7" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="744.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="759.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="773.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="788.4" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="803.1" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="817.8" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="832.5" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="847.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="861.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="876.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="891.2" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="905.9" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="920.6" y="121.0" width="12.7" height="3.0" fill="#58A6FF" rx="1.5" />
+  <rect x="935.3" y="117.2" width="12.7" height="6.8" fill="#58A6FF" rx="1.5" />
+</svg>
+    </section>
+
+    <section class="panel">
+      <h2>JavaScriptCore Security Audit Ledger</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Address</th>
+            <th>Finding</th>
+            <th>Evidence &amp; Reachability Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+  <td><span class="pill pill-crit">High</span></td>
+  <td class="mono">0x0000000100001044</td>
+  <td>Hardcoded Static Verification / Entitlement Token in Binary (verify_license)</td>
+  <td>Referenced by verify_license, main. String literal at 0x100002000 (__TEXT,__cstring, 18 bytes). Xref trace: verify_license @ 0x100001044 [STRING_REF], main @ 0x10000110c [STRING_REF]. Remediation: Comparing against a static plaintext token embedded in __cstring exposes the secret to trivial string extraction. Use asymmetric cryptographic signature verification (Ed25519 / ECDSA) instead.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-crit">High</span></td>
+  <td class="mono">0x0000000100001048</td>
+  <td>Early-Exit String/Memory Comparison `strcmp` in Security-Sensitive Function `verify_license`</td>
+  <td>Function invokes `_strcmp` (1 call site(s)). Shortest call path: verify_license -&gt; strcmp (1 hop(s)). Standard `strcmp` terminates on the first mismatched byte, leaking prefix match timing and exposing secret material in registers. Remediation: Use `timingsafe_bcmp` / `CCDigest` HMAC verification or asymmetric signature validation.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-crit">High</span></td>
+  <td class="mono">0x00000001000010fc</td>
+  <td>Debuggable Task Port Entitlement (`get-task-allow`)</td>
+  <td>Grants `task_for_pid` / debugger attachment rights to same-UID processes, allowing runtime memory inspection, register modification, and credential extraction if left enabled in release builds. Remove `com.apple.security.get-task-allow` from release `.entitlements` plists unless strictly required.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-warn">Medium</span></td>
+  <td class="mono">0x000000010000108c</td>
+  <td>Non-PAC `ret` Epilogues in Stack-Frame Functions on `arm64e` Image</td>
+  <td>Binary slice is tagged `arm64e`, yet 2 non-leaf / stack-allocating function(s) return via unsigned `ret` without `paciasp`/`retaa`: dispatch_command (0x10000108c, frame=16B), -[MGAuthController validateToken:] (0x1000010d8, frame=16B). Remediation: Enable `-mbranch-protection=pac-ret+leaf` across all translation units and static archives.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-warn">Medium</span></td>
+  <td class="mono">0x00000001000010a8</td>
+  <td>Unsigned Switch Jump-Table Dispatch (`br x8`) in `dispatch_command`</td>
+  <td>Instruction `br x8` at 0x1000010a8 inside `dispatch_command` transfers control through register `x8` without Pointer Authentication (`braa`/`blraa`). Jump table at 0x100001500 (4 case targets). Remediation: Compile with `-arch arm64e` or `-mbranch-protection=standard` so indirect call/vtable targets are cryptographically authenticated.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-warn">Medium</span></td>
+  <td class="mono">0x00000001000010fc</td>
+  <td>Ad-Hoc Signed Mach-O Binary (`CS_ADHOC`)</td>
+  <td>Binary `MachGraphTarget` (identifier `com.machgraph.demo.target`) is ad-hoc signed without an Apple Developer ID CMS certificate chain (`cdhash=598ccc1528cc5a3d07b6bd98`). Suitable for local testing, but lacks Team ID isolation for production distribution.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-warn">Medium</span></td>
+  <td class="mono">0x00000001000010fc</td>
+  <td>Hardened Runtime (`CS_RUNTIME` 0x00010000) Not Enabled</td>
+  <td>CodeDirectory flags (`0x00020002`) do not set `CS_RUNTIME` (`0x00010000`). Without Hardened Runtime, macOS notarization is unavailable and default protections against dylib injection and unsigned executable pages are relaxed. Remediation: Sign with `codesign --options runtime`.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-warn">Medium</span></td>
+  <td class="mono">0x00000001000010fc</td>
+  <td>MAP_JIT Executable Memory Entitlement (`cs.allow-jit`)</td>
+  <td>Enables `MAP_JIT` dynamic code generation pages (`pthread_jit_write_protect_np`). Confirm the binary actually embeds a hardened JS/Wasm JIT runtime; remove if unused. Remove `com.apple.security.cs.allow-jit` from release `.entitlements` plists unless strictly required.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-ok">Low</span></td>
+  <td class="mono">0x0000000100001124</td>
+  <td>Variadic Format Output Sink `printf` Call Site Audited</td>
+  <td>Audited 1 call site(s) to `_printf`. Shortest call path: main -&gt; printf (1 hop(s)). Format argument appears PC-relative (`adrp`/`add`), which mitigates format-string injection; confirm format specifiers match variadic operand widths.</td>
+</tr>
+<tr>
+  <td><span class="pill pill-ok">Low</span></td>
+  <td class="mono">0x000000010000205a</td>
+  <td>Internal Corporate or Non-TLS Endpoint URL in Binary</td>
+  <td>Located in __TEXT,__cstring (ASCII). String literal at 0x10000205a (__TEXT,__cstring, 49 bytes). Xref trace: No direct instruction Xrefs resolved (unreferenced or table-indexed literal). Remediation: Audit internal staging/telemetry hostnames before release to prevent internal infrastructure reconnaissance.</td>
+</tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+</body>
+</html>

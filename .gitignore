@@ -1,0 +1,15 @@
+.DS_Store
+/.build
+/.build-*
+/build
+/DerivedData
+/*.xcodeproj
+/reports
+/.swiftpm
+*.machproj/analysis.sqlite-wal
+*.machproj/analysis.sqlite-shm
+*.machproj
+*-wal
+*-shm
+*.sqlite
+*.db
