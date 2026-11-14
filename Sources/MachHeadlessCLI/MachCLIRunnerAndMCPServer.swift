@@ -39,6 +39,17 @@ public struct CLISubcommandSpec: Sendable, Hashable {
     }
 }
 
+/// What the desktop workbench should open at launch, resolved from the command line before any window exists.
+public struct MachDesktopLaunchRequest: Sendable, Equatable {
+    public let binaryPath: String?
+    public let loadDemo: Bool
+
+    public init(binaryPath: String?, loadDemo: Bool) {
+        self.binaryPath = binaryPath
+        self.loadDemo = loadDemo
+    }
+}
+
 // MARK: - Headless Binary Inspection & Reverse-Engineering CLI (`MachCLIRunner`)
 
 public struct MachCLIRunner: Sendable {
@@ -82,8 +93,8 @@ public struct MachCLIRunner: Sendable {
         ),
         CLISubcommandSpec(
             primaryName: "disasm",
-            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--json]",
-            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--json]",
+            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--count <n>] [--json]",
+            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--count <数量>] [--json]",
             summaryEN: "Disassemble ARM64/ARM64e instruction sections or a target function",
             summaryZH: "反汇编 ARM64/ARM64e 指令节区或指定目标函数"
         ),
@@ -120,21 +131,21 @@ public struct MachCLIRunner: Sendable {
             primaryName: "entropy",
             usageArgsEN: "<file> [--json]",
             usageArgsZH: "<文件> [--json]",
-            summaryEN: "Compute sliding-window Shannon entropy & chi-square metrics",
-            summaryZH: "计算滑动窗口香农熵与卡方分布指标"
+            summaryEN: "Whole-file Shannon entropy, byte chi-square & sliding-window anomaly count",
+            summaryZH: "整个文件的香农熵、字节卡方值与滑动窗口异常计数"
         ),
         CLISubcommandSpec(
             primaryName: "patch-asm",
             aliases: ["patch"],
-            usageArgsEN: "<file> --address <0x...> --asm \"...\" [--output <out>] [--json]",
-            usageArgsZH: "<文件> --address <0x...> --asm \"...\" [--output <输出路径>] [--json]",
+            usageArgsEN: "<file> --address <0x...> --asm \"...\" [--force] [--output <out>] [--json]",
+            usageArgsZH: "<文件> --address <0x...> --asm \"...\" [--force] [--output <输出路径>] [--json]",
             summaryEN: "Assemble inline ARM64 patch & recalculate ad-hoc code signature",
             summaryZH: "汇编内联 ARM64 补丁并重新计算临时代码签名"
         ),
         CLISubcommandSpec(
             primaryName: "resign",
             usageArgsEN: "<file> [--identifier <id>] [--output <out>] [--json]",
-            usageArgsZH: "<file> [--identifier <标识符>] [--output <输出路径>] [--json]",
+            usageArgsZH: "<文件> [--identifier <标识符>] [--output <输出路径>] [--json]",
             summaryEN: "Recalculate Mach-O ad-hoc SHA-256 CodeDirectory page hashes",
             summaryZH: "重新计算 Mach-O 临时 SHA-256 CodeDirectory 代码页哈希"
         ),
@@ -163,6 +174,61 @@ public struct MachCLIRunner: Sendable {
         )
     ]
 
+    /// Every option a subcommand accepts besides the global ones, listed once in `--help`.
+    /// README examples may only use options that appear here or under "Global Options".
+    public static let subcommandOptionSpecs: [(flags: String, summaryEN: String, summaryZH: String)] = [
+        (
+            "--json",
+            "Print structured JSON instead of text (every subcommand except mcp)",
+            "输出结构化 JSON 而不是文本（除 mcp 外的所有子命令）"
+        ),
+        (
+            "--symbol <name>, --function <name>",
+            "Select one function by name (disasm, cfg-dot, decompile, xrefs)",
+            "按名称选定一个函数（disasm、cfg-dot、decompile、xrefs）"
+        ),
+        (
+            "--address <0x...>",
+            "Select a function (or the xrefs target) by virtual address; for patch-asm, the address to write at",
+            "按虚拟地址选定函数（或 xrefs 的查询目标）；对 patch-asm 是写入地址"
+        ),
+        (
+            "--count <n>, --limit <n>",
+            "Print at most <n> instructions (disasm)",
+            "最多输出 <n> 条指令（disasm）"
+        ),
+        (
+            "--filter <q>",
+            "Keep only entries containing <q> (symbols, strings, fixups)",
+            "只保留包含 <q> 的条目（symbols、strings、fixups）"
+        ),
+        (
+            "--slice <index>",
+            "Pick a Universal slice by index (default: arm64e, then arm64)",
+            "按序号选择 Universal 切片（默认 arm64e，其次 arm64）"
+        ),
+        (
+            "--asm \"<insn>; <insn>\"",
+            "Instructions for patch-asm; ';' separates statements, '//' starts a comment",
+            "patch-asm 的指令序列；';' 分隔语句，'//' 之后是注释"
+        ),
+        (
+            "--force",
+            "patch-asm: override the check that refuses a patch covering a branch target, function start or symbol",
+            "patch-asm：跳过安全检查（补丁内部盖住跳转目标、函数起点或符号时，默认拒绝写入）"
+        ),
+        (
+            "--output <path>, -o <path>",
+            "Write the result file to <path> (patch-asm, resign, export-html)",
+            "把结果文件写到 <path>（patch-asm、resign、export-html）"
+        ),
+        (
+            "--identifier <id>",
+            "Code-signing identifier to embed (resign)",
+            "写入签名的标识符（resign）"
+        )
+    ]
+
     public static let builtinMetaTokens: Set<String> = [
         "help", "--help", "-h",
         "version", "--version", "-v"
@@ -183,6 +249,92 @@ public struct MachCLIRunner: Sendable {
         let stripped = stripLanguageFlags(arguments)
         guard let first = stripped.first else { return false }
         return recognizedHeadlessTokens.contains(first)
+    }
+
+    /// Process exit code for a failed invocation: `2` for usage errors, `1` for everything else.
+    public static func exitCode(for error: Error) -> Int32 {
+        if let mgErr = error as? MachGraphError, case .invalidCLIArguments = mgErr {
+            return 2
+        }
+        return 1
+    }
+
+    /// Decides, without creating any window, whether a non-headless argument vector is a valid request
+    /// to open the desktop workbench. The executable calls this before it touches AppKit.
+    ///
+    /// The workbench accepts exactly these shapes (plus `--lang`): no arguments, `--demo`, `--binary <file>`,
+    /// or one existing `<file>` as the only argument. Anything else with a word in subcommand position is a
+    /// mistyped subcommand and is reported as such (usage error, exit code 2), never as a missing file.
+    public static func resolveDesktopLaunchRequest(
+        arguments: [String],
+        language: MachLanguage,
+        fileExists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+    ) throws -> MachDesktopLaunchRequest {
+        let args = stripLanguageFlags(arguments)
+
+        for arg in args where arg.hasPrefix("-") && arg != "--binary" && arg != "--demo" {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Unknown option '\(arg)'. Run 'machgraph --help' for usage.",
+                    "不支持的选项 '\(arg)'。请运行 'machgraph --help' 查看用法。"
+                )
+            )
+        }
+
+        let loadDemo = args.contains("--demo")
+        var binaryFlagPath: String?
+        var positionals: [String] = []
+        var idx = 0
+        while idx < args.count {
+            let tok = args[idx]
+            if tok == "--binary" {
+                guard idx + 1 < args.count, !args[idx + 1].hasPrefix("-") else {
+                    throw MachGraphError.invalidCLIArguments(
+                        language.select("Option '--binary' requires a file path.", "选项 '--binary' 需要提供文件路径。")
+                    )
+                }
+                binaryFlagPath = args[idx + 1]
+                idx += 2
+                continue
+            }
+            if !tok.hasPrefix("-") {
+                positionals.append(tok)
+            }
+            idx += 1
+        }
+
+        func unknownSubcommand(_ word: String) -> MachGraphError {
+            .invalidCLIArguments(
+                language.select(
+                    "Unknown subcommand '\(word)'. Run 'machgraph --help' for usage.",
+                    "未知子命令 '\(word)'。请运行 'machgraph --help' 查看用法。"
+                )
+            )
+        }
+
+        if let word = positionals.first {
+            // A word next to any other argument can only be a (mistyped) subcommand.
+            guard args.count == 1 else {
+                throw unknownSubcommand(word)
+            }
+            guard fileExists(word) else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select(
+                        "'\(word)' is neither a known subcommand nor an existing file. Run 'machgraph --help' for usage.",
+                        "'\(word)' 既不是已知子命令，也不是存在的文件。请运行 'machgraph --help' 查看用法。"
+                    )
+                )
+            }
+            return MachDesktopLaunchRequest(binaryPath: word, loadDemo: false)
+        }
+
+        if let binaryFlagPath {
+            guard fileExists(binaryFlagPath) else {
+                throw MachGraphError.fileNotFound(binaryFlagPath)
+            }
+            return MachDesktopLaunchRequest(binaryPath: binaryFlagPath, loadDemo: loadDemo)
+        }
+        return MachDesktopLaunchRequest(binaryPath: nil, loadDemo: loadDemo)
     }
 
     public static func resolveCanonicalSubcommand(_ raw: String) -> String? {
@@ -1309,6 +1461,13 @@ public struct MachCLIRunner: Sendable {
             )
         }
 
+        let url = try Self.validatedRegularInputFileURL(rawPath: rawPath, language: language)
+        return (url, false)
+    }
+
+    /// Resolves an input path and rejects anything that is not a readable regular file with an accurate reason:
+    /// missing paths, directories, and special files such as `/dev/null` (character devices, FIFOs, sockets).
+    static func validatedRegularInputFileURL(rawPath: String, language: MachLanguage) throws -> URL {
         let url = URL(fileURLWithPath: rawPath)
         var isDir: ObjCBool = false
         guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) else {
@@ -1322,7 +1481,25 @@ public struct MachCLIRunner: Sendable {
                 )
             )
         }
-        return (url, false)
+        // `fileExists` follows symlinks, so inspect the link target as well.
+        let resolvedPath = url.resolvingSymlinksInPath().path
+        if let fileType = (try? FileManager.default.attributesOfItem(atPath: resolvedPath))?[.type] as? FileAttributeType,
+           fileType != .typeRegular {
+            let kind: (en: String, zh: String)
+            switch fileType {
+            case .typeCharacterSpecial: kind = ("a character device", "字符设备")
+            case .typeBlockSpecial: kind = ("a block device", "块设备")
+            case .typeSocket: kind = ("a socket", "套接字")
+            default: kind = ("a special file", "特殊文件")
+            }
+            throw MachGraphError.ioFailure(
+                language.select(
+                    "'\(rawPath)' is not a regular file (it is \(kind.en)); pass a Mach-O binary file.",
+                    "'\(rawPath)' 不是普通文件（它是\(kind.zh)），请传入 Mach-O 二进制文件。"
+                )
+            )
+        }
+        return url
     }
 
     private func loadContainerOnly(
@@ -1659,6 +1836,11 @@ public struct MachCLIRunner: Sendable {
                 "  --version                                           显示版本信息"
             )
         )
+        lines.append(language.select("Subcommand Options:", "子命令选项:"))
+        for option in subcommandOptionSpecs {
+            let left = option.flags.padding(toLength: max(52, option.flags.count + 2), withPad: " ", startingAt: 0)
+            lines.append("  \(left)\(language.select(option.summaryEN, option.summaryZH))")
+        }
         lines.append(language.select("Subcommands:", "子命令:"))
         for spec in subcommandSpecs {
             let argsCol = language.select(spec.usageArgsEN, spec.usageArgsZH)
@@ -1894,10 +2076,7 @@ public struct MachMCPServer: Sendable {
                 )
             )
         }
-        let url = URL(fileURLWithPath: path)
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            throw MachGraphError.fileNotFound(path)
-        }
+        let url = try MachCLIRunner.validatedRegularInputFileURL(rawPath: path, language: language)
         let data = try Data(contentsOf: url)
         let cliOptions = BinaryAnalysisOptions(
             computeSugiyamaLayouts: false,

@@ -632,7 +632,7 @@ public struct SparseCoWHexAndInlinePatcherStudioView: View {
                     .foregroundStyle(ColdTungstenPalette.coolPewter)
                     .fixedSize(horizontal: true, vertical: false)
 
-                TextField(localizer.L("0x100001038 or _verify_license", "0x100001038 或 _verify_license"), text: $viewModel.patchTargetAddressText)
+                TextField(localizer.L("0x100001038 or _main", "0x100001038 或 _main"), text: $viewModel.patchTargetAddressText)
                     .textFieldStyle(.plain)
                     .font(ColdTungstenTypography.addressMono(size: 11.5, weight: .semibold))
                     .foregroundStyle(ColdTungstenPalette.tungstenSapphire)

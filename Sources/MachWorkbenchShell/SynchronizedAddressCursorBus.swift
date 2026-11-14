@@ -62,7 +62,7 @@ public enum GoToParseFailure: Error, LocalizedError, Sendable, Equatable {
     public var errorDescription: String? {
         switch self {
         case .emptyQuery:
-            return "Enter a virtual address (0x100001000), relative offset (+0x400), file offset (off:0x1000), or symbol (_verify_license)."
+            return "Enter a virtual address (0x100001000), relative offset (+0x400), file offset (off:0x1000), or symbol (_main)."
         case .invalidAddressExpression(let expr):
             return "Malformed address or offset expression '\(expr)'."
         case .unmappedFileOffset(let off):
@@ -76,8 +76,8 @@ public enum GoToParseFailure: Error, LocalizedError, Sendable, Equatable {
         switch self {
         case .emptyQuery:
             return language.select(
-                "Enter a virtual address (0x100001000), relative offset (+0x400), file offset (off:0x1000), or symbol (_verify_license).",
-                "请输入虚拟地址 (0x100001000)、相对偏移 (+0x400)、文件偏移 (off:0x1000) 或符号名 (_verify_license)。"
+                "Enter a virtual address (0x100001000), relative offset (+0x400), file offset (off:0x1000), or symbol (_main).",
+                "请输入虚拟地址 (0x100001000)、相对偏移 (+0x400)、文件偏移 (off:0x1000) 或符号名 (_main)。"
             )
         case .invalidAddressExpression(let expr):
             return language.select(
@@ -107,7 +107,7 @@ public enum MachGoToExpressionParser: Sendable {
     /// - `+0x400` / `-0x20` / `+64` (signed offset from `currentAddress`)
     /// - `base+0x1000` / `entry+0x14` (offset from imageBase or entryPoint)
     /// - `off:0x1000` / `file:0x1000` / `@0x1000` (raw file offset translated to VA)
-    /// - `_verify_license` / `_verify_license+0x14` / `-[MGAuthController validateToken:]` (symbol/rename/function + optional addend)
+    /// - `_main` / `_main+0x14` / `-[NSObject init]` (symbol/rename/function + optional addend)
     public static func parse(
         query rawQuery: String,
         currentAddress: VirtualAddress,

@@ -774,9 +774,8 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
 
     @Test("MachLanguage resolution priority chain: CLI --lang > MACHGRAPH_LANG > UserDefaults > Chinese Locale auto-detection")
     func machLanguageResolutionOrderAndChineseLocaleAutoDetection() {
-        let suiteName = "io.github.zxu756.MachGraph.test.lang.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        // In-memory store: a real suite leaves a plist in ~/Library/Preferences even after removePersistentDomain.
+        let defaults = InMemoryUserDefaults()
 
         // 1. Auto-detects Simplified Chinese when preferredLanguages starts with "zh"
         let autoZh = MachLanguage.resolve(
@@ -836,9 +835,8 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
     @Test("MachLocalizer toggles live between zh-Hans and en, persists to UserDefaults, and localizes domain models")
     @MainActor
     func machLocalizerLiveTogglePersistenceAndDomainTranslations() {
-        let suiteName = "io.github.zxu756.MachGraph.test.localizer.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        // In-memory store: a real suite leaves a plist in ~/Library/Preferences even after removePersistentDomain.
+        let defaults = InMemoryUserDefaults()
 
         let localizer = MachLocalizer(
             arguments: [],
@@ -996,6 +994,238 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         let obj = try #require(JSONSerialization.jsonObject(with: Data(rawResp.utf8)) as? [String: Any])
         let res = try #require(obj["result"] as? [String: Any])
         #expect(res["isError"] as? Bool == true)
+    }
+
+    // MARK: - 8. M0 Rework (G27, G30, help/README option parity)
+
+    @Test("G27: patch-asm fails on an unassemblable statement after ';' and writes no output file")
+    func cliPatchAsmRejectsBadStatementAfterSemicolonWithoutWritingOutput() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let inputBin = tempDir.appendingPathComponent("sample.macho")
+        let outputBin = tempDir.appendingPathComponent("patched.macho")
+        let originalData = try RepoFixtures.thinARM64SampleData()
+        try originalData.write(to: inputBin)
+        let image = try UniversalBinaryDispatcher.load(data: originalData, fileName: "sample.macho")
+        let targetSym = try #require(image.symbols.first { $0.name == "_demo_fnv1a32" })
+        let address = targetSym.address.compactHexString
+
+        let cli = MachCLIRunner()
+        let rejected = [
+            "nop; bogus x1",
+            "mov x0, #1; garbage",
+            "nop; ; nop extra words here",
+            "ret ; return to caller",
+            "mov w0, #1; ret; set return value to true"
+        ]
+        for source in rejected {
+            for extraFlags in [[String](), ["--force"], ["--json"]] {
+                try? FileManager.default.removeItem(at: outputBin)
+                var caught: MachGraphError?
+                do {
+                    _ = try await cli.execute(arguments: [
+                        "patch-asm", inputBin.path,
+                        "--address", address,
+                        "--asm", source,
+                        "--output", outputBin.path
+                    ] + extraFlags)
+                } catch let err as MachGraphError {
+                    caught = err
+                }
+                let label = "\(source.debugDescription) \(extraFlags)"
+                if case .assemblerError = caught {
+                    // expected: reported as an assembler error (exit code 1 at the process level)
+                } else {
+                    Issue.record("patch-asm --asm \(label) must fail with assemblerError, got \(String(describing: caught))")
+                }
+                #expect(!FileManager.default.fileExists(atPath: outputBin.path), "patch-asm --asm \(label) must not write the output file")
+                #expect(try Data(contentsOf: inputBin) == originalData, "patch-asm --asm \(label) must not modify the input file")
+            }
+        }
+
+        // The same entry point still assembles every statement of a valid program.
+        let okJSON = try await cli.execute(arguments: [
+            "patch-asm", inputBin.path,
+            "--address", address,
+            "--asm", "mov w0, #1; ret // force true",
+            "--force",
+            "--output", outputBin.path,
+            "--json"
+        ])
+        let okObj = try #require(JSONSerialization.jsonObject(with: Data(okJSON.utf8)) as? [String: Any])
+        #expect(okObj["byteCount"] as? Int == 8)
+        #expect(okObj["valid"] as? Bool == true)
+        #expect(FileManager.default.fileExists(atPath: outputBin.path))
+
+        // README / --help claim about --force: in the fixture, `cbnz w9, <fn+0x1c>` at fn+0x28 jumps to fn+0x1c,
+        // so an 8-byte patch at fn+0x18 has a branch target in its interior. It is refused without --force.
+        try FileManager.default.removeItem(at: outputBin)
+        let interiorTargetPatch = [
+            "patch-asm", inputBin.path,
+            "--address", targetSym.address.adding(UInt64(0x18)).compactHexString,
+            "--asm", "nop; nop",
+            "--output", outputBin.path
+        ]
+        var refusal: MachGraphError?
+        do {
+            _ = try await cli.execute(arguments: interiorTargetPatch)
+        } catch let err as MachGraphError {
+            refusal = err
+        }
+        if case .patchFormatError(let detail) = refusal {
+            #expect(detail.contains("jumps into patch interior"))
+        } else {
+            Issue.record("patch covering a branch target must be refused without --force, got \(String(describing: refusal))")
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputBin.path))
+
+        let forced = try await cli.execute(arguments: interiorTargetPatch + ["--force"])
+        #expect(forced.contains("Valid=true"))
+        #expect(FileManager.default.fileExists(atPath: outputBin.path))
+    }
+
+    @Test("G30: a mistyped subcommand is a usage error (exit 2) naming the subcommand; it is never reported as a missing file")
+    func desktopLaunchResolutionRejectsMistypedSubcommands() throws {
+        // Only this path "exists"; the decision must not depend on what happens to be on the test machine.
+        let existing: Set<String> = ["/bin/ls", "/bin/cat"]
+        func resolve(_ args: [String], _ lang: MachLanguage = .en) throws -> MachDesktopLaunchRequest {
+            try MachCLIRunner.resolveDesktopLaunchRequest(arguments: args, language: lang) { existing.contains($0) }
+        }
+        func usageError(_ args: [String], _ lang: MachLanguage = .en) -> String? {
+            do {
+                _ = try resolve(args, lang)
+                return nil
+            } catch let err as MachGraphError {
+                guard case .invalidCLIArguments = err else { return nil }
+                #expect(MachCLIRunner.exitCode(for: err) == 2)
+                return err.localizedMessage(in: lang)
+            } catch {
+                return nil
+            }
+        }
+
+        // 1. `<typo> <file>` and every other shape with more than one argument: unknown subcommand, exit 2.
+        let mistyped: [(args: [String], word: String)] = [
+            (["inof", "/bin/ls"], "inof"),
+            (["dissasm", "/bin/ls", "--demo"], "dissasm"),
+            (["inof", "--demo"], "inof"),
+            (["inof", "--binary", "/bin/ls"], "inof"),
+            (["--binary", "/bin/ls", "inof"], "inof"),
+            (["/bin/ls", "/bin/cat"], "/bin/ls"),
+            (["nosuchcmd", "/no/such/file"], "nosuchcmd")
+        ]
+        for (args, word) in mistyped {
+            let msgEN = try #require(usageError(args, .en), "\(args) must be a usage error")
+            #expect(msgEN.contains("Unknown subcommand '\(word)'"), "\(args) -> \(msgEN)")
+            #expect(!msgEN.lowercased().contains("not found"), "\(args) -> \(msgEN)")
+            let msgZH = try #require(usageError(args + ["--lang", "zh"], .zhHans), "\(args) must be a usage error (zh)")
+            #expect(msgZH.contains("未知子命令 '\(word)'"), "\(args) -> \(msgZH)")
+            #expect(!msgZH.contains("找不到"), "\(args) -> \(msgZH)")
+        }
+
+        // 2. A lone word that is neither a subcommand nor a file: usage error that names both possibilities.
+        for lone in ["inof", "/no/such/file"] {
+            let msg = try #require(usageError([lone]), "[\(lone)] must be a usage error")
+            #expect(msg.contains("'\(lone)'"))
+            #expect(msg.contains("subcommand"))
+            #expect(msg.contains("file"))
+        }
+
+        // 3. Unknown options stay usage errors; `--binary` keeps its own diagnostics.
+        #expect(usageError(["--bogus"]) != nil)
+        #expect(usageError(["--binary"]) != nil)
+        do {
+            _ = try resolve(["--binary", "/no/such/file"])
+            Issue.record("--binary with a missing file must fail")
+        } catch let err as MachGraphError {
+            #expect(err == .fileNotFound("/no/such/file"))
+            #expect(MachCLIRunner.exitCode(for: err) == 1)
+        }
+
+        // 4. The only argument vectors that may open the workbench.
+        #expect(try resolve([]) == MachDesktopLaunchRequest(binaryPath: nil, loadDemo: false))
+        #expect(try resolve(["--lang", "zh"]) == MachDesktopLaunchRequest(binaryPath: nil, loadDemo: false))
+        #expect(try resolve(["--demo"]) == MachDesktopLaunchRequest(binaryPath: nil, loadDemo: true))
+        #expect(try resolve(["/bin/ls"]) == MachDesktopLaunchRequest(binaryPath: "/bin/ls", loadDemo: false))
+        #expect(try resolve(["--binary", "/bin/ls"]) == MachDesktopLaunchRequest(binaryPath: "/bin/ls", loadDemo: false))
+
+        // 5. Known subcommands never reach desktop resolution at all.
+        #expect(MachCLIRunner.isHeadlessInvocation(arguments: ["info", "/bin/ls"]))
+        #expect(MachCLIRunner.isHeadlessInvocation(arguments: ["--lang", "zh", "patch", "/bin/ls"]))
+        #expect(!MachCLIRunner.isHeadlessInvocation(arguments: ["inof", "/bin/ls"]))
+    }
+
+    @Test("M0 rework: /dev/null and other non-regular files are rejected as such, not as a permission problem")
+    func cliAndMCPRejectNonRegularInputFilesWithAccurateReason() async throws {
+        let cli = MachCLIRunner()
+        for (lang, expected) in [("en", "not a regular file"), ("zh", "不是普通文件")] {
+            for subcommand in ["info", "disasm", "export-html"] {
+                do {
+                    _ = try await cli.execute(arguments: [subcommand, "/dev/null", "--lang", lang])
+                    Issue.record("\(subcommand) /dev/null must fail")
+                } catch let err as MachGraphError {
+                    let msg = err.localizedMessage(in: lang == "zh" ? .zhHans : .en)
+                    #expect(msg.contains(expected), "\(subcommand) --lang \(lang): \(msg)")
+                    #expect(msg.contains("/dev/null"))
+                    #expect(!msg.lowercased().contains("permission"), "\(subcommand) --lang \(lang): \(msg)")
+                    #expect(!msg.contains("权限"))
+                    #expect(MachCLIRunner.exitCode(for: err) == 1)
+                }
+            }
+        }
+
+        let mcp = MachMCPServer()
+        let req = #"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{"binaryPath":"/dev/null"}}}"#
+        let rawResp = try #require(mcp.handleJSONRPCLine(req))
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(rawResp.utf8)) as? [String: Any])
+        let res = try #require(obj["result"] as? [String: Any])
+        #expect(res["isError"] as? Bool == true)
+        let text = ((res["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
+        #expect(text.contains("not a regular file"), "MCP: \(text)")
+        #expect(!text.lowercased().contains("permission"), "MCP: \(text)")
+    }
+
+    @Test("G29: every MachGraph option used in README.md / README.zh-CN.md is listed in --help (EN and ZH)")
+    func readmeOptionsAllAppearInHelp() async throws {
+        let cli = MachCLIRunner()
+        let helpEN = try await cli.execute(arguments: ["--help", "--lang", "en"])
+        let helpZH = try await cli.execute(arguments: ["--help", "--lang", "zh"])
+        let optionPattern = try NSRegularExpression(pattern: #"(?<![\w-])--[A-Za-z][A-Za-z0-9-]*"#)
+
+        func options(in text: String) -> Set<String> {
+            let range = NSRange(text.startIndex..., in: text)
+            return Set(optionPattern.matches(in: text, range: range).compactMap { Range($0.range, in: text).map { String(text[$0]) } })
+        }
+
+        for readmeName in ["README.md", "README.zh-CN.md"] {
+            let readme = try String(contentsOf: RepoFixtures.repositoryRoot.appendingPathComponent(readmeName), encoding: .utf8)
+            var used = Set<String>()
+
+            // 1. Fenced code blocks: only command lines that invoke the MachGraph binary (continuations joined).
+            let fencedParts = readme.components(separatedBy: "```")
+            for (idx, block) in fencedParts.enumerated() where idx % 2 == 1 {
+                let joined = block.replacingOccurrences(of: "\\\n", with: " ")
+                for line in joined.split(separator: "\n") where line.contains("/MachGraph ") {
+                    // Options of other tools in a pipeline come before the binary; keep what follows it.
+                    let tail = line.components(separatedBy: "/MachGraph ").dropFirst().joined(separator: " ")
+                    used.formUnion(options(in: tail))
+                }
+            }
+            // 2. Inline code spans that are themselves an option, e.g. `--count` or `--lang en|zh`.
+            for (idx, part) in fencedParts.enumerated() where idx % 2 == 0 {
+                let spans = part.components(separatedBy: "`")
+                for (spanIdx, span) in spans.enumerated() where spanIdx % 2 == 1 && span.hasPrefix("--") {
+                    used.formUnion(options(in: String(span.prefix { !$0.isWhitespace })))
+                }
+            }
+
+            #expect(used.count >= 8, "\(readmeName): expected to find the documented options, got \(used.sorted())")
+            for option in used.sorted() {
+                #expect(helpEN.contains(option), "\(readmeName) uses \(option), which --help (en) does not list")
+                #expect(helpZH.contains(option), "\(readmeName) uses \(option), which --help (zh) does not list")
+            }
+        }
     }
 
     @Test("M0 Item 9 (G19): MachStudioViewModel starts empty on default launch and sets isDemoMode when loadDemoBinary is called")

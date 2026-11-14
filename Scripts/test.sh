@@ -8,8 +8,11 @@ usage() {
     cat >&2 <<'EOF'
 Usage:
   Scripts/test.sh scope <ModuleOrFilter...>
-  Scripts/test.sh milestone <N>
+  Scripts/test.sh milestone <N> [--record]
   Scripts/test.sh release
+
+milestone writes the acceptance logs to a temporary directory and leaves the work tree untouched.
+Pass --record to refresh the committed copies under reports/ (the README cites those numbers).
 EOF
     exit 2
 }
@@ -85,10 +88,23 @@ case "$MODE" in
         run_scope "$@"
         ;;
     milestone)
-        if [ "$#" -ne 1 ]; then
+        RECORD=0
+        MS=""
+        for arg in "$@"; do
+            case "$arg" in
+                --record) RECORD=1 ;;
+                -*) usage ;;
+                *)
+                    if [ -n "$MS" ]; then
+                        usage
+                    fi
+                    MS="$arg"
+                    ;;
+            esac
+        done
+        if [ -z "$MS" ]; then
             usage
         fi
-        MS="$1"
         case "$MS" in
             0|m0|M0)
                 echo "==> [milestone 0] Scoped unit tests for M0-touched modules"
@@ -98,16 +114,29 @@ case "$MODE" in
                     MachA64Decoder \
                     MachCFGEngine \
                     MachMicroDecompiler \
+                    MachPatchAndHexEngine \
                     MachPluginSDK \
                     MachHeadlessCLI \
                     MachStudioViews
                 echo "==> [milestone 0] Building MachGraph CLI binary"
                 swift build --product MachGraph >/dev/null
-                mkdir -p "$ROOT_DIR/reports"
-                echo "==> [milestone 0] Running Scripts/acceptance/m0-quick.sh -> reports/m0-quick.txt"
-                "$ROOT_DIR/Scripts/acceptance/m0-quick.sh" | tee "$ROOT_DIR/reports/m0-quick.txt"
-                echo "==> [milestone 0] Running Scripts/acceptance/readme-commands.sh -> reports/readme-commands.txt"
-                "$ROOT_DIR/Scripts/acceptance/readme-commands.sh" | tee "$ROOT_DIR/reports/readme-commands.txt"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m0-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                fi
+                echo "==> [milestone 0] Running Scripts/acceptance/m0-quick.sh -> $OUT_LABEL/m0-quick.txt"
+                "$ROOT_DIR/Scripts/acceptance/m0-quick.sh" | tee "$OUT_DIR/m0-quick.txt"
+                echo "==> [milestone 0] Running Scripts/acceptance/readme-commands.sh -> $OUT_LABEL/readme-commands.txt"
+                "$ROOT_DIR/Scripts/acceptance/readme-commands.sh" | tee "$OUT_DIR/readme-commands.txt"
+                if [ "$RECORD" -eq 1 ]; then
+                    echo "==> [milestone 0] Recorded logs under reports/ (commit them together with any README number change)"
+                else
+                    echo "==> [milestone 0] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
                 ;;
             *)
                 echo "Error: unsupported milestone '$MS' (only milestone 0 is implemented on m0/honest)." >&2

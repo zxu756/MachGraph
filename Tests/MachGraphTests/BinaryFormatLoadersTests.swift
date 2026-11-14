@@ -532,6 +532,170 @@ struct BinaryFormatLoadersTests {
         }
     }
 
+    // MARK: - G28: thin (single-architecture) Mach-O range checks
+
+    /// Minimal little-endian Mach-O 64 load-command walker used to corrupt one header field at a time.
+    private struct ThinMachOEditor {
+        var data: Data
+
+        private func u32(_ off: Int) -> UInt32 {
+            data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: off, as: UInt32.self) }.littleEndian
+        }
+        private func u64(_ off: Int) -> UInt64 {
+            data.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: off, as: UInt64.self) }.littleEndian
+        }
+        private mutating func setU32(_ off: Int, _ value: UInt32) {
+            withUnsafeBytes(of: value.littleEndian) { data.replaceSubrange(off..<(off + 4), with: $0) }
+        }
+        private mutating func setU64(_ off: Int, _ value: UInt64) {
+            withUnsafeBytes(of: value.littleEndian) { data.replaceSubrange(off..<(off + 8), with: $0) }
+        }
+        private func fixedName(_ off: Int) -> String {
+            String(decoding: data[off..<(off + 16)].prefix { $0 != 0 }, as: UTF8.self)
+        }
+
+        /// File offsets of every load command whose `cmd` equals `wanted`.
+        private func commandOffsets(_ wanted: UInt32) -> [Int] {
+            var found: [Int] = []
+            var off = 32
+            for _ in 0..<Int(u32(16)) {
+                if u32(off) == wanted { found.append(off) }
+                off += Int(u32(off + 4))
+            }
+            return found
+        }
+
+        private func segmentOffset(_ name: String) throws -> Int {
+            try #require(commandOffsets(0x19).first { fixedName($0 + 8) == name }, "LC_SEGMENT_64 \(name) missing")
+        }
+
+        /// Grows `LC_SEGMENT_64.filesize` without growing the file.
+        mutating func growSegmentFileSize(_ name: String, by delta: UInt64) throws {
+            let seg = try segmentOffset(name)
+            setU64(seg + 48, u64(seg + 48) + delta)
+        }
+
+        /// Sets `section_64.size` of `segment,section` without touching its segment.
+        mutating func setSectionSize(segment: String, section: String, to size: UInt64) throws {
+            let seg = try segmentOffset(segment)
+            let nsects = Int(u32(seg + 64))
+            let sect = try #require(
+                (0..<nsects).map { seg + 72 + $0 * 80 }.first { fixedName($0) == section },
+                "section \(segment),\(section) missing"
+            )
+            setU64(sect + 40, size)
+        }
+
+        /// Sets the `datasize` field of a `linkedit_data_command` (dataoff @ +8, datasize @ +12).
+        mutating func setLinkeditDataSize(command: UInt32, to size: UInt32) throws {
+            let cmd = try #require(commandOffsets(command).first, "load command 0x\(String(command, radix: 16)) missing")
+            setU32(cmd + 12, size)
+        }
+
+        /// Sets `symtab_command.strsize` (stroff @ +16, strsize @ +20).
+        mutating func setSymtabStringSize(to size: UInt32) throws {
+            let cmd = try #require(commandOffsets(0x2).first, "LC_SYMTAB missing")
+            setU32(cmd + 20, size)
+        }
+
+        /// Sets `symtab_command.nsyms` (symoff @ +8, nsyms @ +12).
+        mutating func setSymtabSymbolCount(to count: UInt32) throws {
+            let cmd = try #require(commandOffsets(0x2).first, "LC_SYMTAB missing")
+            setU32(cmd + 12, count)
+        }
+    }
+
+    @Test("G28: a thin arm64 Mach-O truncated at any length is rejected with an error instead of crashing")
+    func truncatedThinARM64MachOIsRejectedAtEveryCutPoint() throws {
+        let whole = try RepoFixtures.thinARM64SampleData()
+        #expect(UniversalBinaryDispatcher.detectFormat(data: whole) == .machO64)
+
+        // Control: the untruncated fixture is a thin arm64 image that loads cleanly.
+        let intact = try UniversalBinaryDispatcher.load(data: whole, fileName: "demo_arm64_sample")
+        #expect(intact.architecture == .arm64)
+        #expect(intact.slices.count == 1)
+        #expect(intact.segments.map(\.name) == ["__PAGEZERO", "__TEXT", "__DATA_CONST", "__LINKEDIT"])
+        let linkedit = try #require(intact.segments.last)
+        #expect(Int(linkedit.fileOffset.rawValue + linkedit.fileSize) == whole.count)
+
+        // Cut points chosen from the fixture's own layout: inside the header, the load commands, each section,
+        // segment padding, and each __LINKEDIT blob, plus the exact half and one byte short of the full file.
+        let text = try #require(intact.sections.first { $0.sectionName == "__text" })
+        let got = try #require(intact.sections.first { $0.sectionName == "__got" })
+        var cutPoints: Set<Int> = [
+            1, 3, 4, 8, 31, 32, 200,
+            Int(text.fileOffset.rawValue) - 1,
+            Int(text.fileOffset.rawValue) + 8,
+            Int(text.fileOffset.rawValue + text.size),
+            8_000,
+            Int(got.fileOffset.rawValue),
+            Int(got.fileOffset.rawValue) + 4,
+            whole.count / 2,
+            20_000,
+            Int(linkedit.fileOffset.rawValue),
+            Int(linkedit.fileOffset.rawValue) + 32,
+            whole.count - 400,
+            whole.count - 100,
+            whole.count - 1
+        ]
+        // Plus a coarse sweep so no region of the file is left untested.
+        cutPoints.formUnion(stride(from: 64, to: whole.count, by: 251))
+
+        for cut in cutPoints.sorted() {
+            #expect(cut > 0 && cut < whole.count)
+            #expect(throws: MachGraphError.self, "prefix of \(cut) / \(whole.count) bytes must be rejected") {
+                _ = try UniversalBinaryDispatcher.load(data: Data(whole.prefix(cut)), fileName: "thin_trunc_\(cut)")
+            }
+        }
+    }
+
+    @Test("G28: segment, section, and __LINKEDIT blob ranges that exceed a thin Mach-O are each rejected on their own")
+    func thinMachOSegmentSectionAndBlobRangesBeyondFileAreRejected() throws {
+        let whole = try RepoFixtures.thinARM64SampleData()
+        let beyond: UInt32 = 0x10_0000 // 1 MiB, far past the 33 KiB fixture
+
+        // 1. Only a segment range exceeds the file (all sections and blobs still fit).
+        var segmentOnly = ThinMachOEditor(data: whole)
+        try segmentOnly.growSegmentFileSize("__LINKEDIT", by: UInt64(beyond))
+        #expect(throws: MachGraphError.self, "segment filesize beyond EOF") {
+            _ = try UniversalBinaryDispatcher.load(data: segmentOnly.data, fileName: "seg_beyond_eof")
+        }
+
+        // 2. Only a section range exceeds the file (its segment still fits).
+        var sectionOnly = ThinMachOEditor(data: whole)
+        try sectionOnly.setSectionSize(segment: "__TEXT", section: "__unwind_info", to: UInt64(beyond))
+        #expect(throws: MachGraphError.self, "section size beyond EOF") {
+            _ = try UniversalBinaryDispatcher.load(data: sectionOnly.data, fileName: "sect_beyond_eof")
+        }
+
+        // 3. Only one __LINKEDIT blob exceeds the file (segments and sections still fit).
+        let linkeditDataCommands: [(name: String, cmd: UInt32)] = [
+            ("LC_FUNCTION_STARTS", 0x26),
+            ("LC_CODE_SIGNATURE", 0x1D),
+            ("LC_DYLD_CHAINED_FIXUPS", 0x8000_0034),
+            ("LC_DYLD_EXPORTS_TRIE", 0x8000_0033)
+        ]
+        for entry in linkeditDataCommands {
+            var blobOnly = ThinMachOEditor(data: whole)
+            try blobOnly.setLinkeditDataSize(command: entry.cmd, to: beyond)
+            #expect(throws: MachGraphError.self, "\(entry.name) datasize beyond EOF") {
+                _ = try UniversalBinaryDispatcher.load(data: blobOnly.data, fileName: "blob_beyond_eof")
+            }
+        }
+
+        var stringPool = ThinMachOEditor(data: whole)
+        try stringPool.setSymtabStringSize(to: beyond)
+        #expect(throws: MachGraphError.self, "LC_SYMTAB strsize beyond EOF") {
+            _ = try UniversalBinaryDispatcher.load(data: stringPool.data, fileName: "strtab_beyond_eof")
+        }
+
+        var symbolTable = ThinMachOEditor(data: whole)
+        try symbolTable.setSymtabSymbolCount(to: beyond)
+        #expect(throws: MachGraphError.self, "LC_SYMTAB nsyms beyond EOF") {
+            _ = try UniversalBinaryDispatcher.load(data: symbolTable.data, fileName: "symtab_beyond_eof")
+        }
+    }
+
     @Test("G22: ELF64 relocatable object file (ET_REL, e_type == 1) is rejected with unsupportedContainer")
     func elf64RelocatableObjectRejected() {
         var elfRel = Data(repeating: 0, count: 64)

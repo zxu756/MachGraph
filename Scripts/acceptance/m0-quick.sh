@@ -14,16 +14,25 @@ fi
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m0-quick.XXXXXX")"
 trap 'rm -rf "${TMP_DIR}"' EXIT
 
+# Every product invocation runs with a throwaway HOME so the acceptance run cannot read or write the
+# user's real preferences. `mg` is the only way this script starts the binary from bash; the Python
+# rows receive the same environment through MACHGRAPH_ISOLATED_HOME.
+export MACHGRAPH_ISOLATED_HOME="${TMP_DIR}/home"
+mkdir -p "${MACHGRAPH_ISOLATED_HOME}"
+mg() {
+    HOME="${MACHGRAPH_ISOLATED_HOME}" CFFIXED_USER_HOME="${MACHGRAPH_ISOLATED_HOME}" "${BIN}" "$@"
+}
+
 echo "=== MachGraph M0 Quick Acceptance ==="
 echo "Date (UTC): $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 echo "macOS:      $(sw_vers -productName) $(sw_vers -productVersion) ($(sw_vers -buildVersion)) $(uname -m)"
-echo "Binary:     ${BIN}"
+echo "Binary:     ${BIN#"${REPO_ROOT}/"}"
 echo ""
 
 # ------------------------------------------------------------------------------
 # Row 1: machgraph info /bin/ls --json vs otool -arch arm64e -l /bin/ls
 # ------------------------------------------------------------------------------
-"${BIN}" info /bin/ls --json > "${TMP_DIR}/ls.info.json"
+mg info /bin/ls --json > "${TMP_DIR}/ls.info.json"
 python3 - "${TMP_DIR}/ls.info.json" <<'PY'
 import json, re, subprocess, sys
 
@@ -76,68 +85,10 @@ PY
 # ------------------------------------------------------------------------------
 # Row 2: machgraph disasm /bin/ls vs xcrun llvm-objdump -d --arch=arm64e /bin/ls
 # ------------------------------------------------------------------------------
-"${BIN}" disasm /bin/ls > "${TMP_DIR}/ls.disasm.txt"
-python3 - "${TMP_DIR}/ls.disasm.txt" <<'PY'
-import collections, re, subprocess, sys
-
-disasm_path = sys.argv[1]
-objdump_out = subprocess.run(
-    ["xcrun", "llvm-objdump", "-d", "--no-show-raw-insn", "--arch=arm64e", "--section=__TEXT,__text", "/bin/ls"],
-    capture_output=True,
-    text=True,
-    check=True,
-).stdout
-
-ref = {}
-for line in objdump_out.splitlines():
-    m = re.match(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$", line)
-    if m:
-        ref[int(m.group(1), 16)] = m.group(2).lower()
-
-assert len(ref) >= 1000, f"unexpectedly small llvm-objdump reference count: {len(ref)}"
-
-mg_insns = {}
-with open(disasm_path, "r", encoding="utf-8") as fh:
-    for line in fh:
-        line = line.rstrip("\n")
-        if not line or line.startswith(";"):
-            continue
-        parts = line.split("\t")
-        if len(parts) >= 3 and parts[0].startswith("0x"):
-            mg_insns[int(parts[0], 16)] = parts[2].strip().lower()
-
-tot = 0
-ok = 0
-unk = collections.Counter()
-bad = collections.Counter()
-
-for addr, rm in ref.items():
-    assert addr in mg_insns, f"missing instruction at 0x{addr:x} in machgraph disasm output"
-    m = mg_insns[addr]
-    base = rm if rm.startswith("b.") else re.sub(r"\.\w+$", "", rm)
-    tot += 1
-    if (
-        m == base
-        or (base == "mov" and m in ("movz", "movn", "orr", "ins", "umov", "dup", "mvn", "orn"))
-        or (base == "udf" and m == ".inst")
-    ):
-        ok += 1
-    elif m == ".inst":
-        unk[base] += 1
-    else:
-        bad[(base, m)] += 1
-
-pct = 100.0 * ok / tot
-wrong_count = sum(bad.values())
-unk_count = sum(unk.values())
-print(
-    f"[PASS] Row 2: disasm /bin/ls vs llvm-objdump: total={tot} agree={ok} ({pct:.2f}%) unknown={unk_count} wrong={wrong_count}"
-    if (pct >= 99.9 and wrong_count == 0)
-    else f"[FAIL] Row 2: disasm /bin/ls vs llvm-objdump: total={tot} agree={ok} ({pct:.2f}%) unknown={unk_count} wrong={wrong_count} {bad.most_common(5)}"
-)
-assert pct >= 99.9, f"agreement {pct:.4f}% < 99.9%"
-assert wrong_count == 0, f"wrong mnemonics: {bad.most_common(8)}"
-PY
+# Normalization rules live in mnemonic-agreement.py (movz/movn -> mov, udf -> .inst, vector suffix dropped).
+python3 "${REPO_ROOT}/Scripts/acceptance/mnemonic-agreement.py" /bin/ls \
+    --arch arm64e --machgraph "${BIN}" --min-agreement 99.9 --max-wrong 0 \
+    --label "Row 2: disasm /bin/ls vs llvm-objdump"
 
 # ------------------------------------------------------------------------------
 # Helper for exit-code + empty-stdout + localized-stderr checks
@@ -149,7 +100,7 @@ check_cli_failure() {
     local out_file="${TMP_DIR}/cmd.out"
     local err_file="${TMP_DIR}/cmd.err"
     set +e
-    "${BIN}" "$@" >"${out_file}" 2>"${err_file}"
+    mg "$@" >"${out_file}" 2>"${err_file}"
     local rc=$?
     set -e
     if [[ "${expected_rc}" == "nonzero" ]]; then
@@ -207,8 +158,8 @@ check_cli_failure nonzero zh disasm /bin/ls --function nosuchfunction --lang zh
 check_cli_failure nonzero en decompile /bin/ls --function nosuchfunction --lang en
 check_cli_failure nonzero zh decompile /bin/ls --function nosuchfunction --lang zh
 
-DECOMP_EN_LINE1="$("${BIN}" decompile --demo --function demo_fnv1a32 --lang en | head -n 1)"
-DECOMP_ZH_LINE1="$("${BIN}" decompile --demo --function demo_fnv1a32 --lang zh | head -n 1)"
+DECOMP_EN_LINE1="$(mg decompile --demo --function demo_fnv1a32 --lang en | head -n 1)"
+DECOMP_ZH_LINE1="$(mg decompile --demo --function demo_fnv1a32 --lang zh | head -n 1)"
 if [[ "${DECOMP_EN_LINE1}" != "// EXPERIMENTAL:"* ]]; then
     echo "[FAIL] Expected English experimental banner on line 1, got: ${DECOMP_EN_LINE1}" >&2
     exit 1
@@ -223,12 +174,14 @@ echo "[PASS] Row 5: missing function exits non-zero with empty stdout; decompile
 # Row 6: Every subcommand listed in --help runs on /usr/bin/true without Unknown subcommand or GUI
 # ------------------------------------------------------------------------------
 python3 - "${BIN}" <<'PY'
-import subprocess, sys
+import os, subprocess, sys
 
 bin_path = sys.argv[1]
+home = os.environ["MACHGRAPH_ISOLATED_HOME"]
+env = dict(os.environ, HOME=home, CFFIXED_USER_HOME=home)
 
 def extract_subcommands(lang, header_prefix):
-    out = subprocess.run([bin_path, "--help", "--lang", lang], capture_output=True, text=True, check=True).stdout
+    out = subprocess.run([bin_path, "--help", "--lang", lang], capture_output=True, text=True, check=True, env=env).stdout
     in_sub = False
     cmds = []
     for line in out.splitlines():
@@ -254,6 +207,7 @@ for cmd in cmds_en:
         capture_output=True,
         text=True,
         timeout=5.0,
+        env=env,
     )
     combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
     assert "Unknown subcommand" not in combined and "未知子命令" not in combined, (
@@ -267,9 +221,11 @@ PY
 # Row 7: MCP mach_inspect_binary without binaryPath -> isError:true
 # ------------------------------------------------------------------------------
 python3 - "${BIN}" <<'PY'
-import json, subprocess, sys
+import json, os, subprocess, sys
 
 bin_path = sys.argv[1]
+home = os.environ["MACHGRAPH_ISOLATED_HOME"]
+env = dict(os.environ, HOME=home, CFFIXED_USER_HOME=home)
 payload = (
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n'
     '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{}}}\n'
@@ -281,6 +237,7 @@ proc = subprocess.run(
     text=True,
     timeout=5.0,
     check=True,
+    env=env,
 )
 lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
 assert len(lines) >= 2, f"expected >=2 JSON-RPC responses, got: {proc.stdout!r}"
@@ -292,7 +249,7 @@ PY
 # ------------------------------------------------------------------------------
 # Row 8: machgraph disasm /usr/bin/ssh has zero lines from __info_plist
 # ------------------------------------------------------------------------------
-"${BIN}" disasm /usr/bin/ssh > "${TMP_DIR}/ssh.disasm.txt"
+mg disasm /usr/bin/ssh > "${TMP_DIR}/ssh.disasm.txt"
 python3 - "${TMP_DIR}/ssh.disasm.txt" <<'PY'
 import re, subprocess, sys
 
@@ -349,8 +306,8 @@ echo "[PASS] Row 9: /dev/null, 0-byte file, plain text, truncated /bin/ls (8000/
 # Row 10: Semicolon-separated 4-instruction program assembles all 4 words (16 bytes)
 # ------------------------------------------------------------------------------
 cp "${REPO_ROOT}/Fixtures/demo_arm64_sample" "${TMP_DIR}/demo_copy"
-DEMO_ENTRY_HEX="$("${BIN}" info "${TMP_DIR}/demo_copy" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["entryPointHex"])')"
-PATCH_JSON="$("${BIN}" patch-asm "${TMP_DIR}/demo_copy" --address "${DEMO_ENTRY_HEX}" --asm "pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab" --force --output "${TMP_DIR}/demo_patched" --json)"
+DEMO_ENTRY_HEX="$(mg info "${TMP_DIR}/demo_copy" --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["entryPointHex"])')"
+PATCH_JSON="$(mg patch-asm "${TMP_DIR}/demo_copy" --address "${DEMO_ENTRY_HEX}" --asm "pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab" --force --output "${TMP_DIR}/demo_patched" --json)"
 python3 -c '
 import json, sys
 d = json.loads(sys.argv[1])
@@ -362,7 +319,19 @@ echo "[PASS] Row 10: semicolon-separated 4-statement A64 program assembled all 4
 # ------------------------------------------------------------------------------
 # Row 11: GUI default startup loads zero binary (verified via @MainActor ViewModel test)
 # ------------------------------------------------------------------------------
-swift test --no-parallel --skip-build --filter studioViewModelStartsEmptyOnDefaultLaunch >/dev/null
+# One test-runner start covers Row 11 and Row 15 (both are windowless unit tests; no app is launched).
+swift test --no-parallel --skip-build \
+    --filter 'studioViewModelStartsEmptyOnDefaultLaunch|desktopLaunchResolutionRejectsMistypedSubcommands' \
+    > "${TMP_DIR}/unit-rows.txt" 2>&1 || {
+    tail -n 40 "${TMP_DIR}/unit-rows.txt" >&2
+    echo "[FAIL] Row 11 / Row 15 unit tests failed" >&2
+    exit 1
+}
+grep -q 'Test run with 2 tests .* passed' "${TMP_DIR}/unit-rows.txt" || {
+    tail -n 40 "${TMP_DIR}/unit-rows.txt" >&2
+    echo "[FAIL] Row 11 / Row 15: expected exactly 2 unit tests to run and pass" >&2
+    exit 1
+}
 echo "[PASS] Row 11: MachStudioViewModel default startup loads zero binary unless file or Load Demo is requested"
 
 # ------------------------------------------------------------------------------
@@ -401,9 +370,55 @@ assert not hits, "Forbidden synthetic strings found:\n  " + "\n  ".join(hits)
 print("[PASS] Row 12: 0 matches for SyntheticAuthDemo/Synthesized/synthesizeFallback/MACHGRAPH-PRO in Sources/, README*, docs/")
 PY
 
+# ==============================================================================
+# Rework rows (flagship-acceptance/06-m0-review.md): G27, G28, G30
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Row 13 (G27): patch-asm rejects an unassemblable statement after ';' and writes no file
+# ------------------------------------------------------------------------------
+"${REPO_ROOT}/Scripts/acceptance/patch-bad-stmt.sh" "${BIN}" > "${TMP_DIR}/patch-bad-stmt.txt" || {
+    cat "${TMP_DIR}/patch-bad-stmt.txt" >&2
+    echo "[FAIL] Row 13: patch-asm accepted an unassemblable statement after ';'" >&2
+    exit 1
+}
+if [[ "$(grep -c '^ok:' "${TMP_DIR}/patch-bad-stmt.txt")" -ne 3 ]]; then
+    cat "${TMP_DIR}/patch-bad-stmt.txt" >&2
+    echo "[FAIL] Row 13: expected 3 ok lines from patch-bad-stmt.sh" >&2
+    exit 1
+fi
+echo "[PASS] Row 13 (G27): patch-asm exits non-zero and writes no file for 3 inputs with an unassemblable statement after ';'"
+
+# ------------------------------------------------------------------------------
+# Row 14 (G28): a truncated thin (single-architecture) arm64 Mach-O is an error with exit code 1, never a crash
+# ------------------------------------------------------------------------------
+THIN_SIZE="$(wc -c < "${REPO_ROOT}/Fixtures/demo_arm64_sample" | tr -d ' ')"
+THIN_CUTS=""
+for cut in 200 1200 8000 "$((THIN_SIZE / 2))" 20000 "$((THIN_SIZE - 400))" "$((THIN_SIZE - 1))"; do
+    head -c "${cut}" "${REPO_ROOT}/Fixtures/demo_arm64_sample" > "${TMP_DIR}/thin_trunc_${cut}"
+    for sub in info disasm; do
+        check_cli_failure 1 en "${sub}" "${TMP_DIR}/thin_trunc_${cut}" --lang en
+        check_cli_failure 1 zh "${sub}" "${TMP_DIR}/thin_trunc_${cut}" --lang zh
+    done
+    THIN_CUTS="${THIN_CUTS} ${cut}"
+done
+echo "[PASS] Row 14 (G28): thin arm64 Mach-O (${THIN_SIZE} B) truncated to${THIN_CUTS} B: info and disasm exit 1 with empty stdout (EN + ZH)"
+
+# ------------------------------------------------------------------------------
+# Row 15 (G30): a mistyped subcommand is a usage error naming the subcommand.
+# Verified through the launch-resolution unit test only: an acceptance script must never start the
+# binary with arguments that are not a known subcommand, because that path leads to the desktop app.
+# ------------------------------------------------------------------------------
+# (The unit test itself ran together with Row 11 above.)
+grep -q 'mistyped subcommand.*passed' "${TMP_DIR}/unit-rows.txt" || {
+    echo "[FAIL] Row 15: the G30 launch-resolution unit test did not report a pass" >&2
+    exit 1
+}
+echo "[PASS] Row 15 (G30): launch resolution reports a mistyped subcommand as 'Unknown subcommand' (usage error, exit code 2) in EN + ZH"
+
 END_NS="$(python3 -c 'import time; print(time.time_ns())')"
 ELAPSED_S="$(python3 -c "print(f'{(${END_NS} - ${START_NS}) / 1e9:.2f}')")"
 python3 -c "import sys; elapsed=float('${ELAPSED_S}'); assert elapsed < 10.0, f'm0-quick.sh exceeded 10s budget: {elapsed:.2f}s'"
 
 echo ""
-echo "=== ALL 12 M0 ACCEPTANCE CHECKS PASSED in ${ELAPSED_S}s (< 10.00s budget) ==="
+echo "=== ALL 12 M0 ACCEPTANCE CHECKS AND 3 REWORK CHECKS PASSED in ${ELAPSED_S}s (< 10.00s budget) ==="

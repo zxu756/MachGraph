@@ -803,8 +803,8 @@ public struct MachWorkbenchRootView: View {
 
                     TextField(
                         localizer.L(
-                            "Optional C prototype override (e.g. bool verify_license(uint64_t token))",
-                            "可选 C 函数原型覆写 (例如 bool verify_license(uint64_t token))"
+                            "Optional C prototype override (e.g. int parse_header(const uint8_t *buf, size_t len))",
+                            "可选 C 函数原型覆写 (例如 int parse_header(const uint8_t *buf, size_t len))"
                         ),
                         text: $viewModel.pendingRenameSignature
                     )

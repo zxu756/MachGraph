@@ -499,6 +499,22 @@ public struct A64MiniAssembler: Sendable {
             }
         }
 
+        // Zero-operand instructions must not carry operands. Accepting and ignoring them would silently
+        // discard whatever the caller wrote after the mnemonic (e.g. "nop extra words here").
+        switch mnemonic {
+        case "nop", "yield", "wfe", "wfi", "sev", "sevl", "xpaclri",
+             "paciasp", "pacibsp", "autiasp", "autibsp", "retaa", "retab":
+            guard operands.isEmpty else {
+                throw err(line, src, "\(mnemonic) takes no operands, got '\(operands.joined(separator: ", "))'")
+            }
+        case "bti", "clrex", "isb":
+            guard operands.count <= 1 else {
+                throw err(line, src, "\(mnemonic) takes at most 1 operand, got '\(operands.joined(separator: ", "))'")
+            }
+        default:
+            break
+        }
+
         switch mnemonic {
         // Zero-operand Hints & PAC Hints
         case "nop":     return 0xD503_201F

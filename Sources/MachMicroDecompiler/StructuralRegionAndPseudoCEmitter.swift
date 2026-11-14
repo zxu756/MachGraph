@@ -2182,7 +2182,7 @@ public struct PseudoCCodeFormatter: Sendable {
         if knownVariables.contains(word) {
             return false
         }
-        // Check if followed by ` *` (e.g., `MGAuthController *self`)
+        // Check if followed by ` *` (e.g., `NSObject *self`)
         var scan = wordEnd
         while scan < chars.count && chars[scan] == " " {
             scan += 1

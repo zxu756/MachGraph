@@ -6,7 +6,7 @@
 
 > **可复现基线（`2026-11-14`，`macOS 27.0.1 (26A434) arm64`，原始记录见 [`reports/m0-quick.txt`](reports/m0-quick.txt)）：**
 > Mach-O 容器解析、dyld 链式修正、内嵌代码签名哈希计算与 ARM64 指令解码均由纯 Swift 在进程内完成，默认分析路径不调用 `otool`、`llvm-objdump`、`nm` 或 `codesign` 等外部命令。
-> - **`/bin/ls`（`arm64e` 切片）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令与 `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` 对照（经标准 ARM64 别名归一：`movz`/`movn`/`orr` 归为 `mov`，`udf` 归为 `.inst`），助记符一致数为 **`3,845 / 3,846`（`99.97%`）**，**判错 `0` 条**，未识别指令 `1` 条（输出 `.inst`）。
+> - **`/bin/ls`（`arm64e` 切片）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令与 `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` 对照，**助记符归一之后**的一致数为 **`3,845 / 3,846`（`99.97%`）**，**判错 `0` 条**，未识别指令 `1` 条（输出 `.inst`）。归一只有三条规则，由 [`Scripts/acceptance/mnemonic-agreement.py`](Scripts/acceptance/mnemonic-agreement.py) 执行：`movz`/`movn` 算作 `mov`，`udf` 算作 `.inst`，参考助记符上的向量排列后缀去掉。不比较操作数。
 > - **`/usr/bin/ssh`（`arm64e` 切片）：** 仅对带指令属性的节（`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`）解码出 **`115,546` 条指令**，非指令数据节（如 `__TEXT,__info_plist`）输出为 **`0` 行**。
 > - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）。跨系统二进制大语料（`standard` / `full`）的自动化对照脚本排在里程碑 `M1`。
 
@@ -17,9 +17,9 @@
 | 领域 | 子命令 | `M0` 已验证范围 |
 |---|---|---|
 | **Universal 与 Mach-O 64 容器解析** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN` 与动态库依赖（支持文本与 `--json`）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
-| **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），计算节香农熵（`entropy`），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
+| **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），输出整个文件的一个香农熵数值，以及字节卡方值、零字节占比、1024 字节滑动窗口的个数与异常数（`entropy`；不输出各节的熵），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
 | **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤，查询调用/跳转/数据交叉引用（`xrefs`），导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
-| **内联 ARM64 微型汇编与临时重签名** | `patch-asm`、`resign` | 支持分号分隔的多条 ARM64 汇编语句（如 `pacibsp; stp ...; mov ...; retab`）逐条编码写入副本，并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。 |
+| **内联 ARM64 微型汇编与临时重签名** | `patch-asm`、`resign` | 支持分号分隔的多条 ARM64 汇编语句（如 `pacibsp; stp ...; mov ...; retab`）逐条编码写入副本，并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。`;` 只是语句分隔符（注释用 `//`）：只要有一条语句汇编不了，`patch-asm` 就以非零退出码报错，不写出文件。补丁内部盖住跳转目标、函数起点、符号或 PAC/BTI 落点时默认拒绝写入，加 `--force` 可跳过这项安全检查。 |
 | **中英双语命令行、HTML 报告与 MCP 服务端** | `export-html`、`mcp` | 支持 `--lang zh|en` 与 `MACHGRAPH_LANG=zh|en`（简体中文环境自动默认中文），导出单文件离线双语（`中文 \| EN`）HTML 分诊报告（`export-html`），并提供基于 `stdio` 的 JSON-RPC 2.0 MCP 服务端（`mcp`，所有工具调用均要求显式传入 `binaryPath`）。 |
 
 ---
@@ -32,7 +32,7 @@ swift build --product MachGraph
 ./Scripts/acceptance/readme-commands.sh
 ```
 
-统一测试入口（`Scripts/test.sh`）：
+统一测试入口（`Scripts/test.sh`）。`milestone 0` 把日志写到临时目录，不改动工作区；要更新仓库里 `reports/` 下的记录，用 `./Scripts/test.sh milestone 0 --record`：
 
 ```bash
 ./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachHeadlessCLI
@@ -82,11 +82,11 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"
 ```
 
 ### 语言解析优先级
-`MachGraph` 按以下确定性顺序解析界面与命令行语言（桌面端运行中可按 **`⇧⌘L`** 或点击顶部 **`中文 | EN`** 切换）：
-1. 命令行参数：`--lang zh` / `--lang en`
+`MachGraph` 按以下固定顺序确定输出语言：
+1. 命令行选项：`--lang zh` / `--lang en`
 2. 环境变量：`MACHGRAPH_LANG=zh` / `MACHGRAPH_LANG=en`
 3. 用户偏好：`UserDefaults`（`io.github.zxu756.MachGraph.language`）
-4. 系统首选语言：`Locale.preferredLanguages.first` 以 `"zh"` 开头时默认简体中文，否则默认英文
+4. 系统首选语言：`Locale.preferredLanguages.first` 以 `"zh"` 开头时用简体中文，否则用英文
 
 ---
 

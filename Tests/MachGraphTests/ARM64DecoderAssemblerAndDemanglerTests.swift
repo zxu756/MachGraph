@@ -382,6 +382,30 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         }
     }
 
+    @Test("G27: zero-operand instructions and single-option hints reject surplus operands instead of ignoring them")
+    func miniAssemblerRejectsSurplusOperandsInsteadOfIgnoringThem() throws {
+        // Operand-less forms keep assembling to the reference encodings (clang -arch arm64e).
+        #expect(try assembler.assembleSingle("nop") == 0xD503_201F)
+        #expect(try assembler.assembleSingle("retab") == 0xD65F_0FFF)
+        #expect(try assembler.assembleSingle("bti c") == 0xD503_245F)
+        #expect(try assembler.assembleSingle("isb") == 0xD503_3FDF)
+        #expect(try assembler.assembleSingle("clrex") == 0xD503_3F5F)
+
+        let surplus = [
+            "nop extra words here", "nop x0", "yield now", "wfe x1", "wfi 1", "sev x0", "sevl x0",
+            "xpaclri x30", "paciasp x0", "pacibsp sp", "autiasp x0", "autibsp x0", "retaa x30", "retab x30",
+            "bti c, j", "clrex #1, #2", "isb sy, sy"
+        ]
+        for source in surplus {
+            #expect(throws: MachGraphError.self, "assembleSingle must reject \(source.debugDescription)") {
+                _ = try assembler.assembleSingle(source)
+            }
+            #expect(throws: MachGraphError.self, "assembleProgram must reject \(source.debugDescription)") {
+                _ = try assembler.assembleProgram("nop; \(source)")
+            }
+        }
+    }
+
     @Test("A64IdiomRecognizer resolves ADRP+ADD pointer materialization and ADRP+LDR GOT loads")
     func idiomRecognizerResolvesADRPAddAndADRPLoadPairs() throws {
         let base = VirtualAddress(0x1_0000_1018)

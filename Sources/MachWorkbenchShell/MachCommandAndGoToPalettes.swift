@@ -683,8 +683,8 @@ public struct MachCommandPaletteOverlayView: View {
                             .foregroundStyle(ColdTungstenPalette.coolPewter)
                         Text(
                             localizer.L(
-                                "Tip: Press G to evaluate hex address offsets such as +0x400 or _verify_license+0x14",
-                                "提示: 按 G 键可直接计算十六进制地址偏移 (例如 +0x400 或 _verify_license+0x14)"
+                                "Tip: Press G to evaluate hex address offsets such as +0x400 or _main+0x14",
+                                "提示: 按 G 键可直接计算十六进制地址偏移 (例如 +0x400 或 _main+0x14)"
                             )
                         )
                             .font(ColdTungstenTypography.secondaryCaption)
@@ -914,8 +914,8 @@ public struct MachGoToAddressModalView: View {
 
                         TextField(
                             localizer.L(
-                                "0x100001000, +0x400, off:0x1000, or _verify_license+0x14",
-                                "0x100001000、+0x400、off:0x1000 或 _verify_license+0x14"
+                                "0x100001000, +0x400, off:0x1000, or _main+0x14",
+                                "0x100001000、+0x400、off:0x1000 或 _main+0x14"
                             ),
                             text: $expressionText
                         )

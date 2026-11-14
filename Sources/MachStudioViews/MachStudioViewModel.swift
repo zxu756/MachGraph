@@ -462,11 +462,7 @@ public final class MachStudioViewModel: ObservableObject {
         runSecurityAuditSuite(emitToast: false)
         refreshDatabaseAnnotationsAndStats()
 
-        let preferredFn = index.function(named: "_main")
-            ?? index.functions.first(where: { !$0.isThunk && $0.blocks.count >= 2 })
-            ?? index.functions.first
-
-        if let preferredFn {
+        if let preferredFn = preferredFocusFunction {
             cursorBus.selectFunction(preferredFn, in: image, originPane: cursorBus.activePane)
             patchTargetAddressText = preferredFn.address.compactHexString
             inlineAssemblyInput = preferredFn.usesPAC ? "paciasp; mov w0, #1; retaa" : "mov w0, #1; ret"
@@ -1332,6 +1328,15 @@ public final class MachStudioViewModel: ObservableObject {
 
     // MARK: - Deterministic Retina Screenshot Scene Presets
 
+    /// The function a freshly loaded image (and each screenshot layout) focuses on: `_main` when the image
+    /// has one, otherwise the first non-trivial recovered function. Derived from the loaded image only.
+    private var preferredFocusFunction: RecoveredFunction? {
+        guard let index = analysisIndex else { return functions.first }
+        return index.function(named: "_main")
+            ?? index.functions.first(where: { !$0.isThunk && $0.blocks.count >= 2 })
+            ?? index.functions.first
+    }
+
     public func configureForCFGCanvasScreenshot() {
         toastController.dismissAll()
         isGoToModalPresented = false
@@ -1348,8 +1353,8 @@ public final class MachStudioViewModel: ObservableObject {
         drawerState.activeChannel = .xrefsAtCursor
         drawerState.drawerHeight = 148.0
 
-        if let verifyFn = analysisIndex?.function(named: "_verify_license") ?? functions.first {
-            cursorBus.selectFunction(verifyFn, in: loadedImage, originPane: .cfgGraph)
+        if let focusFn = preferredFocusFunction {
+            cursorBus.selectFunction(focusFn, in: loadedImage, originPane: .cfgGraph)
         }
     }
 
@@ -1358,8 +1363,8 @@ public final class MachStudioViewModel: ObservableObject {
         paletteController.closePalette()
         isGoToModalPresented = false
 
-        if let verifyFn = analysisIndex?.function(named: "_verify_license") ?? functions.first {
-            cursorBus.selectFunction(verifyFn, in: loadedImage, originPane: .disassembly)
+        if let focusFn = preferredFocusFunction {
+            cursorBus.selectFunction(focusFn, in: loadedImage, originPane: .disassembly)
         }
         cursorBus.enableSideBySideSplit(primary: .disassembly, secondary: .pseudoC)
         showRightContextualInspector = false
@@ -1382,13 +1387,13 @@ public final class MachStudioViewModel: ObservableObject {
         drawerState.activeChannel = .undoRedoJournal
         drawerState.drawerHeight = 142.0
 
-        if let verifyFn = analysisIndex?.function(named: "_verify_license"),
-           let off = loadedImage?.fileOffset(for: verifyFn.address) {
-            cursorBus.jump(toAddress: verifyFn.address, in: loadedImage, functions: functions, switchToPane: .hexPatcher)
+        if let focusFn = preferredFocusFunction,
+           let off = loadedImage?.fileOffset(for: focusFn.address) {
+            cursorBus.jump(toAddress: focusFn.address, in: loadedImage, functions: functions, switchToPane: .hexPatcher)
             selectedHexByteOffset = off
             hexScrollOffset = FileOffset((off.rawValue / 16) * 16)
-            patchTargetAddressText = verifyFn.address.compactHexString
-            inlineAssemblyInput = "paciasp; mov w0, #1; retaa"
+            patchTargetAddressText = focusFn.address.compactHexString
+            inlineAssemblyInput = focusFn.usesPAC ? "paciasp; mov w0, #1; retaa" : "mov w0, #1; ret"
             recomputeLivePatchPreview()
         }
     }

@@ -6,7 +6,7 @@ Pure-Swift ARM64/ARM64e disassembler, inline mini-assembler, and Universal/Mach-
 
 > **Reproducible Baseline (`2026-11-14`, `macOS 27.0.1 (26A434) arm64`, logged in [`reports/m0-quick.txt`](reports/m0-quick.txt)):**
 > Mach-O container parsing, dyld chained fixups, embedded code-signature hashing, and ARM64 instruction decoding run natively in Swift without invoking `otool`, `llvm-objdump`, `nm`, or `codesign`.
-> - **`/bin/ls` (`arm64e` slice):** `5` segments and `11` sections match `otool -arch arm64e -l /bin/ls` item-for-item (`vmaddr`, `vmsize`, `fileoff`, `filesize`, `addr`, `size`, `offset`); across all `3,846` instructions in `__TEXT,__text`, mnemonic agreement with `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` (with standard ARM64 alias normalization: `movz`/`movn`/`orr` -> `mov`, `udf` -> `.inst`) is **`3,845 / 3,846` (`99.97%`)**, with **`0` wrong mnemonics** and `1` unrecognized word (`.inst`).
+> - **`/bin/ls` (`arm64e` slice):** `5` segments and `11` sections match `otool -arch arm64e -l /bin/ls` item-for-item (`vmaddr`, `vmsize`, `fileoff`, `filesize`, `addr`, `size`, `offset`); across all `3,846` instructions in `__TEXT,__text`, mnemonic agreement with `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` **after mnemonic normalization** is **`3,845 / 3,846` (`99.97%`)**, with **`0` wrong mnemonics** and `1` unrecognized word (`.inst`). The normalization is exactly three rules, applied by [`Scripts/acceptance/mnemonic-agreement.py`](Scripts/acceptance/mnemonic-agreement.py): `movz`/`movn` count as `mov`, `udf` counts as `.inst`, and a vector arrangement suffix on the reference mnemonic is dropped. Operands are not compared.
 > - **`/usr/bin/ssh` (`arm64e` slice):** **`115,546` instructions** decoded strictly from instruction-attributed sections (`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`), with **`0` lines** decoded from non-instruction data sections such as `__TEXT,__info_plist`.
 > - **Reproduce on any Apple Silicon Mac:** `./Scripts/test.sh milestone 0` (or `./Scripts/acceptance/m0-quick.sh`). Full multi-binary corpus differential benchmarking (`standard` / `full`) is scheduled for Milestone `M1`.
 
@@ -17,9 +17,9 @@ Pure-Swift ARM64/ARM64e disassembler, inline mini-assembler, and Universal/Mach-
 | Area | Subcommands | What Is Verified in `M0` |
 |---|---|---|
 | **Universal & Mach-O 64 Container Parsing** | `info`, `segments` | Parses Fat/Fat64 slices, `mach_header_64`, `LC_SEGMENT_64` segments/sections, `LC_UUID`, `LC_BUILD_VERSION`, `LC_MAIN`, and imported dylibs (`--json` & text). Rejects empty files, plain text, truncated Mach-O slices, and unsupported ELF `ET_REL` relocatable object files with non-zero exit codes. |
-| **Chained Fixups, Symbols, Strings & CodeSign** | `fixups`, `symbols`, `strings`, `codesign`, `entropy` | Parses `LC_DYLD_CHAINED_FIXUPS` binds/rebases (`fixups`), separates `LC_SYMTAB` symbols from `[inferred:...]` `LC_FUNCTION_STARTS` / `LC_DYSYMTAB` stub entries (`symbols`), scans printable strings (`strings`), computes section Shannon entropy (`entropy`), and verifies embedded `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` & CDHash (`codesign`). |
+| **Chained Fixups, Symbols, Strings & CodeSign** | `fixups`, `symbols`, `strings`, `codesign`, `entropy` | Parses `LC_DYLD_CHAINED_FIXUPS` binds/rebases (`fixups`), separates `LC_SYMTAB` symbols from `[inferred:...]` `LC_FUNCTION_STARTS` / `LC_DYSYMTAB` stub entries (`symbols`), scans printable strings (`strings`), prints one Shannon entropy figure for the whole file together with its byte chi-square, zero-byte ratio, and the number of 1024-byte sliding windows and anomalies (`entropy`; per-section entropy is not printed), and verifies embedded `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` & CDHash (`codesign`). |
 | **ARM64 / ARM64e Disassembly & Xrefs** | `disasm`, `xrefs`, `cfg-dot` | Disassembles only sections carrying `S_ATTR_PURE_INSTRUCTIONS` or `S_ATTR_SOME_INSTRUCTIONS`, supports `--symbol` / `--function`, `--address`, and `--count`, queries resolved call/branch/data cross-references (`xrefs`), and exports Graphviz DOT control-flow graphs (`cfg-dot`). Missing targets fail with exit code `1` and empty `stdout`. |
-| **Inline ARM64 Mini-Assembler & Ad-Hoc Re-Signing** | `patch-asm`, `resign` | Assembles semicolon-separated ARM64 instruction sequences (`pacibsp; stp ...; mov ...; retab`) into machine words, writes a patched Mach-O copy, and refreshes the ad-hoc `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory`. |
+| **Inline ARM64 Mini-Assembler & Ad-Hoc Re-Signing** | `patch-asm`, `resign` | Assembles semicolon-separated ARM64 instruction sequences (`pacibsp; stp ...; mov ...; retab`) into machine words, writes a patched Mach-O copy, and refreshes the ad-hoc `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory`. `;` only separates statements (`//` starts a comment): if any statement cannot be assembled, `patch-asm` exits non-zero and writes no output file. `--force` overrides the safety check that otherwise refuses a patch whose interior covers a branch target, function start, symbol, or PAC/BTI landing pad. |
 | **Bilingual CLI, HTML Dossier & MCP Server** | `export-html`, `mcp` | Supports `--lang en|zh` and `MACHGRAPH_LANG=en|zh`, exports standalone bilingual (`中文 \| EN`) HTML binary triage reports (`export-html`), and serves JSON-RPC 2.0 MCP requests over `stdio` (`mcp`), requiring an explicit `binaryPath` on every tool call. |
 
 ---
@@ -32,7 +32,7 @@ swift build --product MachGraph
 ./Scripts/acceptance/readme-commands.sh
 ```
 
-Unified test runner (`Scripts/test.sh`):
+Unified test runner (`Scripts/test.sh`). `milestone 0` keeps its logs in a temporary directory and leaves the work tree untouched; `./Scripts/test.sh milestone 0 --record` refreshes the committed copies under `reports/`:
 
 ```bash
 ./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachHeadlessCLI
@@ -80,6 +80,13 @@ rm -f /tmp/machgraph_ls_triage.html
 printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{"binaryPath":"/bin/ls"}}}\n' \
   | .build/debug/MachGraph mcp
 ```
+
+### Language Resolution Order
+`MachGraph` resolves the output language in this fixed order:
+1. Command-line option: `--lang zh` / `--lang en`
+2. Environment variable: `MACHGRAPH_LANG=zh` / `MACHGRAPH_LANG=en`
+3. User preference: `UserDefaults` (`io.github.zxu756.MachGraph.language`)
+4. System preferred language: Simplified Chinese when `Locale.preferredLanguages.first` starts with `"zh"`, otherwise English
 
 ---
 

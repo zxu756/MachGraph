@@ -48,10 +48,8 @@ struct MachGraphApplication {
 
         // 2. Headless Reverse-Engineering CLI & Stdio MCP JSON-RPC Server (single-source dispatch via MachCLIRunner)
         let errPrefix = activeLanguage.select("MachGraph error:", "MachGraph 错误:")
-        let argsWithoutLang: [String]
         do {
             _ = try MachCLIRunner.validateAndResolveLanguage(from: userArgs)
-            argsWithoutLang = MachCLIRunner.stripLanguageFlags(userArgs)
         } catch let mgErr as MachGraphError {
             FileHandle.standardError.write(Data("\(errPrefix) \(mgErr.localizedMessage(in: activeLanguage))\n".utf8))
             Foundation.exit(2)
@@ -68,45 +66,32 @@ struct MachGraphApplication {
                     print(output)
                 }
                 Foundation.exit(0)
-            } catch let mgErr as MachGraphError {
-                let resolvedLang = (try? MachCLIRunner.validateAndResolveLanguage(from: userArgs)) ?? activeLanguage
-                let prefix = resolvedLang.select("MachGraph error:", "MachGraph 错误:")
-                FileHandle.standardError.write(Data("\(prefix) \(mgErr.localizedMessage(in: resolvedLang))\n".utf8))
-                if case .invalidCLIArguments = mgErr {
-                    Foundation.exit(2)
-                }
-                Foundation.exit(1)
             } catch {
-                let resolvedLang = (try? MachCLIRunner.validateAndResolveLanguage(from: userArgs)) ?? activeLanguage
-                let prefix = resolvedLang.select("MachGraph error:", "MachGraph 错误:")
-                FileHandle.standardError.write(Data("\(prefix) \(error.localizedDescription)\n".utf8))
-                Foundation.exit(1)
+                failAndExit(error, arguments: userArgs, fallbackLanguage: activeLanguage)
             }
         }
 
-        // Reject unrecognized top-level CLI flags instead of silently opening an empty window
-        for arg in argsWithoutLang where arg.hasPrefix("-") && arg != "--binary" && arg != "--demo" {
-            let msg = activeLanguage.select(
-                "Unknown option '\(arg)'. Run 'machgraph --help' for usage.\n",
-                "不支持的选项 '\(arg)'。请运行 'machgraph --help' 查看用法。\n"
-            )
-            FileHandle.standardError.write(Data(msg.utf8))
-            Foundation.exit(2)
-        }
-
-        // 3. Interactive macOS Cold Tungsten Desktop Workbench (starts empty unless <file>, --binary, or --demo is passed)
-        let loadDemo = argsWithoutLang.contains("--demo")
-        let initialBinaryURL: URL?
+        // 3. Interactive macOS Cold Tungsten Desktop Workbench (starts empty unless <file>, --binary, or --demo is passed).
+        //    `resolveDesktopLaunchRequest` rejects unknown options and mistyped subcommands (exit 2) before any window exists.
+        let request: MachDesktopLaunchRequest
         do {
-            initialBinaryURL = try resolveInitialBinaryURL(from: argsWithoutLang, language: activeLanguage)
-        } catch let mgErr as MachGraphError {
-            FileHandle.standardError.write(Data("MachGraph error: \(mgErr.localizedMessage(in: activeLanguage))\n".utf8))
-            Foundation.exit(1)
+            request = try MachCLIRunner.resolveDesktopLaunchRequest(arguments: userArgs, language: activeLanguage)
         } catch {
-            FileHandle.standardError.write(Data("MachGraph error: \(error.localizedDescription)\n".utf8))
-            Foundation.exit(1)
+            failAndExit(error, arguments: userArgs, fallbackLanguage: activeLanguage)
         }
-        launchDesktopWorkbench(initialBinaryURL: initialBinaryURL, loadDemo: loadDemo)
+        launchDesktopWorkbench(
+            initialBinaryURL: request.binaryPath.map { URL(fileURLWithPath: $0) },
+            loadDemo: request.loadDemo
+        )
+    }
+
+    /// Prints a localized one-line error to stderr and exits with 2 (usage error) or 1 (anything else).
+    private static func failAndExit(_ error: Error, arguments: [String], fallbackLanguage: MachLanguage) -> Never {
+        let resolvedLang = (try? MachCLIRunner.validateAndResolveLanguage(from: arguments)) ?? fallbackLanguage
+        let prefix = resolvedLang.select("MachGraph error:", "MachGraph 错误:")
+        let message = (error as? MachGraphError)?.localizedMessage(in: resolvedLang) ?? error.localizedDescription
+        FileHandle.standardError.write(Data("\(prefix) \(message)\n".utf8))
+        Foundation.exit(MachCLIRunner.exitCode(for: error))
     }
 
     private static func stripAppleSystemLaunchArguments(_ args: [String]) -> [String] {
@@ -130,31 +115,6 @@ struct MachGraphApplication {
             index += 1
         }
         return cleaned
-    }
-
-    private static func resolveInitialBinaryURL(from args: [String], language: MachLanguage) throws -> URL? {
-        if let binFlagIndex = args.firstIndex(of: "--binary") {
-            guard args.indices.contains(binFlagIndex + 1) else {
-                throw MachGraphError.invalidCLIArguments(
-                    language.select("Option '--binary' requires a file path.", "选项 '--binary' 需要提供文件路径。")
-                )
-            }
-            let rawPath = args[binFlagIndex + 1]
-            let candidate = URL(fileURLWithPath: rawPath)
-            guard FileManager.default.fileExists(atPath: candidate.path) else {
-                throw MachGraphError.fileNotFound(rawPath)
-            }
-            return candidate
-        }
-        let nonFlags = args.filter { !$0.hasPrefix("-") }
-        if let first = nonFlags.first {
-            let candidate = URL(fileURLWithPath: first)
-            guard FileManager.default.fileExists(atPath: candidate.path) else {
-                throw MachGraphError.fileNotFound(first)
-            }
-            return candidate
-        }
-        return nil
     }
 
     private static func launchDesktopWorkbench(initialBinaryURL: URL?, loadDemo: Bool) {

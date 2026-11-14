@@ -1008,8 +1008,12 @@ public struct InlineARM64InstructionPatcher: Sendable {
         return { addr in frozenTable[addr] }
     }
 
-    /// Normalizes semicolon-separated inline ARM64 assembly (e.g. `"MOV w0, #1; RET"`) into clean multi-line statements
-    /// while preserving `; comment` annotations and resolving `LoadedBinaryImage` symbol references to hex addresses.
+    /// Normalizes semicolon-separated inline ARM64 assembly (e.g. `"MOV w0, #1; RET"`) into one statement per line
+    /// and resolves `LoadedBinaryImage` symbol references to hex addresses.
+    ///
+    /// `;` is strictly a statement separator: every non-empty piece between separators is handed to the assembler,
+    /// which rejects anything it cannot encode. Nothing after a `;` is ever treated as a comment and dropped.
+    /// Use `//` for line comments.
     internal static func normalizeInlineAssembly(_ rawSource: String, image: LoadedBinaryImage?) -> String {
         var rawStatements: [String] = []
 
@@ -1032,14 +1036,8 @@ public struct InlineARM64InstructionPatcher: Sendable {
             let pieces = withoutSlashComment.split(separator: ";", omittingEmptySubsequences: false).map {
                 String($0).trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            for (pieceIdx, piece) in pieces.enumerated() {
-                if piece.isEmpty { continue }
-                if pieceIdx == 0 || looksLikeARM64Statement(piece) {
-                    rawStatements.append(piece)
-                } else {
-                    // Remainder after `;` is a human comment rather than an instruction; stop parsing this line.
-                    break
-                }
+            for piece in pieces where !piece.isEmpty {
+                rawStatements.append(piece)
             }
         }
 
@@ -1080,32 +1078,6 @@ public struct InlineARM64InstructionPatcher: Sendable {
             substituteImageSymbols(in: stmt, symbolMap: symbolMap, localLabels: localLabels)
         }
         return resolvedLines.joined(separator: "\n")
-    }
-
-    private static func looksLikeARM64Statement(_ candidate: String) -> Bool {
-        var text = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
-        while let colonIdx = text.firstIndex(of: ":") {
-            let lbl = String(text[..<colonIdx]).trimmingCharacters(in: .whitespaces)
-            guard !lbl.isEmpty, lbl.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." || $0 == "$" }) else {
-                break
-            }
-            text = String(text[text.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
-            if text.isEmpty { return true }
-        }
-
-        guard let firstWord = text.split(whereSeparator: \.isWhitespace).first?.lowercased() else {
-            return false
-        }
-        if firstWord.hasPrefix(".") {
-            return [".word", ".inst", ".long", ".quad", ".8byte", ".p2align", ".align", ".global", ".globl", ".text"].contains(firstWord)
-        }
-        if firstWord.hasPrefix("b.") && firstWord.count == 4 {
-            return A64ConditionCode.from(text: String(firstWord.dropFirst(2))) != nil
-        }
-        if firstWord.count == 3 && firstWord.hasPrefix("b") && A64ConditionCode.from(text: String(firstWord.dropFirst())) != nil {
-            return true
-        }
-        return knownAssemblerMnemonics.contains(firstWord)
     }
 
     private static func substituteImageSymbols(
@@ -1270,34 +1242,4 @@ public struct InlineARM64InstructionPatcher: Sendable {
             UInt8(truncatingIfNeeded: word >> 24)
         ]
     }
-
-    private static let knownAssemblerMnemonics: Set<String> = [
-        "nop", "yield", "wfe", "wfi", "sev", "sevl", "xpaclri",
-        "paciasp", "pacibsp", "autiasp", "autibsp", "retaa", "retab",
-        "bti", "clrex", "dmb", "dsb", "isb", "mrs", "msr",
-        "ret", "br", "blr", "braaz", "brabz", "blraaz", "blrabz",
-        "braa", "brab", "blraa", "blrab", "paciza", "pacizb", "autiza", "autizb", "xpaci", "xpacd",
-        "svc", "hvc", "smc", "brk", "hlt",
-        "b", "bl", "cbz", "cbnz", "tbz", "tbnz", "adr", "adrp",
-        "mov", "movz", "movn", "movk",
-        "add", "adds", "sub", "subs", "cmp", "cmn", "neg", "negs",
-        "adc", "adcs", "sbc", "sbcs", "ngc", "ngcs",
-        "and", "ands", "orr", "orn", "eor", "eon", "bic", "bics", "tst", "mvn",
-        "lsl", "lsr", "asr", "ror",
-        "ubfm", "sbfm", "bfm", "ubfx", "sbfx", "ubfiz", "sbfiz", "bfi", "bfxil", "extr",
-        "sxtb", "sxth", "sxtw", "uxtb", "uxth",
-        "rbit", "rev16", "rev32", "rev", "clz", "cls",
-        "mul", "mneg", "madd", "msub", "smull", "smaddl", "smsubl", "smulh",
-        "umull", "umaddl", "umsubl", "umulh", "udiv", "sdiv",
-        "csel", "csinc", "csinv", "csneg", "cset", "csetm", "cinc", "cinv", "cneg", "ccmp", "ccmn",
-        "ldr", "ldrb", "ldrh", "ldrsb", "ldrsh", "ldrsw",
-        "ldur", "ldurb", "ldurh", "ldursb", "ldursh", "ldursw",
-        "str", "strb", "strh", "stur", "sturb", "sturh",
-        "ldp", "ldpsw", "ldnp", "stp", "stnp",
-        "ldxr", "ldaxr", "ldar", "ldarb", "ldarh", "stxr", "stlxr", "stlr", "stlrb", "stlrh",
-        "cas", "casa", "casal", "casl", "swp", "swpa", "swpal", "swpl", "ldadd", "ldadda", "ldaddal", "ldaddl",
-        "fmov", "fadd", "fsub", "fmul", "fdiv", "fnmul", "fmadd", "fmsub",
-        "fabs", "fneg", "fsqrt", "fmin", "fmax", "fcmp", "fcmpe", "fccmp", "fcsel",
-        "fcvt", "scvtf", "ucvtf", "fcvtzs", "fcvtzu", "movi", "dup", "addv", "cmeq"
-    ]
 }

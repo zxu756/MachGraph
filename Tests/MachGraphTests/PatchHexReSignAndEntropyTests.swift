@@ -298,6 +298,65 @@ struct PatchHexReSignAndEntropyTests {
         #expect(veneer.byteCount >= 12)
     }
 
+    @Test("G27: inline patcher treats ';' strictly as a statement separator and rejects anything it cannot assemble")
+    func inlinePatcherRejectsUnassemblableStatementAfterSemicolon() throws {
+        let asm = A64MiniAssembler()
+        let base = VirtualAddress(0x1_0000_1000)
+        let prog = try asm.assembleProgram("nop; nop; nop; nop; nop; nop; ret", baseAddress: base)
+        let image = UniversalBinaryDispatcher.loadRawBinary(data: prog.bytes, baseAddress: base, architecture: .arm64)
+        let overlay = try SparseCoWByteOverlayBuffer(baseData: prog.bytes, image: image)
+        let patcher = InlineARM64InstructionPatcher()
+
+        // Everything after a ';' is another statement. If it cannot be assembled the whole patch is refused;
+        // it must never be dropped as if it were a trailing comment.
+        let rejected = [
+            "nop; bogus x1",
+            "mov x0, #1; garbage",
+            "nop; ; nop extra words here",
+            "ret ; return to caller",
+            "mov w0, #1; ret; set return value to true",
+            "nop\nnop; not an instruction",
+            "nop; 0x1234"
+        ]
+        for source in rejected {
+            #expect(throws: MachGraphError.self, "previewPatch must reject \(source.debugDescription)") {
+                _ = try patcher.previewPatch(
+                    at: FileOffset(0),
+                    virtualAddress: base,
+                    withAssembly: source,
+                    in: overlay,
+                    image: image
+                )
+            }
+            #expect(throws: MachGraphError.self, "patchInstruction must reject \(source.debugDescription)") {
+                _ = try patcher.patchInstruction(
+                    at: FileOffset(0),
+                    virtualAddress: base,
+                    withAssembly: source,
+                    in: overlay,
+                    image: image,
+                    allowClobberingBranchTargets: true
+                )
+            }
+        }
+
+        // Valid multi-statement input still assembles every statement, and `//` line comments stay supported.
+        let twoStatements = try patcher.previewPatch(
+            at: FileOffset(0), virtualAddress: base, withAssembly: "mov w0, #1; ret", in: overlay, image: image
+        )
+        #expect(twoStatements.patchedBytes.count == 8)
+
+        let slashComment = try patcher.previewPatch(
+            at: FileOffset(0), virtualAddress: base, withAssembly: "mov w0, #1; ret // return true", in: overlay, image: image
+        )
+        #expect(slashComment.patchedBytes == twoStatements.patchedBytes)
+
+        let trailingSeparator = try patcher.previewPatch(
+            at: FileOffset(0), virtualAddress: base, withAssembly: "nop; nop;", in: overlay, image: image
+        )
+        #expect(trailingSeparator.patchedBytes.count == 8)
+    }
+
     @Test("IPSPatchCodec classic 24-bit PATCH...EOF and RLE hunk round-trip")
     func ipsClassic24BitAndRLERoundTrip() throws {
         let baseData = Data((0..<2048).map { UInt8($0 & 0xFF) })
