@@ -18,11 +18,13 @@ Blocks that only contain build / test entry points (`swift build`, `./Scripts/..
 because this script is itself one of them; the referenced script files are checked for existence instead.
 """
 
+import atexit
 import hashlib
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -227,7 +229,9 @@ def main() -> int:
     if not os.access(BIN, os.X_OK):
         fail(f"{BIN} is missing; build it first (swift build --product MachGraph)")
 
+    # Product commands run with a throwaway HOME (removed on exit) so they cannot touch real preferences.
     home = tempfile.mkdtemp(prefix="machgraph-readme-home.")
+    atexit.register(shutil.rmtree, home, ignore_errors=True)
     env = dict(os.environ, HOME=home, CFFIXED_USER_HOME=home)
 
     def help_text(lang: str) -> str:
