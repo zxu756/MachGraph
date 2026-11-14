@@ -24,7 +24,8 @@ Classification of each instruction after normalization:
   unknown  MachGraph printed `.inst` for a word LLVM decodes (not recognized; not counted as wrong)
   wrong    MachGraph printed a different mnemonic
 
-Exit status: 0 on success, 1 if a threshold is missed or the two listings do not line up.
+The result line starts with [PASS]/[FAIL] when a threshold was given and with [INFO] when the run only
+measures. Exit status: 0 on success, 1 if a threshold is missed or the two listings do not line up.
 """
 
 import argparse
@@ -131,7 +132,9 @@ def main() -> int:
         failures.append(f"wrong mnemonics {n_wrong} > {args.max_wrong}")
 
     label = args.label or f"disasm {args.binary} vs llvm-objdump"
-    status = "FAIL" if failures else "PASS"
+    has_threshold = args.min_agreement is not None or args.max_wrong is not None
+    # Without thresholds this is a measurement, not a verdict: print INFO so "wrong > 0" is never shown as a pass.
+    status = "FAIL" if failures else ("PASS" if has_threshold else "INFO")
     print(
         f"[{status}] {label} (after mnemonic normalization: movz/movn->mov, udf->.inst, vector suffix dropped): "
         f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} wrong={n_wrong}"
