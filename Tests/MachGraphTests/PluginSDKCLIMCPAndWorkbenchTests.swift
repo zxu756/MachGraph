@@ -207,16 +207,16 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         let cli = MachCLIRunner()
 
         let helpOut = try await cli.execute(arguments: ["--help"])
-        #expect(helpOut.contains("MachGraph 1.1.0"))
+        #expect(helpOut.contains("MachGraph 1.2.0"))
         #expect(helpOut.contains("decompile"))
         #expect(helpOut.contains("fixups"))
         #expect(helpOut.contains("--lang"))
 
         let verOut = try await cli.execute(arguments: ["version"])
-        #expect(verOut.contains("MachGraph 1.1.0"))
+        #expect(verOut.contains("MachGraph 1.2.0"))
 
         let verZhOut = try await cli.execute(arguments: ["--lang", "zh", "version"])
-        #expect(verZhOut.contains("MachGraph 1.1.0"))
+        #expect(verZhOut.contains("MachGraph 1.2.0"))
 
         let infoOut = try await cli.execute(arguments: ["info", targetBin.path])
         #expect(infoOut.contains("Format:"))
@@ -881,7 +881,7 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
             binaryData: data
         )
 
-        #expect(html.contains("MachGraph v1.1.0"))
+        #expect(html.contains("MachGraph v1.2.0"))
         #expect(html.contains(#"class="lang-toggle""#))
         #expect(html.contains(#"data-set-lang="zh""#))
         #expect(html.contains(#"data-set-lang="en""#))
