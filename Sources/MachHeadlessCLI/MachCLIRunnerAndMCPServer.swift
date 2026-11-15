@@ -512,10 +512,14 @@ public struct MachCLIRunner: Sendable {
                 "codeSignature": [
                     "isSigned": img.codeSignature.isSigned,
                     "isAdHoc": img.codeSignature.isAdHoc,
+                    "flags": img.codeSignature.flags,
+                    "flagsHex": String(format: "0x%x", img.codeSignature.flags),
                     "identifier": img.codeSignature.identifier,
                     "teamIdentifier": img.codeSignature.teamIdentifier ?? NSNull(),
                     "cdHash": img.codeSignature.cdHashHex,
                     "hashAlgorithm": img.codeSignature.hashAlgorithm,
+                    "pageSize": img.codeSignature.pageSize,
+                    "codeDirectoryVersion": img.codeSignature.codeDirectoryVersion,
                     "entitlementCount": img.codeSignature.entitlementsPairs.count
                 ] as [String: Any]
             ]
@@ -1091,10 +1095,14 @@ public struct MachCLIRunner: Sendable {
                 "isDemo": target.isDemo,
                 "isSigned": cs.isSigned,
                 "isAdHoc": cs.isAdHoc,
+                "flags": cs.flags,
+                "flagsHex": String(format: "0x%x", cs.flags),
                 "identifier": cs.identifier,
                 "teamIdentifier": cs.teamIdentifier ?? NSNull(),
                 "cdHash": cs.cdHashHex,
                 "hashAlgorithm": cs.hashAlgorithm,
+                "pageSize": cs.pageSize,
+                "codeDirectoryVersion": cs.codeDirectoryVersion,
                 "verified": verification?.isValid ?? false,
                 "entitlements": cs.entitlementsPairs,
                 "cmsSigners": cs.cmsSignerCommonNames

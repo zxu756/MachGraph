@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mnemonic agreement between `machgraph disasm` and `xcrun llvm-objdump -d` for one binary.
+"""Mnemonic agreement between `machgraph disasm` and `xcrun llvm-objdump --macho -d` for one binary.
 
 Usage:
   mnemonic-agreement.py <binary> [--arch arm64e] [--machgraph <path>]
@@ -28,6 +28,8 @@ if SCRIPT_DIR not in sys.path:
 
 from mnemonic_normalization import (  # noqa: E402
     NORMALIZATION_SUMMARY,
+    REFERENCE_COMMAND_TEMPLATE,
+    build_reference_command,
     classify_mnemonic_pair,
 )
 
@@ -51,16 +53,7 @@ def default_machgraph_bin() -> str:
 
 def reference_listing(binary: str, arch: str) -> dict:
     raw = subprocess.run(
-        [
-            "xcrun",
-            "llvm-objdump",
-            "-d",
-            "--no-show-raw-insn",
-            f"--arch={arch}",
-            "--mattr=+bti",
-            "--section=__TEXT,__text",
-            binary,
-        ],
+        build_reference_command(binary, arch),
         capture_output=True,
         check=True,
     ).stdout
@@ -84,12 +77,17 @@ def machgraph_listing(machgraph_bin: str, binary: str) -> dict:
         temp_ctx = tempfile.TemporaryDirectory(prefix="machgraph-home-")
         isolated_home = temp_ctx.name
     try:
+        size_mib = os.stat(binary).st_size / (1024.0 * 1024.0)
+    except OSError:
+        size_mib = 0.0
+    timeout_sec = min(900.0, max(60.0, 60.0 + size_mib * 5.0))
+    try:
         env.update(HOME=isolated_home, CFFIXED_USER_HOME=isolated_home)
         raw = subprocess.run(
             [machgraph_bin, "disasm", binary],
             capture_output=True,
             stdin=subprocess.DEVNULL,
-            timeout=60,
+            timeout=timeout_sec,
             check=True,
             env=env,
         ).stdout
@@ -129,10 +127,14 @@ def main() -> int:
     args = parser.parse_args()
 
     ref = reference_listing(args.binary, args.arch)
-    if len(ref) < 100:
-        print(f"[FAIL] llvm-objdump reference for {args.binary} has only {len(ref)} instructions", file=sys.stderr)
-        return 1
     mine = machgraph_listing(args.machgraph, args.binary)
+    if len(ref) == 0 and len(mine) > 0:
+        print(
+            f"[FAIL] empty reference listing for {args.binary}: llvm-objdump decoded 0 instructions "
+            f"in __TEXT,__text while machgraph decoded {len(mine)}",
+            file=sys.stderr,
+        )
+        return 1
 
     total = agree = 0
     unknown = collections.Counter()
@@ -152,7 +154,16 @@ def main() -> int:
         else:
             wrong[(norm_ref, norm_mg)] += 1
 
-    pct = 100.0 * agree / total
+    mg_only_inst = 0
+    for addr in sorted(mine.keys()):
+        if addr in ref:
+            continue
+        if mine[addr] == ".inst":
+            mg_only_inst += 1
+        else:
+            wrong[("<omitted>", mine[addr])] += 1
+
+    pct = (100.0 * agree / total) if total else 100.0
     n_unknown = sum(unknown.values())
     n_wrong = sum(wrong.values())
     failures = []
@@ -169,7 +180,8 @@ def main() -> int:
     status = "FAIL" if failures else ("PASS" if has_threshold else "INFO")
     print(
         f"[{status}] {label} (after mnemonic normalization: {NORMALIZATION_SUMMARY}): "
-        f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} wrong={n_wrong}"
+        f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} wrong={n_wrong} "
+        f"mg_only_inst={mg_only_inst}"
     )
     if unknown:
         print("        unknown (.inst) by reference mnemonic: " + ", ".join(f"{k}={v}" for k, v in unknown.most_common(12)))

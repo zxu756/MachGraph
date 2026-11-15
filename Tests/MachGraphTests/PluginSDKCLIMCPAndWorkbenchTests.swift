@@ -1243,4 +1243,24 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(vm.isDemoMode)
         #expect(!vm.functions.isEmpty)
     }
+
+    @Test("G41: CLI codesign --json and info --json expose CodeDirectory flags and flagsHex")
+    func cliCodeSignAndInfoJSONExposeCodeDirectoryFlags() async throws {
+        let cli = MachCLIRunner()
+        let sshCSRaw = try await cli.execute(arguments: ["codesign", "/usr/bin/ssh", "--json"])
+        let sshCS = try #require(JSONSerialization.jsonObject(with: Data(sshCSRaw.utf8)) as? [String: Any])
+        #expect((sshCS["flags"] as? NSNumber)?.uint32Value == 0x10000)
+        #expect(sshCS["flagsHex"] as? String == "0x10000")
+
+        let lsCSRaw = try await cli.execute(arguments: ["codesign", "/bin/ls", "--json"])
+        let lsCS = try #require(JSONSerialization.jsonObject(with: Data(lsCSRaw.utf8)) as? [String: Any])
+        #expect((lsCS["flags"] as? NSNumber)?.uint32Value == 0)
+        #expect(lsCS["flagsHex"] as? String == "0x0")
+
+        let sshInfoRaw = try await cli.execute(arguments: ["info", "/usr/bin/ssh", "--json"])
+        let sshInfo = try #require(JSONSerialization.jsonObject(with: Data(sshInfoRaw.utf8)) as? [String: Any])
+        let infoCS = try #require(sshInfo["codeSignature"] as? [String: Any])
+        #expect((infoCS["flags"] as? NSNumber)?.uint32Value == 0x10000)
+        #expect(infoCS["flagsHex"] as? String == "0x10000")
+    }
 }

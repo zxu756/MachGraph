@@ -11,7 +11,27 @@ Policy (fixed by `02-machgraph.md`, M1 item 3):
 """
 
 import re
-from typing import Tuple
+from typing import List, Tuple
+
+REFERENCE_COMMAND_TEMPLATE = (
+    "xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> "
+    "--mattr=+bti --section=__TEXT,__text <file>"
+)
+
+
+def build_reference_command(binary: str, arch: str) -> List[str]:
+    """Return the fixed reference `llvm-objdump` argv for `<binary>` and `<arch>`."""
+    return [
+        "xcrun",
+        "llvm-objdump",
+        "--macho",
+        "-d",
+        "--no-show-raw-insn",
+        f"--arch={arch}",
+        "--mattr=+bti",
+        "--section=__TEXT,__text",
+        binary,
+    ]
 
 # Declarative table of the ONLY three permitted normalization rules, each with
 # its architectural rationale.

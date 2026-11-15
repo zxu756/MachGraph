@@ -5,8 +5,8 @@ Usage:
   Scripts/acceptance/differential.py <quick|standard|full|file...>
       [--machgraph <path>] [--json-out <path>] [--record] [--workers <n>] [--verbose]
 
-Reference command (fixed by `02-machgraph.md`, M1 item 1):
-  xcrun llvm-objdump -d --no-show-raw-insn --arch=<slice> --mattr=+bti --section=__TEXT,__text <file>
+Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32):
+  xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> --mattr=+bti --section=__TEXT,__text <file>
 
 Normalization rules: imported from `mnemonic_normalization.py` (only the three
 narrow rules: `movz`/`movn` == `mov`, `udf` == `.inst`, drop reference vector
@@ -29,7 +29,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
@@ -39,6 +39,8 @@ if SCRIPT_DIR not in sys.path:
 from mnemonic_normalization import (  # noqa: E402
     NORMALIZATION_RULES,
     NORMALIZATION_SUMMARY,
+    REFERENCE_COMMAND_TEMPLATE,
+    build_reference_command,
     classify_mnemonic_pair,
 )
 
@@ -62,12 +64,41 @@ MACHO_MAGICS = {
 }
 
 PER_FILE_TIMEOUT_SECONDS = 60
-REFERENCE_COMMAND_TEMPLATE = (
-    "xcrun llvm-objdump -d --no-show-raw-insn --arch=<slice> "
-    "--mattr=+bti --section=__TEXT,__text <file>"
-)
+PER_MIB_TIMEOUT_SECONDS = 5.0
+MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
 _REF_INSN_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
 _NUMBER_SHAPE_RE = re.compile(r"(?:0x[0-9a-fA-F]+|\d+)")
+
+
+def per_file_timeout_seconds(path: str) -> float:
+    """Hang-detection timeout scaled by file size (G39; not a performance gate)."""
+    try:
+        size_bytes = os.stat(path).st_size
+    except OSError:
+        return float(PER_FILE_TIMEOUT_SECONDS)
+    size_mib = max(0.0, size_bytes / (1024.0 * 1024.0))
+    scaled = float(PER_FILE_TIMEOUT_SECONDS) + size_mib * PER_MIB_TIMEOUT_SECONDS
+    return min(MAX_PER_FILE_TIMEOUT_SECONDS, max(float(PER_FILE_TIMEOUT_SECONDS), round(scaled, 1)))
+
+
+def run_with_solo_retry(
+    candidates: List[str],
+    worker_count: int,
+    fn: Callable[[str], Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Run `fn` across `candidates`; if any file times out in parallel mode, retry it solo once (G39)."""
+    if worker_count <= 1:
+        return [fn(p) for p in candidates]
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        rows = list(pool.map(fn, candidates))
+    for idx, row in enumerate(rows):
+        if row.get("timed_out"):
+            path = candidates[idx]
+            print(f"[RETRY] {path} timed out during parallel run; retrying solo...", file=sys.stderr)
+            retry_row = dict(fn(path))
+            retry_row["retried_after_timeout"] = True
+            rows[idx] = retry_row
+    return rows
 
 
 def default_machgraph_bin() -> str:
@@ -149,28 +180,21 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
     if arch is None:
         return {"path": path, "skipped": "no arm64 slice"}
 
-    ref_cmd = [
-        "xcrun",
-        "llvm-objdump",
-        "-d",
-        "--no-show-raw-insn",
-        f"--arch={arch}",
-        "--mattr=+bti",
-        "--section=__TEXT,__text",
-        path,
-    ]
+    mg_timeout = per_file_timeout_seconds(path)
+    ref_timeout = max(300.0, mg_timeout)
+    ref_cmd = build_reference_command(path, arch)
     try:
         ref_proc = subprocess.run(
             ref_cmd,
             capture_output=True,
             stdin=subprocess.DEVNULL,
-            timeout=300,
+            timeout=ref_timeout,
         )
     except subprocess.TimeoutExpired:
         return {
             "path": path,
             "arch": arch,
-            "failure": "llvm-objdump timed out after 300s",
+            "failure": f"llvm-objdump timed out after {ref_timeout:.0f}s",
             "exit_code": -1,
             "timed_out": True,
         }
@@ -210,7 +234,7 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             [machgraph_bin, "disasm", path],
             capture_output=True,
             stdin=subprocess.DEVNULL,
-            timeout=PER_FILE_TIMEOUT_SECONDS,
+            timeout=mg_timeout,
             env=env,
         )
     except subprocess.TimeoutExpired:
@@ -220,7 +244,7 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             "arch": arch,
             "total": len(ref_map),
             "seconds": elapsed,
-            "failure": f"machgraph timed out after {PER_FILE_TIMEOUT_SECONDS}s",
+            "failure": f"machgraph timed out after {mg_timeout:.0f}s",
             "exit_code": 124,
             "timed_out": True,
         }
@@ -266,6 +290,22 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             ops = parts[3].strip() if len(parts) > 3 else ""
             mine_text[addr] = (raw_hex, mnem, ops)
 
+    if len(ref_map) == 0 and len(mine_text) > 0:
+        return {
+            "path": path,
+            "arch": arch,
+            "total": 0,
+            "machgraph_total": len(mine_text),
+            "seconds": elapsed,
+            "failure": (
+                f"empty reference listing: llvm-objdump decoded 0 instructions in __TEXT,__text "
+                f"while machgraph decoded {len(mine_text)}"
+            ),
+            "exit_code": 1,
+            "timed_out": False,
+            "empty_reference": True,
+        }
+
     agree = 0
     missing = 0
     missing_examples: List[Dict[str, str]] = []
@@ -309,6 +349,31 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             wrong_shape_counter[s_key] += 1
             wrong_shape_examples.setdefault(s_key, sample)
 
+    # Reverse direction (G33): addresses present in MachGraph __TEXT,__text but omitted by llvm-objdump
+    machgraph_only_inst = 0
+    machgraph_only_wrong = 0
+    for addr in sorted(mine_text.keys()):
+        if addr in ref_map:
+            continue
+        raw_word_hex, mg_mnem, mg_ops = mine_text[addr]
+        if mg_mnem == ".inst":
+            machgraph_only_inst += 1
+        else:
+            machgraph_only_wrong += 1
+            pair_key = ("<omitted>", mg_mnem)
+            wrong_pair_counter[pair_key] += 1
+            sample = {
+                "file": path,
+                "address": hex(addr),
+                "word": raw_word_hex,
+                "llvm": "<omitted>",
+                "machgraph": f"{mg_mnem} {mg_ops}".strip(),
+            }
+            wrong_pair_examples.setdefault(pair_key, sample)
+            s_key = f"<omitted>|{mg_mnem}|"
+            wrong_shape_counter[s_key] += 1
+            wrong_shape_examples.setdefault(s_key, sample)
+
     return {
         "path": path,
         "arch": arch,
@@ -317,6 +382,8 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         "unknown_total": sum(unknown_counter.values()),
         "wrong_total": sum(wrong_pair_counter.values()),
         "missing": missing,
+        "machgraph_only_inst": machgraph_only_inst,
+        "machgraph_only_wrong": machgraph_only_wrong,
         "missing_examples": missing_examples,
         "unknown": dict(unknown_counter),
         "wrong_pairs": {f"{k[0]}|{k[1]}": v for k, v in wrong_pair_counter.items()},
@@ -330,7 +397,20 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
     }
 
 
-def collect_environment_metadata(machgraph_bin: str) -> Dict[str, str]:
+def is_worktree_clean(repo_root: Optional[str] = None) -> bool:
+    root = repo_root if repo_root is not None else REPO_ROOT
+    res = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        cwd=root,
+    )
+    if res.returncode != 0:
+        return False
+    return res.stdout.decode("utf-8", errors="replace").strip() == ""
+
+
+def collect_environment_metadata(machgraph_bin: str) -> Dict[str, Any]:
     def run_text(cmd: List[str], cwd: Optional[str] = None) -> str:
         r = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL, cwd=cwd)
         return r.stdout.decode("utf-8", errors="replace").strip()
@@ -348,6 +428,7 @@ def collect_environment_metadata(machgraph_bin: str) -> Dict[str, str]:
         "machine": run_text(["uname", "-m"]),
         "llvm_objdump_version": llvm_ver_line,
         "machgraph_commit": commit_sha,
+        "worktree_clean": is_worktree_clean(),
         "machgraph_binary": sanitize_repo_label(machgraph_bin),
     }
 
@@ -378,6 +459,14 @@ def main() -> int:
     parser.add_argument("--verbose", action="store_true", help="print every file row even on full corpus")
     args = parser.parse_args()
 
+    if args.record and not is_worktree_clean():
+        print(
+            "[FAIL] --record refused: git worktree has uncommitted changes "
+            "(commit all changes before recording a report into reports/).",
+            file=sys.stderr,
+        )
+        return 1
+
     if not os.path.isfile(args.machgraph) or not os.access(args.machgraph, os.X_OK):
         print(f"[FAIL] MachGraph executable not found or not executable: {args.machgraph}", file=sys.stderr)
         return 1
@@ -404,11 +493,11 @@ def main() -> int:
     t_start = time.monotonic()
     try:
         worker_count = 1 if len(candidates) <= 1 else max(1, args.workers)
-        if worker_count == 1:
-            rows = [compare_one_binary(p, args.machgraph, isolated_home) for p in candidates]
-        else:
-            with ThreadPoolExecutor(max_workers=worker_count) as pool:
-                rows = list(pool.map(lambda p: compare_one_binary(p, args.machgraph, isolated_home), candidates))
+        rows = run_with_solo_retry(
+            candidates,
+            worker_count,
+            lambda p: compare_one_binary(p, args.machgraph, isolated_home),
+        )
     finally:
         if temp_home_ctx is not None:
             temp_home_ctx.cleanup()
@@ -428,6 +517,10 @@ def main() -> int:
     total_unknown = 0
     total_wrong = 0
     total_missing = 0
+    total_mg_only_inst = 0
+    mg_only_inst_files = 0
+    total_mg_only_wrong = 0
+    mg_only_wrong_files = 0
 
     failures: List[Dict[str, Any]] = []
     missing_examples: List[Dict[str, str]] = []
@@ -453,7 +546,10 @@ def main() -> int:
     print(f"System:       {env_meta['macos_product_name']} {env_meta['macos_version']} ({env_meta['macos_build']}) {env_meta['machine']}")
     print(f"Reference:    {env_meta['llvm_objdump_version']}")
     print(f"Ref command:  {REFERENCE_COMMAND_TEMPLATE}")
-    print(f"MachGraph:    {env_meta['machgraph_binary']} @ {env_meta['machgraph_commit'][:12]}")
+    print(
+        f"MachGraph:    {env_meta['machgraph_binary']} @ {env_meta['machgraph_commit'][:12]} "
+        f"(worktree_clean={env_meta['worktree_clean']})"
+    )
     print(f"Rules (3):    {NORMALIZATION_SUMMARY}")
     print("")
 
@@ -463,6 +559,8 @@ def main() -> int:
             skipped_no_arm64 += 1
             continue
         if "failure" in r:
+            if r.get("empty_reference"):
+                zero_ref_files += 1
             failures.append(
                 {
                     "file": path,
@@ -489,6 +587,12 @@ def main() -> int:
         total_unknown += r["unknown_total"]
         total_wrong += r["wrong_total"]
         total_missing += r["missing"]
+        total_mg_only_inst += r["machgraph_only_inst"]
+        if r["machgraph_only_inst"] > 0:
+            mg_only_inst_files += 1
+        total_mg_only_wrong += r["machgraph_only_wrong"]
+        if r["machgraph_only_wrong"] > 0:
+            mg_only_wrong_files += 1
 
         for m_ex in r["missing_examples"]:
             if len(missing_examples) < 20:
@@ -521,7 +625,7 @@ def main() -> int:
             print(
                 f"[{tag}] {path} ({r['arch']}): total={r['total']} agree={r['agree']} "
                 f"({file_pct:.2f}%) unknown={r['unknown_total']} wrong={r['wrong_total']} "
-                f"missing={r['missing']} ({r['seconds']:.2f}s)"
+                f"missing={r['missing']} mg_only_inst={r['machgraph_only_inst']} ({r['seconds']:.2f}s)"
             )
 
         compact_files.append(
@@ -533,6 +637,8 @@ def main() -> int:
                 "unknown": r["unknown_total"],
                 "wrong": r["wrong_total"],
                 "missing": r["missing"],
+                "machgraph_only_inst": r["machgraph_only_inst"],
+                "machgraph_only_wrong": r["machgraph_only_wrong"],
                 "exit_code": r["exit_code"],
                 "seconds": r["seconds"],
             }
@@ -594,7 +700,8 @@ def main() -> int:
     print(
         f"       instructions={total_insns} agree={total_agree} ({overall_pct:.4f}% overall | "
         f"{recognized_pct:.4f}% of {recognized_insns} recognized) "
-        f"unknown={total_unknown} ({unknown_pct:.4f}%) wrong={total_wrong}"
+        f"unknown={total_unknown} ({unknown_pct:.4f}%) wrong={total_wrong} "
+        f"machgraph_only_inst={total_mg_only_inst} (files={mg_only_inst_files})"
     )
 
     if wrong_pair_list:
@@ -639,6 +746,10 @@ def main() -> int:
             "agreed_instructions": total_agree,
             "unknown_instructions": total_unknown,
             "wrong_instructions": total_wrong,
+            "machgraph_only_inst_instructions": total_mg_only_inst,
+            "machgraph_only_inst_files": mg_only_inst_files,
+            "machgraph_only_wrong_instructions": total_mg_only_wrong,
+            "machgraph_only_wrong_files": mg_only_wrong_files,
             "overall_agreement_pct": round(overall_pct, 6),
             "recognized_agreement_pct": round(recognized_pct, 6),
             "unknown_pct": round(unknown_pct, 6),

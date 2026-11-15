@@ -8,16 +8,17 @@ Usage:
 Reference tools per binary (matched on the same slice selected by MachGraph):
   1. `lipo -archs <file>` + `xcrun otool -arch <slice> -l <file>`
      -> architecture, fileName, segments (name, vmaddr, vmsize, fileoff, filesize),
-        sections (segment, section, addr, size, offset), UUID, entryPoint
+        sections (segment, section, addr, size, offset), imported dylibs (`LC_LOAD_DYLIB`
+        family: ordinal, installName, currentVersion, isWeak, isReexport), UUID, entryPoint
   2. `xcrun dyld_info -arch <slice> -fixups <file>`
      -> chained fixups count, rebase/bind counts, locations, rebase target addresses,
-        and bound symbol names (when `LC_DYLD_CHAINED_FIXUPS` is present; verifies
+        and bound symbol names (exhaustive mismatch count across all entries; verifies
         `count == 0` when `LC_DYLD_CHAINED_FIXUPS` is absent)
   3. `/usr/bin/codesign -a <slice> -dvvv <file>`
-     -> signature presence, ad-hoc flag, identifier, teamIdentifier, CDHash
+     -> signature presence, ad-hoc flag, CodeDirectory flags, identifier, teamIdentifier, CDHash
 
 Exit status:
-  0 when all files exit cleanly within 60s and all compared fields match;
+  0 when all files exit cleanly within the per-file hang-protection timeout and all compared fields match;
   1 on any crash, timeout, non-zero exit, or field mismatch.
 """
 
@@ -31,7 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
@@ -50,6 +51,39 @@ MACHO_MAGICS = {
     b"\xfe\xed\xfa\xce",
 }
 PER_FILE_TIMEOUT_SECONDS = 60
+PER_MIB_TIMEOUT_SECONDS = 5.0
+MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
+
+
+def per_file_timeout_seconds(path: str) -> float:
+    """Hang-detection timeout scaled by file size (G39; not a performance gate)."""
+    try:
+        size_bytes = os.stat(path).st_size
+    except OSError:
+        return float(PER_FILE_TIMEOUT_SECONDS)
+    size_mib = max(0.0, size_bytes / (1024.0 * 1024.0))
+    scaled = float(PER_FILE_TIMEOUT_SECONDS) + size_mib * PER_MIB_TIMEOUT_SECONDS
+    return min(MAX_PER_FILE_TIMEOUT_SECONDS, max(float(PER_FILE_TIMEOUT_SECONDS), round(scaled, 1)))
+
+
+def run_with_solo_retry(
+    candidates: List[str],
+    worker_count: int,
+    fn: Callable[[str], Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Run `fn` across `candidates`; if any file times out in parallel mode, retry it solo once (G39)."""
+    if worker_count <= 1:
+        return [fn(p) for p in candidates]
+    with ThreadPoolExecutor(max_workers=worker_count) as pool:
+        rows = list(pool.map(fn, candidates))
+    for idx, row in enumerate(rows):
+        if row.get("timed_out"):
+            path = candidates[idx]
+            print(f"[RETRY] {path} timed out during parallel run; retrying solo...", file=sys.stderr)
+            retry_row = dict(fn(path))
+            retry_row["retried_after_timeout"] = True
+            rows[idx] = retry_row
+    return rows
 
 _DYLD_FIXUP_RE = re.compile(
     r"^\s*\S+\s+\S+\s+(0x[0-9a-fA-F]+)\s+(rebase|auth-rebase|bind|auth-bind)\s+(.+)$"
@@ -86,6 +120,34 @@ def sanitize_repo_label(path: str) -> str:
     except ValueError:
         pass
     return os.path.basename(abs_path)
+
+
+def is_worktree_clean(repo_root: Optional[str] = None) -> bool:
+    root = repo_root if repo_root is not None else REPO_ROOT
+    res = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        cwd=root,
+    )
+    if res.returncode != 0:
+        return False
+    return res.stdout.decode("utf-8", errors="replace").strip() == ""
+
+
+def collect_environment_metadata(machgraph_bin: str) -> Dict[str, Any]:
+    r = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        cwd=REPO_ROOT,
+    )
+    commit_sha = r.stdout.decode("utf-8", errors="replace").strip() or "unknown"
+    return {
+        "machgraph_commit": commit_sha,
+        "worktree_clean": is_worktree_clean(),
+        "machgraph_binary": sanitize_repo_label(machgraph_bin),
+    }
 
 
 def discover_full_candidates() -> List[str]:
@@ -127,6 +189,22 @@ def select_slice(path: str) -> Optional[str]:
     return None
 
 
+_IMPORTED_DYLIB_CMDS = {
+    "LC_LOAD_DYLIB",
+    "LC_LOAD_WEAK_DYLIB",
+    "LC_REEXPORT_DYLIB",
+    "LC_LAZY_LOAD_DYLIB",
+    "LC_LOAD_UPWARD_DYLIB",
+}
+
+
+def normalize_dylib_version(ver: Optional[str]) -> Tuple[int, int, int]:
+    parts = [int(x, 10) for x in (ver or "0.0.0").split(".") if x.isdigit()]
+    while len(parts) < 3:
+        parts.append(0)
+    return (parts[0], parts[1], parts[2])
+
+
 def parse_otool_load_commands(path: str, arch: str) -> Dict[str, Any]:
     proc = subprocess.run(
         ["xcrun", "otool", "-arch", arch, "-l", path],
@@ -141,11 +219,13 @@ def parse_otool_load_commands(path: str, arch: str) -> Dict[str, Any]:
 
     segments: List[Tuple[str, int, int, int, int]] = []
     sections: List[Tuple[str, str, int, int, int]] = []
+    libraries: List[Tuple[int, str, Tuple[int, int, int], bool, bool]] = []
     uuid_val: Optional[str] = None
     entry_off: Optional[int] = None
     unixthread_pc: Optional[int] = None
     has_chained_fixups = False
     text_vmaddr: Optional[int] = None
+    dylib_ordinal = 0
 
     for blk in txt.split("Load command ")[1:]:
         cmd_m = re.search(r"^\s*\d+\s*\n\s*cmd\s+(\S+)", blk)
@@ -182,6 +262,20 @@ def parse_otool_load_commands(path: str, arch: str) -> Dict[str, Any]:
                             int(of_m.group(1), 10),
                         )
                     )
+        elif cmd_name in _IMPORTED_DYLIB_CMDS:
+            nm_m = re.search(r"\bname\s+(.+?)\s+\(offset\s+\d+\)", blk)
+            cv_m = re.search(r"\bcurrent version\s+(\S+)", blk)
+            if nm_m:
+                dylib_ordinal += 1
+                libraries.append(
+                    (
+                        dylib_ordinal,
+                        nm_m.group(1).strip(),
+                        normalize_dylib_version(cv_m.group(1) if cv_m else "0.0.0"),
+                        cmd_name == "LC_LOAD_WEAK_DYLIB",
+                        cmd_name == "LC_REEXPORT_DYLIB",
+                    )
+                )
         elif cmd_name == "LC_UUID":
             u_m = re.search(r"\buuid\s+([0-9A-Fa-f-]+)", blk)
             if u_m:
@@ -206,6 +300,7 @@ def parse_otool_load_commands(path: str, arch: str) -> Dict[str, Any]:
     return {
         "segments": segments,
         "sections": sections,
+        "libraries": libraries,
         "uuid": uuid_val,
         "entry_point": expected_entry,
         "has_chained_fixups": has_chained_fixups,
@@ -259,6 +354,7 @@ def parse_codesign_ref(path: str, arch: str) -> Dict[str, Any]:
         return {
             "is_signed": False,
             "is_adhoc": False,
+            "flags": 0,
             "identifier": "",
             "team_identifier": None,
             "cdhash_full": None,
@@ -270,6 +366,7 @@ def parse_codesign_ref(path: str, arch: str) -> Dict[str, Any]:
     ident = ""
     team_id: Optional[str] = None
     is_adhoc = False
+    cs_flags: Optional[int] = None
     cdhash_full: Optional[str] = None
     cdhash_short: Optional[str] = None
 
@@ -285,6 +382,9 @@ def parse_codesign_ref(path: str, arch: str) -> Dict[str, Any]:
         elif line.startswith("CodeDirectory "):
             if "adhoc" in line:
                 is_adhoc = True
+            fm = re.search(r"\bflags=0x([0-9a-fA-F]+)", line)
+            if fm:
+                cs_flags = int(fm.group(1), 16)
         elif line.startswith("CandidateCDHashFull "):
             # e.g. CandidateCDHashFull sha256=54097a16...
             if "=" in line:
@@ -295,6 +395,7 @@ def parse_codesign_ref(path: str, arch: str) -> Dict[str, Any]:
     return {
         "is_signed": True,
         "is_adhoc": is_adhoc,
+        "flags": cs_flags,
         "identifier": ident,
         "team_identifier": team_id,
         "cdhash_full": cdhash_full,
@@ -302,28 +403,30 @@ def parse_codesign_ref(path: str, arch: str) -> Dict[str, Any]:
     }
 
 
-def run_mg_json(machgraph_bin: str, subcmd: str, path: str, env: Dict[str, str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+def run_mg_json(
+    machgraph_bin: str, subcmd: str, path: str, env: Dict[str, str], timeout_sec: float
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool]:
     try:
         proc = subprocess.run(
             [machgraph_bin, subcmd, path, "--json"],
             capture_output=True,
             stdin=subprocess.DEVNULL,
-            timeout=PER_FILE_TIMEOUT_SECONDS,
+            timeout=timeout_sec,
             env=env,
         )
     except subprocess.TimeoutExpired:
-        return (None, f"machgraph {subcmd} timed out after {PER_FILE_TIMEOUT_SECONDS}s")
+        return (None, f"machgraph {subcmd} timed out after {timeout_sec:.0f}s", True)
 
     stdout_txt = proc.stdout.decode("utf-8", errors="replace")
     stderr_txt = proc.stderr.decode("utf-8", errors="replace")
     if proc.returncode != 0:
         first_err = stderr_txt.strip().splitlines()[0] if stderr_txt.strip() else ""
-        return (None, f"machgraph {subcmd} exited {proc.returncode}: {first_err[:200]}")
+        return (None, f"machgraph {subcmd} exited {proc.returncode}: {first_err[:200]}", False)
 
     try:
-        return (json.loads(stdout_txt), None)
+        return (json.loads(stdout_txt), None, False)
     except json.JSONDecodeError as exc:
-        return (None, f"machgraph {subcmd} invalid JSON: {exc}")
+        return (None, f"machgraph {subcmd} invalid JSON: {exc}", False)
 
 
 def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[str, Any]:
@@ -332,6 +435,7 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
         return {"path": path, "skipped": "no arm64 slice"}
 
     t0 = time.monotonic()
+    mg_timeout = per_file_timeout_seconds(path)
     env = dict(
         os.environ,
         HOME=isolated_home,
@@ -347,25 +451,52 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
         ref_fixups = (
             parse_dyld_info_fixups(path, arch) if ref_otool["has_chained_fixups"] else {}
         )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "path": path,
+            "arch": arch,
+            "seconds": round(time.monotonic() - t0, 3),
+            "failure": f"reference tool timed out: {exc}",
+            "timed_out": True,
+        }
     except Exception as exc:
         return {
             "path": path,
             "arch": arch,
             "seconds": round(time.monotonic() - t0, 3),
             "failure": f"reference tool error: {exc}",
+            "timed_out": False,
         }
 
-    mg_info, err_info = run_mg_json(machgraph_bin, "info", path, env)
+    mg_info, err_info, to_info = run_mg_json(machgraph_bin, "info", path, env, mg_timeout)
     if err_info:
-        return {"path": path, "arch": arch, "seconds": round(time.monotonic() - t0, 3), "failure": err_info}
+        return {
+            "path": path,
+            "arch": arch,
+            "seconds": round(time.monotonic() - t0, 3),
+            "failure": err_info,
+            "timed_out": to_info,
+        }
 
-    mg_fx, err_fx = run_mg_json(machgraph_bin, "fixups", path, env)
+    mg_fx, err_fx, to_fx = run_mg_json(machgraph_bin, "fixups", path, env, mg_timeout)
     if err_fx:
-        return {"path": path, "arch": arch, "seconds": round(time.monotonic() - t0, 3), "failure": err_fx}
+        return {
+            "path": path,
+            "arch": arch,
+            "seconds": round(time.monotonic() - t0, 3),
+            "failure": err_fx,
+            "timed_out": to_fx,
+        }
 
-    mg_cs, err_cs = run_mg_json(machgraph_bin, "codesign", path, env)
+    mg_cs, err_cs, to_cs = run_mg_json(machgraph_bin, "codesign", path, env, mg_timeout)
     if err_cs:
-        return {"path": path, "arch": arch, "seconds": round(time.monotonic() - t0, 3), "failure": err_cs}
+        return {
+            "path": path,
+            "arch": arch,
+            "seconds": round(time.monotonic() - t0, 3),
+            "failure": err_cs,
+            "timed_out": to_cs,
+        }
 
     assert mg_info is not None and mg_fx is not None and mg_cs is not None
 
@@ -406,7 +537,25 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
             f"info.entryPoint: mg={mg_info.get('entryPoint')!r} != otool={ref_otool['entry_point']!r}"
         )
 
-    # 2. Compare `fixups` vs `dyld_info -fixups`
+    mg_libs = [
+        (
+            lib["ordinal"],
+            lib["installName"],
+            normalize_dylib_version(lib.get("currentVersion")),
+            bool(lib.get("isWeak")),
+            bool(lib.get("isReexport")),
+        )
+        for lib in mg_info.get("libraries", [])
+    ]
+    ref_libs = ref_otool.get("libraries", [])
+    if mg_libs != ref_libs:
+        diff_libs = sum(1 for a, b in zip(mg_libs, ref_libs) if a != b) + abs(len(mg_libs) - len(ref_libs))
+        mismatches.append(
+            f"info.libraries: {diff_libs} imported dylib entry(ies) differ "
+            f"(mg={len(mg_libs)} vs otool={len(ref_libs)})"
+        )
+
+    # 2. Compare `fixups` vs `dyld_info -fixups` (count ALL mismatches without early break, G41)
     mg_fixup_rows = mg_fx.get("fixups", [])
     if not ref_otool["has_chained_fixups"]:
         if mg_fx.get("count", 0) != 0 or len(mg_fixup_rows) != 0:
@@ -419,29 +568,35 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
                 f"fixups.count: mg={mg_fx.get('count')} != dyld_info={len(ref_fixups)}"
             )
         mg_by_loc = {row["location"]: row for row in mg_fixup_rows}
-        if set(mg_by_loc.keys()) != set(ref_fixups.keys()):
-            diff_n = len(set(mg_by_loc.keys()) ^ set(ref_fixups.keys()))
-            mismatches.append(f"fixups.locations: {diff_n} location(s) differ from dyld_info")
-        else:
-            for loc, (exp_kind, exp_tgt, exp_sym) in ref_fixups.items():
-                got_row = mg_by_loc[loc]
-                if got_row.get("kind") != exp_kind:
-                    mismatches.append(
-                        f"fixups[{hex(loc)}].kind: mg={got_row.get('kind')!r} != {exp_kind!r}"
-                    )
-                    break
-                if exp_tgt is not None and got_row.get("targetAddress") != exp_tgt:
-                    mismatches.append(
-                        f"fixups[{hex(loc)}].targetAddress: mg={got_row.get('targetAddressHex')} != {hex(exp_tgt)}"
-                    )
-                    break
-                if exp_sym is not None and got_row.get("symbolName") != exp_sym:
-                    mismatches.append(
-                        f"fixups[{hex(loc)}].symbolName: mg={got_row.get('symbolName')!r} != {exp_sym!r}"
-                    )
-                    break
+        missing_or_extra_locs = set(mg_by_loc.keys()) ^ set(ref_fixups.keys())
+        if missing_or_extra_locs:
+            mismatches.append(
+                f"fixups.locations: {len(missing_or_extra_locs)} location(s) differ from dyld_info"
+            )
+        fixup_diff_count = 0
+        fixup_diff_samples: List[str] = []
+        for loc in sorted(set(mg_by_loc.keys()) & set(ref_fixups.keys())):
+            exp_kind, exp_tgt, exp_sym = ref_fixups[loc]
+            got_row = mg_by_loc[loc]
+            entry_diffs: List[str] = []
+            if got_row.get("kind") != exp_kind:
+                entry_diffs.append(f"kind mg={got_row.get('kind')!r}!={exp_kind!r}")
+            if exp_tgt is not None and got_row.get("targetAddress") != exp_tgt:
+                entry_diffs.append(f"targetAddress mg={got_row.get('targetAddressHex')}!={hex(exp_tgt)}")
+            if exp_sym is not None and got_row.get("symbolName") != exp_sym:
+                entry_diffs.append(f"symbolName mg={got_row.get('symbolName')!r}!={exp_sym!r}")
+            if entry_diffs:
+                fixup_diff_count += 1
+                if len(fixup_diff_samples) < 5:
+                    fixup_diff_samples.append(f"{hex(loc)} ({', '.join(entry_diffs)})")
+        if fixup_diff_count > 0:
+            mismatches.append(
+                f"fixups.entries: {fixup_diff_count} fixup(s) differ from dyld_info "
+                f"(examples: {'; '.join(fixup_diff_samples)})"
+            )
 
     # 3. Compare `codesign` vs `/usr/bin/codesign -a <slice> -dvvv`
+    mg_cs_flags = mg_cs.get("flags")
     if bool(mg_cs.get("isSigned")) != ref_cs["is_signed"]:
         mismatches.append(
             f"codesign.isSigned: mg={mg_cs.get('isSigned')} != codesign={ref_cs['is_signed']}"
@@ -451,6 +606,17 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
             mismatches.append(
                 f"codesign.isAdHoc: mg={mg_cs.get('isAdHoc')} != codesign={ref_cs['is_adhoc']}"
             )
+        if ref_cs.get("flags") is not None:
+            if mg_cs_flags != ref_cs["flags"]:
+                mg_f_str = hex(mg_cs_flags) if isinstance(mg_cs_flags, int) else repr(mg_cs_flags)
+                mismatches.append(
+                    f"codesign.flags: mg={mg_f_str} != codesign={hex(ref_cs['flags'])}"
+                )
+            info_cs = mg_info.get("codeSignature")
+            if isinstance(info_cs, dict) and "flags" in info_cs and info_cs.get("flags") != ref_cs["flags"]:
+                mismatches.append(
+                    f"info.codeSignature.flags: mg={info_cs.get('flags')!r} != codesign={hex(ref_cs['flags'])}"
+                )
         if (mg_cs.get("identifier") or "") != ref_cs["identifier"]:
             mismatches.append(
                 f"codesign.identifier: mg={mg_cs.get('identifier')!r} != codesign={ref_cs['identifier']!r}"
@@ -471,14 +637,17 @@ def check_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dict[
                     f"codesign.cdHash: mg={mg_cdhash!r} does not match prefix {ref_cs['cdhash_short']!r}"
                 )
 
+    cs_flags_hex = hex(mg_cs_flags) if isinstance(mg_cs_flags, int) else "none"
     return {
         "path": path,
         "arch": arch,
         "segments": len(mg_segs),
         "sections": len(mg_secs),
+        "libraries": len(mg_libs),
         "fixups": mg_fx.get("count", 0),
         "has_chained_fixups": ref_otool["has_chained_fixups"],
         "is_signed": bool(mg_cs.get("isSigned")),
+        "codesign_flags_hex": cs_flags_hex,
         "mismatches": mismatches,
         "seconds": round(time.monotonic() - t0, 3),
     }
@@ -501,9 +670,22 @@ def main() -> int:
     parser.add_argument("targets", nargs="+", help="'quick', 'standard', 'full', or one or more binary paths")
     parser.add_argument("--machgraph", default=default_machgraph_bin(), help="path to MachGraph CLI executable")
     parser.add_argument("--json-out", default=None, help="optional path to write JSON summary")
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="write JSON summary to reports/macho-differential-<YYYY-MM-DD>.json under repo root",
+    )
     parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 4), help="parallel worker count")
     parser.add_argument("--verbose", action="store_true", help="print every file row even on full corpus")
     args = parser.parse_args()
+
+    if args.record and not is_worktree_clean():
+        print(
+            "[FAIL] --record refused: git worktree has uncommitted changes "
+            "(commit all changes before recording a report into reports/).",
+            file=sys.stderr,
+        )
+        return 1
 
     if not os.path.isfile(args.machgraph) or not os.access(args.machgraph, os.X_OK):
         print(f"[FAIL] MachGraph executable not found or not executable: {args.machgraph}", file=sys.stderr)
@@ -525,20 +707,28 @@ def main() -> int:
     t0 = time.monotonic()
     try:
         worker_count = 1 if len(candidates) <= 1 else max(1, args.workers)
-        if worker_count == 1:
-            rows = [check_one_binary(p, args.machgraph, isolated_home) for p in candidates]
-        else:
-            with ThreadPoolExecutor(max_workers=worker_count) as pool:
-                rows = list(pool.map(lambda p: check_one_binary(p, args.machgraph, isolated_home), candidates))
+        rows = run_with_solo_retry(
+            candidates,
+            worker_count,
+            lambda p: check_one_binary(p, args.machgraph, isolated_home),
+        )
     finally:
         if temp_home_ctx is not None:
             temp_home_ctx.cleanup()
     wall_seconds = round(time.monotonic() - t0, 2)
 
     utc_now = datetime.datetime.now(datetime.timezone.utc)
+    date_str = utc_now.strftime("%Y-%m-%d")
+    json_out_path = args.json_out
+    if args.record and json_out_path is None:
+        json_out_path = os.path.join(REPO_ROOT, "reports", f"macho-differential-{date_str}.json")
+    env_meta = collect_environment_metadata(args.machgraph)
     print(f"=== MachGraph Mach-O Differential Check ({corpus_name}) ===")
     print(f"Date (UTC):  {utc_now.strftime('%Y-%m-%dT%H:%M:%SZ')}")
-    print(f"MachGraph:   {sanitize_repo_label(args.machgraph)}")
+    print(
+        f"MachGraph:   {env_meta['machgraph_binary']} @ {env_meta['machgraph_commit'][:12]} "
+        f"(worktree_clean={env_meta['worktree_clean']})"
+    )
     print("")
 
     skipped = 0
@@ -547,6 +737,7 @@ def main() -> int:
     mismatch_files: List[Dict[str, Any]] = []
     total_segments = 0
     total_sections = 0
+    total_libraries = 0
     total_fixups = 0
     signed_count = 0
 
@@ -564,6 +755,7 @@ def main() -> int:
         compared += 1
         total_segments += r["segments"]
         total_sections += r["sections"]
+        total_libraries += r["libraries"]
         total_fixups += r["fixups"]
         if r["is_signed"]:
             signed_count += 1
@@ -574,7 +766,8 @@ def main() -> int:
         elif print_each:
             print(
                 f"[PASS] {r['path']} ({r['arch']}): segments={r['segments']} "
-                f"sections={r['sections']} fixups={r['fixups']} signed={r['is_signed']} ({r['seconds']:.2f}s)"
+                f"sections={r['sections']} libraries={r['libraries']} fixups={r['fixups']} "
+                f"signed={r['is_signed']} cs_flags={r['codesign_flags_hex']} ({r['seconds']:.2f}s)"
             )
 
     passed = len(failures) == 0 and len(mismatch_files) == 0 and compared > 0
@@ -583,19 +776,20 @@ def main() -> int:
     print(
         f"[{verdict}] Summary ({corpus_name}): candidates={len(candidates)} compared={compared} "
         f"skipped_no_arm64={skipped} failures={len(failures)} mismatched_files={len(mismatch_files)} "
-        f"segments={total_segments} sections={total_sections} fixups={total_fixups} "
-        f"signed={signed_count} elapsed={wall_seconds:.2f}s"
+        f"segments={total_segments} sections={total_sections} libraries={total_libraries} "
+        f"fixups={total_fixups} signed={signed_count} elapsed={wall_seconds:.2f}s"
     )
 
-    if args.json_out:
-        out_dir = os.path.dirname(os.path.abspath(args.json_out))
+    if json_out_path:
+        out_dir = os.path.dirname(os.path.abspath(json_out_path))
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
         payload = {
-            "date": utc_now.strftime("%Y-%m-%d"),
+            "date": date_str,
             "generated_at_utc": utc_now.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "corpus": corpus_name,
             "verdict": verdict,
+            "environment": env_meta,
             "machgraph_binary": sanitize_repo_label(args.machgraph),
             "summary": {
                 "candidate_macho_files": len(candidates),
@@ -605,6 +799,7 @@ def main() -> int:
                 "mismatched_files": len(mismatch_files),
                 "total_segments": total_segments,
                 "total_sections": total_sections,
+                "total_imported_libraries": total_libraries,
                 "total_chained_fixups": total_fixups,
                 "signed_files": signed_count,
                 "elapsed_seconds": wall_seconds,
@@ -612,7 +807,7 @@ def main() -> int:
             "failures": failures,
             "mismatches": mismatch_files,
         }
-        with open(args.json_out, "w", encoding="utf-8") as fh:
+        with open(json_out_path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=2)
             fh.write("\n")
 

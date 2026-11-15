@@ -105,6 +105,10 @@ case "$MODE" in
         if [ -z "$MS" ]; then
             usage
         fi
+        if [ "$RECORD" -eq 1 ] && [ -n "$(git status --porcelain)" ]; then
+            echo "[FAIL] --record refused: git worktree has uncommitted changes (commit all changes before recording into reports/)." >&2
+            exit 1
+        fi
         case "$MS" in
             0|m0|M0)
                 echo "==> [milestone 0] Scoped unit tests for M0-touched modules"
@@ -146,6 +150,8 @@ case "$MODE" in
                     MachA64Decoder \
                     MachCFGEngine \
                     MachHeadlessCLI
+                echo "==> [milestone 1] Differential harness unit tests"
+                python3 "$ROOT_DIR/Scripts/acceptance/test_differential_harnesses.py"
                 echo "==> [milestone 1] Building release MachGraph CLI binary"
                 swift build -c release --product MachGraph >/dev/null
                 REL_BIN="$ROOT_DIR/.build/release/MachGraph"
@@ -191,6 +197,10 @@ case "$MODE" in
         if [ -x "$ROOT_DIR/Scripts/acceptance/readme-commands.sh" ]; then
             echo "==> [release] Running Scripts/acceptance/readme-commands.sh"
             "$ROOT_DIR/Scripts/acceptance/readme-commands.sh"
+        fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/test_differential_harnesses.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/test_differential_harnesses.py"
+            python3 "$ROOT_DIR/Scripts/acceptance/test_differential_harnesses.py"
         fi
         if [ -x "$ROOT_DIR/Scripts/acceptance/differential.py" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py standard"
