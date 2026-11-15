@@ -555,4 +555,120 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         )
         #expect(repacked == nzcvEnc)
     }
+
+    @Test("M1: Decode LLVM preferred aliases (vector ORR mov, general INS mov, 32/64-bit UMOV mov, PAC/system HINTs) and preserve non-alias counterexamples")
+    func decodeM1PreferredAliasesAndBoundaryCounterexamples() {
+        let pc = VirtualAddress(0x1_0000_4000)
+
+        // 1. Vector ORR -> MOV when Rm == Rn; stays ORR when Rm != Rn.
+        // 0x4ea01c08 -> llvm-objdump: `mov.16b v8, v0`
+        let orrSame16b = decoder.decode(word: 0x4EA0_1C08, at: pc)
+        #expect(orrSame16b.mnemonic == .mov)
+        #expect(orrSame16b.mnemonicText == "mov")
+        #expect(orrSame16b.formattedDisassembly == "mov v8.16b, v0.16b")
+
+        // 0x0ea41c82 -> llvm-objdump: `mov.8b v2, v4`
+        let orrSame8b = decoder.decode(word: 0x0EA4_1C82, at: pc)
+        #expect(orrSame8b.mnemonic == .mov)
+        #expect(orrSame8b.mnemonicText == "mov")
+        #expect(orrSame8b.formattedDisassembly == "mov v2.8b, v4.8b")
+
+        // Counterexample (Rm != Rn): 0x4ea11c08 -> llvm-objdump: `orr.16b v8, v0, v1`
+        let orrDiff16b = decoder.decode(word: 0x4EA1_1C08, at: pc)
+        #expect(orrDiff16b.mnemonic == .orrVec)
+        #expect(orrDiff16b.mnemonicText == "orr")
+        #expect(orrDiff16b.formattedDisassembly == "orr v8.16b, v0.16b, v1.16b")
+
+        // Counterexample (Rm != Rn): 0x0ea51c82 -> llvm-objdump: `orr.8b v2, v4, v5`
+        let orrDiff8b = decoder.decode(word: 0x0EA5_1C82, at: pc)
+        #expect(orrDiff8b.mnemonic == .orrVec)
+        #expect(orrDiff8b.mnemonicText == "orr")
+        #expect(orrDiff8b.formattedDisassembly == "orr v2.8b, v4.8b, v5.8b")
+
+        // 2. INS (from general-purpose register, Q=1, !U, imm4=0b0011):
+        // Apple llvm-objdump unconditionally emits `mov.<b|h|s|d>` for all valid encodings
+        // (and `.long` when Q=0, which is unallocated in ARMv8-A).
+        let insCases: [(UInt32, String)] = [
+            (0x4E03_1D00, "mov v0.b[1], w8"),    // llvm-objdump: `mov.b v0[1], w8`
+            (0x4E06_1D60, "mov v0.h[1], w11"),   // llvm-objdump: `mov.h v0[1], w11`
+            (0x4E0C_1D21, "mov v1.s[1], w9"),    // llvm-objdump: `mov.s v1[1], w9`
+            (0x4E18_1F21, "mov v1.d[1], x25"),   // llvm-objdump: `mov.d v1[1], x25`
+            (0x4E01_1FE0, "mov v0.b[0], wzr"),   // llvm-objdump: `mov.b v0[0], wzr`
+            (0x4E08_1FFD, "mov v29.d[0], xzr"),  // llvm-objdump: `mov.d v29[0], xzr`
+        ]
+        for (word, expected) in insCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .mov, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == "mov", "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+        // Unallocated Q=0 boundary: 0x0e0c1d21 -> llvm-objdump: `.long 0x0e0c1d21`
+        let insQ0Invalid = decoder.decode(word: 0x0E0C_1D21, at: pc)
+        #expect(insQ0Invalid.mnemonic == .unknown)
+        #expect(insQ0Invalid.mnemonicText == ".inst")
+
+        // 3. UMOV -> MOV when copying 32-bit `.s` to Wd (Q=0, tz=2) or 64-bit `.d` to Xd (Q=1, tz=3);
+        // stays UMOV for zero-extending 8-bit `.b` (Q=0, tz=0) and 16-bit `.h` (Q=0, tz=1).
+        // 0x0e0c3cca -> llvm-objdump: `mov.s w10, v6[1]`
+        let umovS = decoder.decode(word: 0x0E0C_3CCA, at: pc)
+        #expect(umovS.mnemonic == .mov)
+        #expect(umovS.mnemonicText == "mov")
+        #expect(umovS.formattedDisassembly == "mov w10, v6.s[1]")
+
+        // 0x4e183c43 -> llvm-objdump: `mov.d x3, v2[1]`
+        let umovD = decoder.decode(word: 0x4E18_3C43, at: pc)
+        #expect(umovD.mnemonic == .mov)
+        #expect(umovD.mnemonicText == "mov")
+        #expect(umovD.formattedDisassembly == "mov x3, v2.d[1]")
+
+        // Counterexample (.b): 0x0e013c20 -> llvm-objdump: `umov.b w0, v1[0]`
+        let umovB = decoder.decode(word: 0x0E01_3C20, at: pc)
+        #expect(umovB.mnemonic == .umov)
+        #expect(umovB.mnemonicText == "umov")
+        #expect(umovB.formattedDisassembly == "umov w0, v1.b[0]")
+
+        // Counterexample (.h): 0x0e023c20 -> llvm-objdump: `umov.h w0, v1[0]`
+        let umovH = decoder.decode(word: 0x0E02_3C20, at: pc)
+        #expect(umovH.mnemonic == .umov)
+        #expect(umovH.mnemonicText == "umov")
+        #expect(umovH.formattedDisassembly == "umov w0, v1.h[0]")
+
+        // Unallocated Q/width mismatches: 0x0e083c20 (Q=0,.d) and 0x4e043c20 (Q=1,.s) -> `.long`
+        #expect(decoder.decode(word: 0x0E08_3C20, at: pc).mnemonicText == ".inst")
+        #expect(decoder.decode(word: 0x4E04_3C20, at: pc).mnemonicText == ".inst")
+
+        // 4. Architectural & PAC HINT encodings matching `llvm-objdump --arch=arm64e --mattr=+bti`,
+        // plus unallocated hint counterexamples that must remain `hint #imm`.
+        let hintAliases: [(UInt32, String)] = [
+            (0xD503_20DF, "dgh"),        // hint #6  -> llvm-objdump: `dgh`
+            (0xD503_211F, "pacia1716"),  // hint #8  -> llvm-objdump: `pacia1716`
+            (0xD503_215F, "pacib1716"),  // hint #10 -> llvm-objdump: `pacib1716`
+            (0xD503_219F, "autia1716"),  // hint #12 -> llvm-objdump: `autia1716`
+            (0xD503_21DF, "autib1716"),  // hint #14 -> llvm-objdump: `autib1716`
+            (0xD503_221F, "esb"),        // hint #16 -> llvm-objdump: `esb`
+            (0xD503_229F, "csdb"),       // hint #20 -> llvm-objdump: `csdb`
+            (0xD503_231F, "paciaz"),     // hint #24 -> llvm-objdump: `paciaz`
+            (0xD503_235F, "pacibz"),     // hint #26 -> llvm-objdump: `pacibz`
+            (0xD503_239F, "autiaz"),     // hint #28 -> llvm-objdump: `autiaz`
+            (0xD503_23DF, "autibz"),     // hint #30 -> llvm-objdump: `autibz`
+        ]
+        for (word, expected) in hintAliases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonicText == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples: unallocated hint codes remain `hint #<imm>` as in llvm-objdump.
+        let hintCounterexamples: [(UInt32, String)] = [
+            (0xD503_213F, "hint #9"),     // hint #9  -> llvm-objdump: `hint #9`
+            (0xD503_223F, "hint #0x11"),  // hint #17 -> llvm-objdump: `hint #0x11`
+            (0xD503_24FF, "hint #0x27"),  // hint #39 -> llvm-objdump: `hint #0x27`
+        ]
+        for (word, expected) in hintCounterexamples {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .hint)
+            #expect(decoded.mnemonicText == "hint")
+            #expect(decoded.formattedDisassembly == expected)
+        }
+    }
 }

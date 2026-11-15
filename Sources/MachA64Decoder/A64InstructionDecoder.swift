@@ -884,7 +884,7 @@ public struct A64InstructionDecoder: Sendable {
         let op2 = A64BitUtils.extract(word, 7, 5)
         let rt = UInt8(A64BitUtils.extract(word, 4, 0))
 
-        // Architectural Hints (NOP, YIELD, WFE, WFI, SEV, SEVL, PACIASP/PACIBSP/AUTIASP/AUTIBSP, BTI)
+        // Architectural & PAC Hints (NOP, YIELD, WFE, WFI, SEV, SEVL, DGH, ESB, CSDB, PAC/AUT, BTI)
         if !isRead && op0 == 0 && op1 == 0b011 && crn == 0b0010 && rt == 31 {
             let hintCode = (crm << 3) | op2
             switch hintCode {
@@ -900,6 +900,11 @@ public struct A64InstructionDecoder: Sendable {
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .sev, operands: [], group: .branchAndSystem)
             case 5:
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .sevl, operands: [], group: .branchAndSystem)
+            case 6: // DGH (0xD50320DF)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .hint, mnemonicText: "dgh",
+                    operands: [], group: .branchAndSystem
+                )
             case 7:
                 return A64DecodedInstruction(
                     address: address,
@@ -912,6 +917,76 @@ public struct A64InstructionDecoder: Sendable {
                     writesRegisters: [.lr],
                     autoComment: "Strip PAC from LR (x30)"
                 )
+            case 8: // PACIA1716 (0xD503211F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "pacia1716",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.x(17), .x(16)],
+                    writesRegisters: [.x(17)],
+                    autoComment: "PAC: Sign x17 with IA key + x16 modifier"
+                )
+            case 10: // PACIB1716 (0xD503215F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "pacib1716",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.x(17), .x(16)],
+                    writesRegisters: [.x(17)],
+                    autoComment: "PAC: Sign x17 with IB key + x16 modifier"
+                )
+            case 12: // AUTIA1716 (0xD503219F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "autia1716",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.x(17), .x(16)],
+                    writesRegisters: [.x(17)],
+                    autoComment: "PAC: Authenticate x17 with IA key + x16 modifier"
+                )
+            case 14: // AUTIB1716 (0xD50321DF)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "autib1716",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.x(17), .x(16)],
+                    writesRegisters: [.x(17)],
+                    autoComment: "PAC: Authenticate x17 with IB key + x16 modifier"
+                )
+            case 16: // ESB (0xD503221F)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .hint, mnemonicText: "esb",
+                    operands: [], group: .branchAndSystem
+                )
+            case 20: // CSDB (0xD503229F)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .hint, mnemonicText: "csdb",
+                    operands: [], group: .branchAndSystem
+                )
+            case 24: // PACIAZ (0xD503231F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "paciaz",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.lr],
+                    writesRegisters: [.lr],
+                    autoComment: "PAC: Sign LR (x30) with IA key + zero modifier"
+                )
             case 25: // PACIASP (0xD503233F)
                 return A64DecodedInstruction(
                     address: address,
@@ -922,6 +997,18 @@ public struct A64InstructionDecoder: Sendable {
                     readsRegisters: [.lr, .sp],
                     writesRegisters: [.lr],
                     autoComment: "PAC: Sign LR (x30) with IA key + SP modifier"
+                )
+            case 26: // PACIBZ (0xD503235F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "pacibz",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.lr],
+                    writesRegisters: [.lr],
+                    autoComment: "PAC: Sign LR (x30) with IB key + zero modifier"
                 )
             case 27: // PACIBSP (0xD503237F)
                 return A64DecodedInstruction(
@@ -934,6 +1021,18 @@ public struct A64InstructionDecoder: Sendable {
                     writesRegisters: [.lr],
                     autoComment: "PAC: Sign LR (x30) with IB key + SP modifier"
                 )
+            case 28: // AUTIAZ (0xD503239F)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "autiaz",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.lr],
+                    writesRegisters: [.lr],
+                    autoComment: "PAC: Authenticate LR (x30) with IA key + zero modifier"
+                )
             case 29: // AUTIASP (0xD50323BF)
                 return A64DecodedInstruction(
                     address: address,
@@ -944,6 +1043,18 @@ public struct A64InstructionDecoder: Sendable {
                     readsRegisters: [.lr, .sp],
                     writesRegisters: [.lr],
                     autoComment: "PAC: Authenticate LR (x30) with IA key + SP modifier"
+                )
+            case 30: // AUTIBZ (0xD50323DF)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .hint,
+                    mnemonicText: "autibz",
+                    operands: [],
+                    group: .pacPointerAuth,
+                    readsRegisters: [.lr],
+                    writesRegisters: [.lr],
+                    autoComment: "PAC: Authenticate LR (x30) with IB key + zero modifier"
                 )
             case 31: // AUTIBSP (0xD50323FF)
                 return A64DecodedInstruction(
@@ -3045,11 +3156,13 @@ public struct A64InstructionDecoder: Sendable {
                     group: .simdAndFP, readsRegisters: [vRn], writesRegisters: [vRd]
                 )
             }
-            if !u && imm4 == 0b0111 { // UMOV <Wd|Xd>, <Vn>.<Ts>[index]
+            if !u && imm4 == 0b0111 { // UMOV <Wd|Xd>, <Vn>.<Ts>[index] (preferred alias MOV for .s->Wd and .d->Xd)
+                guard (q && tz == 3) || (!q && tz < 3) else { return nil }
                 let gpRd = A64Register.gp(rd, is64Bit: q && tz == 3)
                 let vRn = A64Register.v(rn, arrangement: elemChar)
+                let preferredMnemonic: A64Mnemonic = ((!q && tz == 2) || (q && tz == 3)) ? .mov : .umov
                 return A64DecodedInstruction(
-                    address: address, rawWord: word, mnemonic: .umov,
+                    address: address, rawWord: word, mnemonic: preferredMnemonic,
                     operands: [.register(gpRd), .register(vRn)],
                     operandText: "\(gpRd.canonicalName), v\(rn).\(elemChar)[\(laneIndex)]",
                     group: .simdAndFP, readsRegisters: [vRn], writesRegisters: activeRegs([gpRd])
@@ -3065,11 +3178,12 @@ public struct A64InstructionDecoder: Sendable {
                     group: .simdAndFP, readsRegisters: [vRn], writesRegisters: activeRegs([gpRd])
                 )
             }
-            if !u && imm4 == 0b0011 { // INS <Vd>.<Ts>[index], <R><n>
+            if !u && imm4 == 0b0011 { // INS <Vd>.<Ts>[index], <R><n> (preferred alias MOV when Q=1)
+                guard q else { return nil }
                 let gpRn = A64Register.gp(rn, is64Bit: tz == 3)
                 let vRd = A64Register.v(rd, arrangement: elemChar)
                 return A64DecodedInstruction(
-                    address: address, rawWord: word, mnemonic: .ins,
+                    address: address, rawWord: word, mnemonic: .mov,
                     operands: [.register(vRd), .register(gpRn)],
                     operandText: "v\(rd).\(elemChar)[\(laneIndex)], \(gpRn.canonicalName)",
                     group: .simdAndFP, readsRegisters: activeRegs([vRd, gpRn]), writesRegisters: [vRd]
@@ -3093,9 +3207,16 @@ public struct A64InstructionDecoder: Sendable {
                         group: .simdAndFP, readsRegisters: [vn, vm], writesRegisters: [vd]
                     )
                 }
-                if !u && size == 0b10 { // ORR.16B / ORR.8B
+                if !u && size == 0b10 { // ORR.16B / ORR.8B (preferred alias MOV when Rm == Rn)
                     let vd = A64Register.v(rd, arrangement: byteArr)
                     let vn = A64Register.v(rn, arrangement: byteArr)
+                    if rm == rn {
+                        return A64DecodedInstruction(
+                            address: address, rawWord: word, mnemonic: .mov,
+                            operands: [.register(vd), .register(vn)],
+                            group: .simdAndFP, readsRegisters: [vn], writesRegisters: [vd]
+                        )
+                    }
                     let vm = A64Register.v(rm, arrangement: byteArr)
                     return A64DecodedInstruction(
                         address: address, rawWord: word, mnemonic: .orrVec, mnemonicText: "orr",

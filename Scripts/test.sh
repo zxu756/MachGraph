@@ -138,8 +138,41 @@ case "$MODE" in
                     echo "==> [milestone 0] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
                 fi
                 ;;
+            1|m1|M1)
+                echo "==> [milestone 1] Scoped unit tests for M1-touched modules"
+                run_scope \
+                    MachGraphModels \
+                    MachBinaryFormats \
+                    MachA64Decoder \
+                    MachCFGEngine \
+                    MachHeadlessCLI
+                echo "==> [milestone 1] Building release MachGraph CLI binary"
+                swift build -c release --product MachGraph >/dev/null
+                REL_BIN="$ROOT_DIR/.build/release/MachGraph"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m1-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                fi
+                echo "==> [milestone 1] Running Scripts/acceptance/differential.py quick -> $OUT_LABEL/differential-quick.txt"
+                python3 "$ROOT_DIR/Scripts/acceptance/differential.py" quick --machgraph "$REL_BIN" | tee "$OUT_DIR/differential-quick.txt"
+                echo "==> [milestone 1] Running Scripts/acceptance/differential.py standard -> $OUT_LABEL/differential-standard.txt"
+                python3 "$ROOT_DIR/Scripts/acceptance/differential.py" standard --machgraph "$REL_BIN" | tee "$OUT_DIR/differential-standard.txt"
+                echo "==> [milestone 1] Running Scripts/acceptance/macho-differential.py quick -> $OUT_LABEL/macho-differential-quick.txt"
+                python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" quick --machgraph "$REL_BIN" | tee "$OUT_DIR/macho-differential-quick.txt"
+                echo "==> [milestone 1] Running Scripts/acceptance/macho-differential.py standard -> $OUT_LABEL/macho-differential-standard.txt"
+                python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" standard --machgraph "$REL_BIN" | tee "$OUT_DIR/macho-differential-standard.txt"
+                if [ "$RECORD" -eq 1 ]; then
+                    echo "==> [milestone 1] Recorded logs under reports/"
+                else
+                    echo "==> [milestone 1] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
+                ;;
             *)
-                echo "Error: unsupported milestone '$MS' (only milestone 0 is implemented on m0/honest)." >&2
+                echo "Error: unsupported milestone '$MS' (supported: 0, 1)." >&2
                 exit 2
                 ;;
         esac
@@ -147,8 +180,10 @@ case "$MODE" in
     release)
         echo "==> [release] Full unit test suite"
         swift test --no-parallel
-        echo "==> [release] Building MachGraph CLI binary"
+        echo "==> [release] Building debug and release MachGraph CLI binaries"
         swift build --product MachGraph >/dev/null
+        swift build -c release --product MachGraph >/dev/null
+        REL_BIN="$ROOT_DIR/.build/release/MachGraph"
         if [ -x "$ROOT_DIR/Scripts/acceptance/m0-quick.sh" ]; then
             echo "==> [release] Running Scripts/acceptance/m0-quick.sh"
             "$ROOT_DIR/Scripts/acceptance/m0-quick.sh"
@@ -157,12 +192,19 @@ case "$MODE" in
             echo "==> [release] Running Scripts/acceptance/readme-commands.sh"
             "$ROOT_DIR/Scripts/acceptance/readme-commands.sh"
         fi
+        if [ -x "$ROOT_DIR/Scripts/acceptance/differential.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/differential.py standard"
+            python3 "$ROOT_DIR/Scripts/acceptance/differential.py" standard --machgraph "$REL_BIN"
+        fi
+        if [ -x "$ROOT_DIR/Scripts/acceptance/macho-differential.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/macho-differential.py standard"
+            python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" standard --machgraph "$REL_BIN"
+        fi
         if [ "${MACHGRAPH_CORPUS:-}" = "full" ]; then
-            if [ -x "$ROOT_DIR/Scripts/acceptance/differential.py" ]; then
-                python3 "$ROOT_DIR/Scripts/acceptance/differential.py" full
-            else
-                echo "SKIPPED (differential.py full belongs to M1; not yet implemented in M0)"
-            fi
+            echo "==> [release] Running Scripts/acceptance/differential.py full"
+            python3 "$ROOT_DIR/Scripts/acceptance/differential.py" full --machgraph "$REL_BIN"
+            echo "==> [release] Running Scripts/acceptance/macho-differential.py full"
+            python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" full --machgraph "$REL_BIN"
         else
             echo "SKIPPED (MACHGRAPH_CORPUS!=full)"
         fi

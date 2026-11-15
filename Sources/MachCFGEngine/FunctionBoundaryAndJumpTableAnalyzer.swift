@@ -914,9 +914,13 @@ public struct FunctionDiscoveryEngine: Sendable {
                 if insn.operands.count == 2,
                    case .register(let rd) = insn.operands[0],
                    case .register(let rm) = insn.operands[1],
+                   rd.isGeneralPurpose, rm.isGeneralPurpose,
+                   !rd.isZeroRegister, !rd.isStackPointer,
                    let val = regEnv[rm.index] {
                     regEnv[rd.index] = val
-                } else if let first = insn.operands.first, case .register(let rd) = first {
+                } else if let first = insn.operands.first,
+                          case .register(let rd) = first,
+                          rd.isGeneralPurpose, !rd.isZeroRegister, !rd.isStackPointer {
                     regEnv.removeValue(forKey: rd.index)
                 }
 

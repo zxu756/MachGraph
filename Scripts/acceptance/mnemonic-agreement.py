@@ -5,24 +5,9 @@ Usage:
   mnemonic-agreement.py <binary> [--arch arm64e] [--machgraph <path>]
                         [--min-agreement <percent>] [--max-wrong <n>]
 
-Both tools disassemble `__TEXT,__text` of the chosen slice. Instructions are matched by address and only
-the mnemonic is compared, after the normalization below. Every README agreement figure is produced by
-this script, so the README always says "after mnemonic normalization".
-
-Normalization rules (the only ones allowed; the acceptance document fixes this set):
-
-  1. Reference `mov`  == MachGraph `movz` or `movn`.
-     LLVM prints the preferred alias `mov` for MOVZ/MOVN wide-immediate moves; MachGraph still prints
-     the underlying instruction name.
-  2. Reference `udf`  == MachGraph `.inst`.
-     MachGraph prints permanently-undefined words as raw `.inst` data.
-  3. A vector arrangement suffix on the reference mnemonic is dropped before comparing
-     (`fmov.2d` -> `fmov`). Condition codes (`b.eq`, `b.ne`, ...) are part of the mnemonic and are kept.
-
-Classification of each instruction after normalization:
-  agree    mnemonics are equal
-  unknown  MachGraph printed `.inst` for a word LLVM decodes (not recognized; not counted as wrong)
-  wrong    MachGraph printed a different mnemonic
+Both tools disassemble `__TEXT,__text` of the chosen slice using the fixed
+reference command and single shared 3-rule normalization table in
+`mnemonic_normalization.py`.
 
 The result line starts with [PASS]/[FAIL] when a threshold was given and with [INFO] when the run only
 measures. Exit status: 0 on success, 1 if a threshold is missed or the two listings do not line up.
@@ -34,37 +19,57 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
+
+from mnemonic_normalization import (  # noqa: E402
+    NORMALIZATION_SUMMARY,
+    classify_mnemonic_pair,
+)
+
+_INSN_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
 
 
-def normalize_reference(mnemonic: str) -> str:
-    """Rule 3: drop a vector arrangement suffix, keep `b.<cond>`."""
-    if mnemonic.startswith("b."):
-        return mnemonic
-    return re.sub(r"\.\w+$", "", mnemonic)
-
-
-def mnemonics_agree(reference: str, machgraph: str) -> bool:
-    if machgraph == reference:
-        return True
-    if reference == "mov" and machgraph in ("movz", "movn"):  # rule 1
-        return True
-    if reference == "udf" and machgraph == ".inst":  # rule 2
-        return True
-    return False
+def default_machgraph_bin() -> str:
+    env_bin = os.environ.get("MACHGRAPH_BIN")
+    if env_bin:
+        return env_bin
+    candidates = [
+        os.path.join(REPO_ROOT, ".build", "release", "MachGraph"),
+        os.path.join(REPO_ROOT, ".build", "debug", "MachGraph"),
+    ]
+    existing = [p for p in candidates if os.path.isfile(p) and os.access(p, os.X_OK)]
+    if existing:
+        existing.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return existing[0]
+    return candidates[1]
 
 
 def reference_listing(binary: str, arch: str) -> dict:
-    out = subprocess.run(
-        ["xcrun", "llvm-objdump", "-d", "--no-show-raw-insn", f"--arch={arch}", "--section=__TEXT,__text", binary],
+    raw = subprocess.run(
+        [
+            "xcrun",
+            "llvm-objdump",
+            "-d",
+            "--no-show-raw-insn",
+            f"--arch={arch}",
+            "--mattr=+bti",
+            "--section=__TEXT,__text",
+            binary,
+        ],
         capture_output=True,
-        text=True,
         check=True,
     ).stdout
+    out = raw.decode("utf-8", errors="replace")
     ref = {}
     for line in out.splitlines():
-        m = re.match(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$", line)
+        if line.strip() == "Contents of (__TEXT,__text) section":
+            break
+        m = _INSN_LINE_RE.match(line)
         if m:
             ref[int(m.group(1), 16)] = m.group(2).lower()
     return ref
@@ -72,13 +77,40 @@ def reference_listing(binary: str, arch: str) -> dict:
 
 def machgraph_listing(machgraph_bin: str, binary: str) -> dict:
     env = dict(os.environ)
+    env["SWIFT_BACKTRACE"] = "enable=no"
     isolated_home = env.get("MACHGRAPH_ISOLATED_HOME")
-    if isolated_home:  # set by m0-quick.sh so the product never touches the real preferences
+    temp_ctx = None
+    if not isolated_home:
+        temp_ctx = tempfile.TemporaryDirectory(prefix="machgraph-home-")
+        isolated_home = temp_ctx.name
+    try:
         env.update(HOME=isolated_home, CFFIXED_USER_HOME=isolated_home)
-    out = subprocess.run([machgraph_bin, "disasm", binary], capture_output=True, text=True, check=True, env=env).stdout
+        raw = subprocess.run(
+            [machgraph_bin, "disasm", binary],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60,
+            check=True,
+            env=env,
+        ).stdout
+    finally:
+        if temp_ctx is not None:
+            temp_ctx.cleanup()
+
+    out = raw.decode("utf-8", errors="replace")
     insns = {}
+    in_text_section = True
+    saw_section_header = False
     for line in out.splitlines():
-        if not line or line.startswith(";"):
+        if not line:
+            continue
+        if line.startswith("; Section "):
+            saw_section_header = True
+            in_text_section = line.startswith("; Section __TEXT,__text ")
+            continue
+        if line.startswith(";"):
+            continue
+        if saw_section_header and not in_text_section:
             continue
         parts = line.split("\t")
         if len(parts) >= 3 and parts[0].startswith("0x"):
@@ -90,7 +122,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("binary")
     parser.add_argument("--arch", default="arm64e")
-    parser.add_argument("--machgraph", default=os.environ.get("MACHGRAPH_BIN", os.path.join(REPO_ROOT, ".build/debug/MachGraph")))
+    parser.add_argument("--machgraph", default=default_machgraph_bin())
     parser.add_argument("--min-agreement", type=float, default=None, help="fail below this agreement percentage")
     parser.add_argument("--max-wrong", type=int, default=None, help="fail above this many wrong mnemonics")
     parser.add_argument("--label", default=None, help="prefix for the result line")
@@ -112,13 +144,13 @@ def main() -> int:
         if got is None:
             missing += 1
             continue
-        base = normalize_reference(raw_ref)
-        if mnemonics_agree(base, got):
+        kind, norm_ref, norm_mg = classify_mnemonic_pair(raw_ref, got)
+        if kind == "agree":
             agree += 1
-        elif got == ".inst":
-            unknown[base] += 1
+        elif kind == "unknown":
+            unknown[norm_ref] += 1
         else:
-            wrong[(base, got)] += 1
+            wrong[(norm_ref, norm_mg)] += 1
 
     pct = 100.0 * agree / total
     n_unknown = sum(unknown.values())
@@ -136,7 +168,7 @@ def main() -> int:
     # Without thresholds this is a measurement, not a verdict: print INFO so "wrong > 0" is never shown as a pass.
     status = "FAIL" if failures else ("PASS" if has_threshold else "INFO")
     print(
-        f"[{status}] {label} (after mnemonic normalization: movz/movn->mov, udf->.inst, vector suffix dropped): "
+        f"[{status}] {label} (after mnemonic normalization: {NORMALIZATION_SUMMARY}): "
         f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} wrong={n_wrong}"
     )
     if unknown:
