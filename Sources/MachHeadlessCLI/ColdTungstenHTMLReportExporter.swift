@@ -8,7 +8,7 @@ import MachPatchAndHexEngine
 import MachPluginSDK
 import MachProjectStore
 
-// MARK: - Cold Tungsten Steel Standalone Bilingual HTML Triage Dossier Exporter (`v1.2.0`)
+// MARK: - Cold Tungsten Steel Standalone Bilingual HTML Triage Dossier Exporter (`v1.3.0`)
 
 public struct ColdTungstenHTMLReportExporter: Sendable {
     public init() {}
@@ -152,8 +152,8 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
         <head>
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta name="description" content="MachGraph v1.2.0 Cold-Tungsten macOS ARM64 and Mach-O binary inspection, CFG, and triage report.">
-          <title>MachGraph v1.2.0 Binary Triage Dossier: \(escapeHTML(titleEn))</title>
+          <meta name="description" content="MachGraph v1.3.0 Cold-Tungsten macOS ARM64 and Mach-O binary inspection, CFG, and triage report.">
+          <title>MachGraph v1.3.0 Binary Triage Dossier: \(escapeHTML(titleEn))</title>
           <style>
             /* Hallmark · v2.0.0 · scope: app · genre: industrial-telemetry · posture: precision · shape: app screen · surface: dark-absolute */
             :root {
@@ -385,7 +385,7 @@ public struct ColdTungstenHTMLReportExporter: Sendable {
             <header class="masthead">
               <div class="masthead-top">
                 <div>
-                  <p class="eyebrow" data-en="MachGraph v1.2.0 · Cold-Tungsten Binary Triage Dossier" data-zh="MachGraph v1.2.0 · 冷钨钢二进制逆向分诊报告">MachGraph v1.2.0 · Cold-Tungsten Binary Triage Dossier</p>
+                  <p class="eyebrow" data-en="MachGraph v1.3.0 · Cold-Tungsten Binary Triage Dossier" data-zh="MachGraph v1.3.0 · 冷钨钢二进制逆向分诊报告">MachGraph v1.3.0 · Cold-Tungsten Binary Triage Dossier</p>
                   <h1 data-en="\(escapeHTML(h1En))" data-zh="\(escapeHTML(h1Zh))">\(escapeHTML(h1En))</h1>
                 </div>
                 <div class="lang-toggle" role="group" aria-label="Language Switcher">

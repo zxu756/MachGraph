@@ -8,7 +8,7 @@
 > Mach-O 容器解析、dyld 链式修正、内嵌代码签名哈希计算与 ARM64 指令解码均由纯 Swift 在进程内完成，默认分析路径不调用 `otool`、`llvm-objdump`、`nm` 或 `codesign` 等外部命令。
 > - **`/bin/ls`（`arm64e` 切片）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令与 `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` 对照，**助记符归一之后**的一致数为 **`3,845 / 3,846`（`99.97%`）**，**判错 `0` 条**，未识别指令 `1` 条（输出 `.inst`）。归一只有三条规则，由 [`Scripts/acceptance/mnemonic-agreement.py`](Scripts/acceptance/mnemonic-agreement.py) 执行：`movz`/`movn` 算作 `mov`，`udf` 算作 `.inst`，参考助记符上的向量排列后缀去掉。不比较操作数。
 > - **`/usr/bin/ssh`（`arm64e` 切片）：** 仅对带指令属性的节（`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`）解码出 **`115,546` 条指令**，非指令数据节（如 `__TEXT,__info_plist`）输出为 **`0` 行**。
-> - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）。跨系统二进制大语料（`standard` / `full`）的自动化对照脚本排在里程碑 `M1`。
+> - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）。`M1` 的对照脚本（`./Scripts/test.sh milestone 1`）跑 `quick` 与 `standard` 语料；仓库里提交的 [`full` 报告](reports/differential-full-2026-11-15.json)（`/bin`、`/usr/bin`、`/usr/sbin`、`/usr/libexec`，`1,278` 个文件，`65,969,684` 条指令，同样只用三条归一规则）记录：判错 `0` 条，未识别（`.inst`）`38,063` 条，总体一致率 `99.94%`。
 
 ---
 
@@ -94,8 +94,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"
 
 以下路线图事项及仓库内既有模块**尚未**完成独立参考工具对照验收，不计入上方已验证能力表：
 
-- **M1 — 语料对照测试进仓库：** 新增 `Scripts/acceptance/differential.py` 与 `macho-differential.py`，覆盖 `quick`（`/bin/ls`）、`standard`（`ls`、`ssh`、`vim`）与 `full`（`/bin`、`/usr/bin`、`/usr/sbin`、`/usr/libexec`）三档系统二进制语料。
-- **M2 — SIMD 整数向量指令补齐与操作数对照：** 补齐当前输出为 `.inst` 的 AdvSIMD 整数向量指令族，统一 `mov` 系列首选别名，并加入操作数级对照与解码->汇编回环验证。
+- **M2 — SIMD 整数向量指令补齐与操作数对照：** 补齐当前输出为 `.inst` 的 AdvSIMD 整数向量指令族，补齐剩余首选别名（`movz`/`movn` 印作 `mov`），并加入操作数级对照与解码->汇编回环验证。
 - **M3 — 元数据与符号解混淆对照：** `symbols --json` 与 `nm -arch arm64e` 完整集合对齐（含未定义外部导入符号 `U`）、Swift `$s`（对照 `swift-demangle`）与 C++ `_Z`（对照 `c++filt`）解混淆基准、ObjC 元数据（对照 `otool -ov`）及 entitlements 键值对照。
 - **M4 — 控制流图不变量与性能：** 基本块划分不变量校验、与 Ghidra 基本块边界对比，以及 `ssh` / `vim` 全量建图性能剖析与优化。
 - **M5 — MCP 工具补齐与 SwiftPM 库接口：** 为 `mcp` 增补 `mach_disasm_function`、`mach_list_symbols`、`mach_cfg`、`mach_find_strings`，并提供可独立编译运行的 SwiftPM 库调用示例。

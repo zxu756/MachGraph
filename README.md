@@ -8,7 +8,7 @@ Pure-Swift ARM64/ARM64e disassembler, inline mini-assembler, and Universal/Mach-
 > Mach-O container parsing, dyld chained fixups, embedded code-signature hashing, and ARM64 instruction decoding run natively in Swift without invoking `otool`, `llvm-objdump`, `nm`, or `codesign`.
 > - **`/bin/ls` (`arm64e` slice):** `5` segments and `11` sections match `otool -arch arm64e -l /bin/ls` item-for-item (`vmaddr`, `vmsize`, `fileoff`, `filesize`, `addr`, `size`, `offset`); across all `3,846` instructions in `__TEXT,__text`, mnemonic agreement with `xcrun llvm-objdump -d --no-show-raw-insn --arch=arm64e` **after mnemonic normalization** is **`3,845 / 3,846` (`99.97%`)**, with **`0` wrong mnemonics** and `1` unrecognized word (`.inst`). The normalization is exactly three rules, applied by [`Scripts/acceptance/mnemonic-agreement.py`](Scripts/acceptance/mnemonic-agreement.py): `movz`/`movn` count as `mov`, `udf` counts as `.inst`, and a vector arrangement suffix on the reference mnemonic is dropped. Operands are not compared.
 > - **`/usr/bin/ssh` (`arm64e` slice):** **`115,546` instructions** decoded strictly from instruction-attributed sections (`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`), with **`0` lines** decoded from non-instruction data sections such as `__TEXT,__info_plist`.
-> - **Reproduce on any Apple Silicon Mac:** `./Scripts/test.sh milestone 0` (or `./Scripts/acceptance/m0-quick.sh`). Full multi-binary corpus differential benchmarking (`standard` / `full`) is scheduled for Milestone `M1`.
+> - **Reproduce on any Apple Silicon Mac:** `./Scripts/test.sh milestone 0` (or `./Scripts/acceptance/m0-quick.sh`). The `M1` differential harness (`./Scripts/test.sh milestone 1`) runs the `quick` and `standard` corpora; the committed [`full` report](reports/differential-full-2026-11-15.json) (`/bin`, `/usr/bin`, `/usr/sbin`, `/usr/libexec`, `1,278` files, `65,969,684` instructions, same three normalization rules) records `0` wrong mnemonics, `38,063` unrecognized words (`.inst`), and `99.94%` overall agreement.
 
 ---
 
@@ -94,8 +94,7 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"
 
 The following roadmap items and in-tree modules have **not** yet completed differential acceptance and are excluded from the verified feature table above:
 
-- **M1 — Corpus Differential Harness:** `Scripts/acceptance/differential.py` and `macho-differential.py` across `quick` (`/bin/ls`), `standard` (`ls`, `ssh`, `vim`), and `full` (`/bin`, `/usr/bin`, `/usr/sbin`, `/usr/libexec`) system binary corpora.
-- **M2 — SIMD Integer Vector Decoder & Operand Parity:** Complete coverage for unrecognized AdvSIMD integer mnemonics (currently emitted as `.inst`), LLVM canonical `mov` alias emission, and operand-level round-trip assembly checks.
+- **M2 — SIMD Integer Vector Decoder & Operand Parity:** Complete coverage for unrecognized AdvSIMD integer mnemonics (currently emitted as `.inst`), remaining LLVM canonical alias emission (`movz`/`movn` as `mov`), and operand-level round-trip assembly checks.
 - **M3 — Metadata & Demangler Differential Verification:** Full `LC_SYMTAB` parity with `nm -arch arm64e` (including undefined `U` import records), Swift `$s` (`swift-demangle`) and Itanium `_Z` (`c++filt`) demangling benchmarks, ObjC metadata (`otool -ov`), and entitlement plist parity.
 - **M4 — Control-Flow Graph Invariants & Performance:** CFG basic-block invariants, Ghidra block-boundary comparison, and `ssh`/`vim` whole-binary CFG construction profiling.
 - **M5 — Expanded MCP Tool Surface & SwiftPM Library API:** Adding `mach_disasm_function`, `mach_list_symbols`, `mach_cfg`, and `mach_find_strings` to `mcp`, plus standalone SwiftPM consumer examples.
