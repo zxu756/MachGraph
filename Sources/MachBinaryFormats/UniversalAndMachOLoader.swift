@@ -241,6 +241,55 @@ public enum MachOConstants {
 // MARK: - Pure-Swift Swift 5 / Itanium C++ / C Symbol Demangler
 
 public enum MachOSymbolDemangler {
+    private struct CharacterCursor {
+        let chars: [Character]
+        private(set) var index: Int = 0
+
+        init(_ text: String) {
+            self.chars = Array(text)
+        }
+
+        var isAtEnd: Bool { index >= chars.count }
+
+        func peek(_ offset: Int = 0) -> Character? {
+            let pos = index + offset
+            guard pos >= 0 && pos < chars.count else { return nil }
+            return chars[pos]
+        }
+
+        mutating func advance(_ count: Int = 1) {
+            guard count > 0 else { return }
+            index = min(chars.count, index + count)
+        }
+
+        mutating func restore(_ savedIndex: Int) {
+            index = max(0, min(chars.count, savedIndex))
+        }
+
+        mutating func readLengthPrefixedIdentifier(maxLength: Int = 4096) -> String? {
+            let saved = index
+            guard let first = peek(), first.isASCII, first.isNumber, first != "0" else {
+                return nil
+            }
+            var length = 0
+            while let ch = peek(), ch.isASCII, let digit = ch.wholeNumberValue {
+                length = length * 10 + digit
+                advance()
+                if length > maxLength {
+                    restore(saved)
+                    return nil
+                }
+            }
+            guard length > 0, index + length <= chars.count else {
+                restore(saved)
+                return nil
+            }
+            let result = String(chars[index..<(index + length)])
+            advance(length)
+            return result
+        }
+    }
+
     public static func demangle(_ rawName: String) -> String {
         guard !rawName.isEmpty else { return rawName }
 
@@ -249,28 +298,41 @@ public enum MachOSymbolDemangler {
             return rawName
         }
 
-        // Swift 5+ mangled names (_$s..., $s..., _$S..., $S...)
-        if rawName.hasPrefix("_$s") || rawName.hasPrefix("$s") || rawName.hasPrefix("_$S") || rawName.hasPrefix("$S") {
-            let bodyOffset = rawName.hasPrefix("_") ? 3 : 2
-            let body = String(rawName.dropFirst(bodyOffset))
-            if let swiftDemangled = demangleSwift5Body(body), !swiftDemangled.isEmpty {
-                return swiftDemangled
+        // Swift 5+ and Swift 4 mangled names (_$s..., $s..., _$S..., $S..., __T0..., _T0...)
+        for swiftPrefix in ["_$s", "$s", "_$S", "$S", "__T0", "_T0"] {
+            if rawName.hasPrefix(swiftPrefix) {
+                let body = String(rawName.dropFirst(swiftPrefix.count))
+                if let swiftDemangled = demangleSwift5Body(body), !swiftDemangled.isEmpty {
+                    return swiftDemangled
+                }
+                return rawName
             }
         }
 
-        // Swift 4 legacy (_T0...)
-        if rawName.hasPrefix("_T0") || rawName.hasPrefix("$S") {
-            let body = String(rawName.dropFirst(rawName.hasPrefix("_T0") ? 3 : 2))
-            if let swiftDemangled = demangleSwift5Body(body), !swiftDemangled.isEmpty {
-                return swiftDemangled
-            }
+        // Preserve truncated Swift / special '$' symbol prefixes (e.g. "_$") untouched
+        if rawName.hasPrefix("_$") {
+            return rawName
         }
 
         // Itanium C++ ABI (__Z... or _Z...)
-        if rawName.hasPrefix("__Z") || rawName.hasPrefix("_Z") {
-            let body = String(rawName.dropFirst(rawName.hasPrefix("__Z") ? 3 : 2))
+        if rawName.hasPrefix("__Z") {
+            let body = String(rawName.dropFirst(3))
             if let cppDemangled = demangleItaniumCPP(body), !cppDemangled.isEmpty {
                 return cppDemangled
+            }
+            return rawName
+        }
+        if rawName.hasPrefix("_Z") {
+            let body = String(rawName.dropFirst(2))
+            if let cppDemangled = demangleItaniumCPP(body), !cppDemangled.isEmpty {
+                return cppDemangled
+            }
+            if let first = body.first {
+                if first.isASCII && (first.isNumber || "NSTGZL".contains(first)) {
+                    return rawName
+                }
+            } else {
+                return rawName
             }
         }
 
@@ -282,145 +344,183 @@ public enum MachOSymbolDemangler {
         return rawName
     }
 
-    private static func demangleSwift5Body(_ body: String) -> String? {
-        let chars = Array(body)
-        var idx = 0
-        var components: [String] = []
-        var suffixTag: String?
-        var paramTypes: [String] = []
-        var returnType: String?
+    private static func consumeKnownSwiftType(_ cursor: inout CharacterCursor) -> String? {
+        let saved = cursor.index
+        guard let ch = cursor.peek() else { return nil }
 
-        func parseLengthIdentifier() -> String? {
-            guard idx < chars.count, chars[idx].isNumber else { return nil }
-            var length = 0
-            while idx < chars.count, let digit = chars[idx].wholeNumberValue {
-                length = length * 10 + digit
-                idx += 1
-                if length > 4096 { return nil }
+        if ch == "S", let next = cursor.peek(1) {
+            switch next {
+            case "i": cursor.advance(2); return "Int"
+            case "u": cursor.advance(2); return "UInt"
+            case "S": cursor.advance(2); return "String"
+            case "b": cursor.advance(2); return "Bool"
+            case "d": cursor.advance(2); return "Double"
+            case "f": cursor.advance(2); return "Float"
+            case "v": cursor.advance(2); return "UnsafeMutableRawPointer"
+            case "V": cursor.advance(2); return "UnsafeRawPointer"
+            case "P": cursor.advance(2); return "UnsafePointer"
+            case "p": cursor.advance(2); return "UnsafeMutablePointer"
+            case "q": cursor.advance(2); return "Optional"
+            case "a": cursor.advance(2); return "Array"
+            case "D": cursor.advance(2); return "Dictionary"
+            case "h": cursor.advance(2); return "Set"
+            default: break
             }
-            guard length > 0, idx + length <= chars.count else { return nil }
-            let text = String(chars[idx..<(idx + length)])
-            idx += length
-            return text
         }
 
-        func consumeKnownTypeToken() -> String? {
-            guard idx < chars.count else { return nil }
-            if chars[idx] == "S" && idx + 1 < chars.count {
-                let next = chars[idx + 1]
-                switch next {
-                case "i": idx += 2; return "Int"
-                case "u": idx += 2; return "UInt"
-                case "S": idx += 2; return "String"
-                case "b": idx += 2; return "Bool"
-                case "d": idx += 2; return "Double"
-                case "f": idx += 2; return "Float"
-                case "v": idx += 2; return "UnsafeRawPointer"
-                case "P": idx += 2; return "UnsafePointer"
-                case "p": idx += 2; return "UnsafeMutableRawPointer"
-                case "q": idx += 2; return "Optional"
-                case "a": idx += 2; return "Array"
-                case "D": idx += 2; return "Dictionary"
-                case "h": idx += 2; return "Set"
-                default: break
-                }
+        if ch == "s" {
+            cursor.advance()
+            if let stdName = cursor.readLengthPrefixedIdentifier(),
+               let kind = cursor.peek(),
+               "VCOP".contains(kind) {
+                cursor.advance()
+                return "Swift.\(stdName)"
             }
-            if chars[idx] == "s" {
-                idx += 1
-                if let stdName = parseLengthIdentifier() {
-                    if idx < chars.count && ("VCOP".contains(chars[idx])) {
-                        idx += 1
-                    }
-                    return "Swift.\(stdName)"
-                }
+            cursor.restore(saved)
+            return nil
+        }
+
+        if ch == "y" {
+            if cursor.peek(1) == "t" {
+                cursor.advance(2)
+            } else {
+                cursor.advance()
             }
-            if chars[idx] == "y" {
-                idx += 1
-                return "Void"
+            return "Void"
+        }
+
+        return nil
+    }
+
+    private static func parseMetadataSuffix(_ cursor: inout CharacterCursor) -> String? {
+        let saved = cursor.index
+        guard let ch = cursor.peek() else { return nil }
+        if ch == "M" {
+            cursor.advance()
+            guard let sub = cursor.peek() else {
+                cursor.restore(saved)
+                return nil
+            }
+            let tag: String?
+            switch sub {
+            case "a": tag = " (type metadata accessor)"
+            case "n": tag = " (nominal type descriptor)"
+            case "f": tag = " (full type metadata)"
+            case "N": tag = " (type metadata)"
+            default:  tag = nil
+            }
+            guard let resolved = tag else {
+                cursor.restore(saved)
+                return nil
+            }
+            cursor.advance()
+            return resolved
+        }
+        if ch == "N" {
+            cursor.advance()
+            return " (type metadata)"
+        }
+        return nil
+    }
+
+    private static func demangleSwift5Body(_ body: String) -> String? {
+        var cursor = CharacterCursor(body)
+        guard !cursor.isAtEnd else { return nil }
+
+        // Standard library nominal type (`$ss6UInt64V`, `$ss6UInt64VMn`, etc.)
+        if cursor.peek() == "s" {
+            if let stdType = consumeKnownSwiftType(&cursor) {
+                if cursor.isAtEnd {
+                    return stdType
+                }
+                if let meta = parseMetadataSuffix(&cursor), cursor.isAtEnd {
+                    return stdType + meta
+                }
             }
             return nil
         }
 
+        guard let moduleName = cursor.readLengthPrefixedIdentifier() else {
+            return nil
+        }
+
+        var components: [String] = [moduleName]
+        var hasCompleteEntity = false
+        var suffixTag: String?
+        var paramTypes: [String] = []
+        var returnType: String?
+
         var iterations = 0
-        while idx < chars.count && iterations < 64 {
+        while !cursor.isAtEnd {
             iterations += 1
-            if let ident = parseLengthIdentifier() {
-                if idx < chars.count {
-                    let kindChar = chars[idx]
-                    switch kindChar {
-                    case "V", "C", "O", "P":
-                        idx += 1
-                        components.append(ident)
-                        continue
-                    case "F":
-                        idx += 1
-                        components.append(ident)
-                        // Attempt lightweight signature extraction
-                        while idx < chars.count {
-                            if let t = consumeKnownTypeToken() {
-                                if returnType == nil {
-                                    returnType = t
-                                } else {
-                                    paramTypes.append(t)
-                                }
-                            } else {
-                                idx += 1
-                            }
-                        }
-                        break
-                    case "v":
-                        idx += 1
-                        components.append(ident)
-                        if idx < chars.count {
-                            switch chars[idx] {
-                            case "g": idx += 1; suffixTag = ".getter"
-                            case "s": idx += 1; suffixTag = ".setter"
-                            case "M": idx += 1; suffixTag = ".modify"
-                            case "p": idx += 1; suffixTag = " (property descriptor)"
-                            default: break
-                            }
-                        }
-                        continue
-                    default:
-                        components.append(ident)
-                        continue
-                    }
-                } else {
+            if iterations > 64 {
+                return nil
+            }
+
+            if let ident = cursor.readLengthPrefixedIdentifier() {
+                guard let kindChar = cursor.peek() else {
+                    // Bare identifier at EOF without nominal/function/variable kind is truncated
+                    return nil
+                }
+                switch kindChar {
+                case "V", "C", "O", "P":
+                    cursor.advance()
                     components.append(ident)
-                }
-            } else if let stdType = consumeKnownTypeToken() {
-                paramTypes.append(stdType)
-            } else {
-                let c = chars[idx]
-                idx += 1
-                switch c {
-                case "M":
-                    if idx < chars.count {
-                        switch chars[idx] {
-                        case "a": idx += 1; suffixTag = " (type metadata accessor)"
-                        case "n": idx += 1; suffixTag = " (nominal type descriptor)"
-                        case "f": idx += 1; suffixTag = " (full type metadata)"
-                        case "N": idx += 1; suffixTag = " (type metadata)"
-                        default: break
+                    hasCompleteEntity = true
+                case "F":
+                    cursor.advance()
+                    components.append(ident)
+                    hasCompleteEntity = true
+                    while !cursor.isAtEnd {
+                        guard let t = consumeKnownSwiftType(&cursor) else {
+                            return nil
+                        }
+                        if returnType == nil {
+                            returnType = t
+                        } else {
+                            paramTypes.append(t)
                         }
                     }
-                case "C" where !components.isEmpty:
-                    if idx < chars.count && chars[idx] == "f" {
-                        idx += 1
-                        suffixTag = ".init"
+                case "v":
+                    cursor.advance()
+                    guard let acc = cursor.peek() else { return nil }
+                    switch acc {
+                    case "g": suffixTag = ".getter"
+                    case "s": suffixTag = ".setter"
+                    case "M": suffixTag = ".modify"
+                    case "p": suffixTag = " (property descriptor)"
+                    default:  return nil
                     }
-                case "f":
-                    if idx < chars.count && chars[idx] == "D" {
-                        idx += 1
-                        suffixTag = ".deinit"
-                    }
+                    cursor.advance()
+                    guard cursor.isAtEnd else { return nil }
+                    components.append(ident)
+                    hasCompleteEntity = true
                 default:
-                    break
+                    return nil
                 }
+            } else if hasCompleteEntity {
+                if let meta = parseMetadataSuffix(&cursor), cursor.isAtEnd {
+                    suffixTag = meta
+                } else if cursor.peek() == "C", cursor.peek(1) == "f" {
+                    cursor.advance(2)
+                    guard cursor.isAtEnd else { return nil }
+                    suffixTag = ".init"
+                } else if cursor.peek() == "f", cursor.peek(1) == "D" {
+                    cursor.advance(2)
+                    guard cursor.isAtEnd else { return nil }
+                    suffixTag = ".deinit"
+                } else {
+                    return nil
+                }
+            } else {
+                return nil
             }
         }
 
-        guard !components.isEmpty else { return nil }
+        guard cursor.isAtEnd, hasCompleteEntity, !components.isEmpty else {
+            return nil
+        }
+
         var qualified = components.joined(separator: ".")
         if let tag = suffixTag {
             qualified += tag
@@ -436,125 +536,135 @@ public enum MachOSymbolDemangler {
     }
 
     private static func demangleItaniumCPP(_ body: String) -> String? {
-        let chars = Array(body)
-        var idx = 0
+        var cursor = CharacterCursor(body)
+        guard !cursor.isAtEnd else { return nil }
+
         var isNested = false
         var isConstMethod = false
+        var closedNested = false
         var parts: [String] = []
 
-        if idx < chars.count && chars[idx] == "N" {
+        if cursor.peek() == "N" {
             isNested = true
-            idx += 1
-            while idx < chars.count && (chars[idx] == "K" || chars[idx] == "V") {
-                if chars[idx] == "K" { isConstMethod = true }
-                idx += 1
+            cursor.advance()
+            while let q = cursor.peek(), (q == "K" || q == "V") {
+                if q == "K" { isConstMethod = true }
+                cursor.advance()
             }
         }
 
-        func readLengthPart() -> String? {
-            guard idx < chars.count, chars[idx].isNumber else { return nil }
-            var len = 0
-            while idx < chars.count, let d = chars[idx].wholeNumberValue {
-                len = len * 10 + d
-                idx += 1
-                if len > 4096 { return nil }
-            }
-            guard len > 0, idx + len <= chars.count else { return nil }
-            let s = String(chars[idx..<(idx + len)])
-            idx += len
-            return s
-        }
+        var nameSteps = 0
+        while !cursor.isAtEnd {
+            nameSteps += 1
+            if nameSteps > 128 { return nil }
 
-        while idx < chars.count {
-            if isNested && chars[idx] == "E" {
-                idx += 1
+            if isNested && cursor.peek() == "E" {
+                cursor.advance()
+                closedNested = true
                 break
             }
-            if chars[idx] == "S" && idx + 1 < chars.count && chars[idx + 1] == "t" {
-                idx += 2
+            if cursor.peek() == "S" && cursor.peek(1) == "t" {
+                cursor.advance(2)
                 parts.append("std")
                 continue
             }
-            if chars[idx] == "C" && idx + 1 < chars.count && ("123".contains(chars[idx + 1])) {
-                idx += 2
-                if let last = parts.last { parts.append(last) }
+            if cursor.peek() == "C", let v = cursor.peek(1), "123".contains(v), let last = parts.last {
+                cursor.advance(2)
+                parts.append(last)
+                if !isNested { break }
                 continue
             }
-            if chars[idx] == "D" && idx + 1 < chars.count && ("012".contains(chars[idx + 1])) {
-                idx += 2
-                if let last = parts.last { parts.append("~\(last)") }
+            if cursor.peek() == "D", let v = cursor.peek(1), "012".contains(v), let last = parts.last {
+                cursor.advance(2)
+                parts.append("~\(last)")
+                if !isNested { break }
                 continue
             }
-            if chars[idx] == "I" {
-                // Skip template args block neatly
-                idx += 1
+            if cursor.peek() == "I" {
+                guard let lastIdx = parts.indices.last else { return nil }
+                cursor.advance()
                 var depth = 1
-                while idx < chars.count && depth > 0 {
-                    if chars[idx] == "I" { depth += 1 }
-                    else if chars[idx] == "E" { depth -= 1 }
-                    idx += 1
+                while !cursor.isAtEnd && depth > 0 {
+                    if let ch = cursor.peek() {
+                        if ch == "I" { depth += 1 }
+                        else if ch == "E" { depth -= 1 }
+                    }
+                    cursor.advance()
                 }
-                if let lastIdx = parts.indices.last {
-                    parts[lastIdx] += "<...>"
-                }
+                guard depth == 0 else { return nil }
+                parts[lastIdx] += "<...>"
+                if !isNested { break }
                 continue
             }
-            if let part = readLengthPart() {
+            if let part = cursor.readLengthPrefixedIdentifier() {
                 parts.append(part)
                 if !isNested { break }
             } else {
-                break
+                return nil
             }
         }
 
         guard !parts.isEmpty else { return nil }
+        if isNested && !closedNested { return nil }
+
+        let joinedName = parts.joined(separator: "::")
+        if cursor.isAtEnd {
+            let constSuffix = isConstMethod ? " const" : ""
+            return "\(joinedName)\(constSuffix)"
+        }
 
         var params: [String] = []
-        while idx < chars.count && params.count < 16 {
+        while !cursor.isAtEnd {
+            if params.count >= 64 { return nil }
             var prefix = ""
-            while idx < chars.count && ("PKR".contains(chars[idx])) {
-                switch chars[idx] {
+            while let q = cursor.peek(), "PKR".contains(q) {
+                switch q {
                 case "P": prefix = "*" + prefix
                 case "R": prefix = "&" + prefix
                 case "K": prefix = "const " + prefix
                 default: break
                 }
-                idx += 1
+                cursor.advance()
             }
-            guard idx < chars.count else { break }
-            let tChar = chars[idx]
-            idx += 1
+            guard let tChar = cursor.peek() else { return nil }
             let base: String?
+            var isVoidAlone = false
             switch tChar {
-            case "v": base = params.isEmpty && prefix.isEmpty ? nil : "void"
-            case "b": base = "bool"
-            case "c", "a": base = "char"
-            case "h": base = "uint8_t"
-            case "s": base = "int16_t"
-            case "t": base = "uint16_t"
-            case "i": base = "int"
-            case "j": base = "unsigned int"
-            case "l": base = "long"
-            case "m": base = "unsigned long"
-            case "x": base = "int64_t"
-            case "y": base = "uint64_t"
-            case "f": base = "float"
-            case "d": base = "double"
+            case "v":
+                cursor.advance()
+                if params.isEmpty && prefix.isEmpty && cursor.isAtEnd {
+                    isVoidAlone = true
+                    base = nil
+                } else {
+                    base = "void"
+                }
+            case "b": cursor.advance(); base = "bool"
+            case "c", "a": cursor.advance(); base = "char"
+            case "h": cursor.advance(); base = "uint8_t"
+            case "s": cursor.advance(); base = "int16_t"
+            case "t": cursor.advance(); base = "uint16_t"
+            case "i": cursor.advance(); base = "int"
+            case "j": cursor.advance(); base = "unsigned int"
+            case "l": cursor.advance(); base = "long"
+            case "m": cursor.advance(); base = "unsigned long"
+            case "x": cursor.advance(); base = "int64_t"
+            case "y": cursor.advance(); base = "uint64_t"
+            case "f": cursor.advance(); base = "float"
+            case "d": cursor.advance(); base = "double"
             default:
-                idx -= 1
-                if let named = readLengthPart() {
+                if let named = cursor.readLengthPrefixedIdentifier() {
                     base = named
                 } else {
-                    idx += 1
-                    base = nil
+                    return nil
                 }
             }
             if let b = base {
                 params.append(prefix.hasPrefix("const ") ? "\(prefix)\(b)" : "\(b)\(prefix)")
+            } else if !isVoidAlone {
+                return nil
             }
         }
 
-        let joinedName = parts.joined(separator: "::")
         let constSuffix = isConstMethod ? " const" : ""
         return "\(joinedName)(\(params.joined(separator: ", ")))\(constSuffix)"
     }

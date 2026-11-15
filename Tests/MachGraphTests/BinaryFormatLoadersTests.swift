@@ -723,4 +723,82 @@ struct BinaryFormatLoadersTests {
         #expect(!inferredSymbols.isEmpty)
         #expect(inferredSymbols.contains { $0.provenance == .functionStarts })
     }
+
+    @Test("G31: MachOSymbolDemangler never traps on unparseable or prefix-truncated Swift/C++ symbols and returns raw mangled names")
+    func g31MachOSymbolDemanglerUnparseableAndTruncatedSymbolsReturnRawName() {
+        // Exact crashing symbol from /usr/bin/log (`s` at end of body caused Index out of range).
+        let logSymbol = "_$sSo9NSScannerC10FoundationE12currentIndexSS0D0Vvs"
+        #expect(MachOSymbolDemangler.demangle(logSymbol) == logSymbol)
+        for cut in 1..<logSymbol.count {
+            let prefix = String(logSymbol.prefix(cut))
+            #expect(
+                MachOSymbolDemangler.demangle(prefix) == prefix,
+                "Prefix of length \(cut) (\(prefix)) must return raw symbol untouched"
+            )
+        }
+
+        // Additional crashing shapes from the 107 baseline binaries (trailing digits `_Ts5`, `_Tg5`, `.resume.0`,
+        // `0`-prefixed word substitutions, generic subscript setters `cis`, optional property setters `Sgvs`).
+        let unparseableAtEveryCut = [
+            "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyFyXl_Ts5",
+            "_$sSKsSQ7ElementRpzrlE9lastIndex2of0C0QzSgAB_tFSS8UTF8ViewV_Tg5",
+            "_$sSDyq_Sgxcis"
+        ]
+        for sym in unparseableAtEveryCut {
+            #expect(MachOSymbolDemangler.demangle(sym) == sym)
+            for cut in 1..<sym.count {
+                let prefix = String(sym.prefix(cut))
+                #expect(MachOSymbolDemangler.demangle(prefix) == prefix)
+            }
+        }
+
+        // Symbols whose prefix hits one valid complete nominal boundary (`...V` or `...C`) and is otherwise unparseable.
+        let mixedPrefixSymbols: [(symbol: String, validNominalPrefix: String, expectedNominal: String)] = [
+            (
+                "_$s16FoundationModels17GenerationOptionsV11temperatureSdSgvs",
+                "_$s16FoundationModels17GenerationOptionsV",
+                "FoundationModels.GenerationOptions"
+            ),
+            (
+                "_$s15icloudmailagent11APNSManagerC8delegateAA0B8Delegate_pSgvM.resume.0",
+                "_$s15icloudmailagent11APNSManagerC",
+                "icloudmailagent.APNSManager"
+            )
+        ]
+        for item in mixedPrefixSymbols {
+            #expect(MachOSymbolDemangler.demangle(item.symbol) == item.symbol)
+            for cut in 1..<item.symbol.count {
+                let prefix = String(item.symbol.prefix(cut))
+                let got = MachOSymbolDemangler.demangle(prefix)
+                if prefix == item.validNominalPrefix {
+                    #expect(got == item.expectedNominal)
+                } else {
+                    #expect(
+                        got == prefix,
+                        "Truncated prefix \(prefix) must return raw mangled name, got \(got)"
+                    )
+                }
+            }
+        }
+
+        // Malformed / boundary Swift and Itanium C++ inputs must return raw input untouched.
+        let malformedInputs = [
+            "", "_", "_$", "_$s", "$s", "_$S", "$S", "_T0", "__T0",
+            "_$ss", "_$s0", "_$s99", "_$s9MachGraph", "$ss6UInt64",
+            "_Z", "__Z", "_Z99", "_ZN3foo", "_ZN3fooI3bar", "_ZN3foo3barEP"
+        ]
+        for raw in malformedInputs {
+            #expect(MachOSymbolDemangler.demangle(raw) == raw, "Expected raw return for \(raw.debugDescription)")
+        }
+
+        // Positive controls: complete supported symbols continue to demangle cleanly.
+        #expect(MachOSymbolDemangler.demangle("$s15MachGraphTarget13LicensePacketV") == "MachGraphTarget.LicensePacket")
+        #expect(
+            MachOSymbolDemangler.demangle("$s15MachGraphTarget13LicensePacketVMn")
+                == "MachGraphTarget.LicensePacket (nominal type descriptor)"
+        )
+        #expect(MachOSymbolDemangler.demangle("$ss6UInt64V") == "Swift.UInt64")
+        #expect(MachOSymbolDemangler.demangle("_main") == "main")
+        #expect(MachOSymbolDemangler.demangle("__mh_execute_header") == "__mh_execute_header")
+    }
 }
