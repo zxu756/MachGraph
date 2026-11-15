@@ -673,7 +673,7 @@ def main() -> int:
     parser.add_argument(
         "--record",
         action="store_true",
-        help="write JSON summary to reports/macho-differential-<YYYY-MM-DD>.json under repo root",
+        help="write JSON summary to reports/macho-differential-<corpus>-<YYYY-MM-DD>.json under repo root",
     )
     parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 4), help="parallel worker count")
     parser.add_argument("--verbose", action="store_true", help="print every file row even on full corpus")
@@ -721,7 +721,7 @@ def main() -> int:
     date_str = utc_now.strftime("%Y-%m-%d")
     json_out_path = args.json_out
     if args.record and json_out_path is None:
-        json_out_path = os.path.join(REPO_ROOT, "reports", f"macho-differential-{date_str}.json")
+        json_out_path = os.path.join(REPO_ROOT, "reports", f"macho-differential-{corpus_name}-{date_str}.json")
     env_meta = collect_environment_metadata(args.machgraph)
     print(f"=== MachGraph Mach-O Differential Check ({corpus_name}) ===")
     print(f"Date (UTC):  {utc_now.strftime('%Y-%m-%dT%H:%M:%SZ')}")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit and regression tests for MachGraph M1 differential acceptance harnesses (G32, G33, G36, G39, G41)."""
+"""Unit and regression tests for MachGraph M1 differential acceptance harnesses (G32, G33, G36, G39, G41, G44, G45)."""
 
 import importlib.util
 import json
@@ -172,15 +172,21 @@ class TestItem2ZeroReferenceFails(unittest.TestCase):
         ):
             self.assertEqual(mnemonic_agreement.main(), 1)
 
-        # ref == 0 and mine == 0 (truly empty __TEXT,__text) -> exit 0 without ZeroDivisionError
+        # ref == 0 and mine == 0 -> must ALSO exit 1 under restored >=100 floor (G45), never 100% PASS
+        out_both_empty = io.StringIO()
+        err_both_empty = io.StringIO()
         with mock.patch.object(mnemonic_agreement, "reference_listing", return_value={}), mock.patch.object(
             mnemonic_agreement, "machgraph_listing", return_value={}
-        ), mock.patch.object(sys, "argv", ["mnemonic-agreement.py", "/bin/ls"]), redirect_stdout(
-            io.StringIO()
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--min-agreement", "99.9", "--max-wrong", "0"]
+        ), redirect_stdout(
+            out_both_empty
         ), redirect_stderr(
-            io.StringIO()
+            err_both_empty
         ):
-            self.assertEqual(mnemonic_agreement.main(), 0)
+            self.assertEqual(mnemonic_agreement.main(), 1)
+        self.assertNotIn("[PASS]", out_both_empty.getvalue())
+        self.assertNotIn("100.00%", out_both_empty.getvalue())
 
 
 class TestItem3BidirectionalAddresses(unittest.TestCase):
@@ -615,6 +621,223 @@ class TestItem6MachODifferentialLibrariesFlagsAndFixups(unittest.TestCase):
             row = macho_differential.check_one_binary("/bin/fake", "/fake/mg", "/tmp")
         joined = "; ".join(row["mismatches"])
         self.assertIn("3", joined, f"Expected total mismatch count 3 reported for fixups, got: {row['mismatches']}")
+
+
+class TestItem7RecordFilenameIncludesCorpusTier(unittest.TestCase):
+    """G44: --record report filename includes corpus tier (quick, standard, full) so tiers never overwrite each other."""
+
+    def test_record_full_then_quick_leaves_full_report_untouched(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin1 = os.path.join(tmp, "bin1")
+            fake_bin2 = os.path.join(tmp, "bin2")
+            for p in (fake_bin1, fake_bin2):
+                with open(p, "wb") as fh:
+                    fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+            fake_mg = _make_fake_machgraph_script(tmp, "")
+
+            def fake_compare(path: str, _mg: str, _home: str):
+                return {
+                    "path": path,
+                    "arch": "arm64e",
+                    "total": 10,
+                    "agree": 10,
+                    "unknown_total": 0,
+                    "wrong_total": 0,
+                    "missing": 0,
+                    "machgraph_only_inst": 0,
+                    "machgraph_only_wrong": 0,
+                    "missing_examples": [],
+                    "unknown": {},
+                    "wrong_pairs": {},
+                    "wrong_pair_examples": {},
+                    "wrong_shapes": {},
+                    "wrong_shape_examples": {},
+                    "non_utf8_reference": False,
+                    "non_utf8_machgraph": False,
+                    "exit_code": 0,
+                    "seconds": 0.01,
+                }
+
+            fake_env_meta = {
+                "macos_product_name": "macOS",
+                "macos_version": "27.0.1",
+                "macos_build": "26A434",
+                "machine": "arm64",
+                "llvm_objdump_version": "Apple LLVM version 21.0.0",
+                "machgraph_commit": "0123456789abcdef0123456789abcdef01234567",
+                "worktree_clean": True,
+                "machgraph_binary": "MachGraph",
+            }
+
+            with mock.patch.object(differential, "REPO_ROOT", tmp), mock.patch.object(
+                differential, "is_worktree_clean", return_value=True
+            ), mock.patch.object(
+                differential, "collect_environment_metadata", return_value=fake_env_meta
+            ), mock.patch.object(
+                differential, "discover_full_candidates", return_value=[fake_bin1, fake_bin2]
+            ), mock.patch.object(
+                differential, "QUICK_FILES", [fake_bin1]
+            ), mock.patch.object(
+                differential, "STANDARD_FILES", [fake_bin1, fake_bin2]
+            ), mock.patch.object(
+                differential, "compare_one_binary", side_effect=fake_compare
+            ):
+                with mock.patch.object(
+                    sys, "argv", ["differential.py", "full", "--workers", "1", "--record", "--machgraph", fake_mg]
+                ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc_full = differential.main()
+                self.assertEqual(rc_full, 0)
+
+                reports_dir = os.path.join(tmp, "reports")
+                after_full_files = sorted(os.listdir(reports_dir))
+                self.assertEqual(len(after_full_files), 1)
+                full_filename = after_full_files[0]
+                full_report_path = os.path.join(reports_dir, full_filename)
+                with open(full_report_path, "rb") as fh:
+                    full_bytes_before = fh.read()
+                full_json = json.loads(full_bytes_before.decode("utf-8"))
+                self.assertEqual(full_json["corpus"], "full")
+                self.assertEqual(full_json["summary"]["compared_files"], 2)
+
+                with mock.patch.object(
+                    sys, "argv", ["differential.py", "quick", "--record", "--machgraph", fake_mg]
+                ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc_quick = differential.main()
+                self.assertEqual(rc_quick, 0)
+
+                self.assertTrue(os.path.isfile(full_report_path), "full report file disappeared")
+                with open(full_report_path, "rb") as fh:
+                    full_bytes_after_quick = fh.read()
+                self.assertEqual(
+                    full_bytes_after_quick,
+                    full_bytes_before,
+                    "Running quick --record must not modify the full report",
+                )
+                self.assertIn("full", full_filename, f"Expected 'full' in report filename, got {full_filename}")
+
+                with mock.patch.object(
+                    sys, "argv", ["differential.py", "standard", "--workers", "1", "--record", "--machgraph", fake_mg]
+                ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    rc_std = differential.main()
+                self.assertEqual(rc_std, 0)
+
+                after_all_files = sorted(os.listdir(reports_dir))
+                self.assertEqual(len(after_all_files), 3, f"Expected separate full/quick/standard reports, got {after_all_files}")
+                with open(full_report_path, "rb") as fh:
+                    full_bytes_after = fh.read()
+                self.assertEqual(
+                    full_bytes_after,
+                    full_bytes_before,
+                    "Running quick/standard --record must not modify the full report",
+                )
+
+            # Verify macho-differential.py --record also separates full and quick filenames
+            def fake_check_macho(path: str, _mg: str, _home: str):
+                return {
+                    "path": path,
+                    "arch": "arm64e",
+                    "segments": 5,
+                    "sections": 11,
+                    "libraries": 3,
+                    "fixups": 10,
+                    "has_chained_fixups": True,
+                    "is_signed": True,
+                    "codesign_flags_hex": "0x0",
+                    "mismatches": [],
+                    "seconds": 0.01,
+                }
+
+            with mock.patch.object(macho_differential, "REPO_ROOT", tmp), mock.patch.object(
+                macho_differential, "is_worktree_clean", return_value=True
+            ), mock.patch.object(
+                macho_differential,
+                "collect_environment_metadata",
+                return_value={"machgraph_commit": "0123456789abcdef", "worktree_clean": True, "machgraph_binary": "MachGraph"},
+            ), mock.patch.object(
+                macho_differential, "discover_full_candidates", return_value=[fake_bin1, fake_bin2]
+            ), mock.patch.object(
+                macho_differential, "QUICK_FILES", [fake_bin1]
+            ), mock.patch.object(
+                macho_differential, "check_one_binary", side_effect=fake_check_macho
+            ):
+                with mock.patch.object(
+                    sys, "argv", ["macho-differential.py", "full", "--workers", "1", "--record", "--machgraph", fake_mg]
+                ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    self.assertEqual(macho_differential.main(), 0)
+                macho_full_files = sorted(f for f in os.listdir(reports_dir) if f.startswith("macho-differential-"))
+                self.assertEqual(len(macho_full_files), 1)
+                self.assertIn("full", macho_full_files[0])
+                macho_full_path = os.path.join(reports_dir, macho_full_files[0])
+                with open(macho_full_path, "rb") as fh:
+                    macho_full_before = fh.read()
+
+                with mock.patch.object(
+                    sys, "argv", ["macho-differential.py", "quick", "--record", "--machgraph", fake_mg]
+                ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                    self.assertEqual(macho_differential.main(), 0)
+                with open(macho_full_path, "rb") as fh:
+                    self.assertEqual(fh.read(), macho_full_before)
+
+
+class TestItem8MnemonicAgreementMinimumReferenceFloor(unittest.TestCase):
+    """G45: mnemonic-agreement.py enforces reference instruction count >= 100 (fails on 0/0 and <100)."""
+
+    def test_zero_and_under_100_reference_instructions_fail(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        # Case 1: both reference and MachGraph have 0 instructions -> must fail (exit 1), never 100% PASS
+        for extra_args in ([], ["--min-agreement", "99.9", "--max-wrong", "0"]):
+            out_buf = io.StringIO()
+            err_buf = io.StringIO()
+            with mock.patch.object(mnemonic_agreement, "reference_listing", return_value={}), mock.patch.object(
+                mnemonic_agreement, "machgraph_listing", return_value={}
+            ), mock.patch.object(
+                sys, "argv", ["mnemonic-agreement.py", "/bin/ls", *extra_args]
+            ), redirect_stdout(
+                out_buf
+            ), redirect_stderr(
+                err_buf
+            ):
+                rc = mnemonic_agreement.main()
+            self.assertEqual(rc, 1, f"0/0 instructions must exit 1 with args={extra_args}, got stdout={out_buf.getvalue()!r}")
+            self.assertNotIn("[PASS]", out_buf.getvalue())
+            self.assertNotIn("100.00%", out_buf.getvalue())
+            self.assertIn("[FAIL]", err_buf.getvalue())
+
+        # Case 2: 99 reference instructions (< 100 floor) -> must fail (exit 1)
+        ref_99 = {0x1000 + 4 * i: "nop" for i in range(99)}
+        out_99 = io.StringIO()
+        err_99 = io.StringIO()
+        with mock.patch.object(mnemonic_agreement, "reference_listing", return_value=ref_99), mock.patch.object(
+            mnemonic_agreement, "machgraph_listing", return_value=dict(ref_99)
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--min-agreement", "99.9", "--max-wrong", "0"]
+        ), redirect_stdout(
+            out_99
+        ), redirect_stderr(
+            err_99
+        ):
+            self.assertEqual(mnemonic_agreement.main(), 1)
+        self.assertNotIn("[PASS]", out_99.getvalue())
+
+        # Case 3: 100 reference instructions (>= 100 floor) -> passes when thresholds met
+        ref_100 = {0x1000 + 4 * i: "nop" for i in range(100)}
+        out_100 = io.StringIO()
+        with mock.patch.object(mnemonic_agreement, "reference_listing", return_value=ref_100), mock.patch.object(
+            mnemonic_agreement, "machgraph_listing", return_value=dict(ref_100)
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--min-agreement", "99.9", "--max-wrong", "0"]
+        ), redirect_stdout(
+            out_100
+        ), redirect_stderr(
+            io.StringIO()
+        ):
+            self.assertEqual(mnemonic_agreement.main(), 0)
+        self.assertIn("[PASS]", out_100.getvalue())
 
 
 if __name__ == "__main__":

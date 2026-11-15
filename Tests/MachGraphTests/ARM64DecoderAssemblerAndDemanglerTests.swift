@@ -765,4 +765,47 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(decoder.decode(word: 0x0E04_0C22, at: pc).formattedDisassembly == "dup v2.2s, w1")
         #expect(decoder.decode(word: 0x4E08_0C22, at: pc).formattedDisassembly == "dup v2.2d, x1")
     }
+
+    @Test("G43: HINT preferred aliases match Apple llvm-objdump across all 128 CRm/op2 encodings")
+    func hintPreferredAliasesMatchLLVMReferenceTable() throws {
+        let rawText = try String(contentsOf: RepoFixtures.hintAliasTableURL, encoding: .utf8)
+        let lines = rawText.split(whereSeparator: \.isNewline).map(String.init)
+
+        let comments = lines.filter { $0.hasPrefix("#") }.joined(separator: "\n")
+        #expect(comments.contains("Apple LLVM version"))
+        #expect(comments.contains("xcrun llvm-objdump --macho -d --no-show-raw-insn"))
+        #expect(comments.contains("--mcpu=apple-m1"))
+        #expect(comments.contains("--mattr=+bti"))
+
+        var rows: [(word: UInt32, mnemonic: String)] = []
+        rows.reserveCapacity(128)
+        for line in lines where !line.hasPrefix("#") && !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            let parts = line.split(separator: "\t")
+            #expect(parts.count == 2, "Malformed table row: \(line)")
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            rows.append((word, String(parts[1])))
+        }
+        #expect(rows.count == 128)
+
+        let decoder = A64InstructionDecoder()
+        let pc = VirtualAddress(0x1_0000_1000)
+        var mismatches: [String] = []
+
+        for (word, expectedMnemonic) in rows {
+            let decoded = decoder.decode(word: word, at: pc)
+            if decoded.mnemonicText != expectedMnemonic {
+                mismatches.append(
+                    String(format: "0x%08x expected %@ got %@", word, expectedMnemonic, decoded.mnemonicText)
+                )
+            }
+        }
+        #expect(mismatches.isEmpty, "HINT alias mismatches: \(mismatches.joined(separator: "; "))")
+
+        // Concrete check for hint #18 (CRm=2, op2=2 -> 0xd503225f -> `tsb csync` under --mcpu=apple-m1):
+        let tsb = decoder.decode(word: 0xD503_225F, at: pc)
+        #expect(tsb.mnemonic == .hint)
+        #expect(tsb.mnemonicText == "tsb")
+        #expect(tsb.formattedDisassembly == "tsb csync")
+    }
 }

@@ -970,6 +970,11 @@ public struct A64InstructionDecoder: Sendable {
                     address: address, rawWord: word, mnemonic: .hint, mnemonicText: "esb",
                     operands: [], group: .branchAndSystem
                 )
+            case 18: // TSB CSYNC (CRm=2, op2=2)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .hint, mnemonicText: "tsb",
+                    operands: [.barrierOption("csync")], group: .branchAndSystem
+                )
             case 20: // CSDB (0xD503229F)
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .hint, mnemonicText: "csdb",

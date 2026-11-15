@@ -34,6 +34,7 @@ from mnemonic_normalization import (  # noqa: E402
 )
 
 _INSN_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
+MIN_REFERENCE_INSTRUCTIONS = 100
 
 
 def default_machgraph_bin() -> str:
@@ -135,6 +136,13 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if len(ref) < MIN_REFERENCE_INSTRUCTIONS:
+        print(
+            f"[FAIL] llvm-objdump reference for {args.binary} has only {len(ref)} instructions "
+            f"(< {MIN_REFERENCE_INSTRUCTIONS} minimum)",
+            file=sys.stderr,
+        )
+        return 1
 
     total = agree = 0
     unknown = collections.Counter()
@@ -163,7 +171,7 @@ def main() -> int:
         else:
             wrong[("<omitted>", mine[addr])] += 1
 
-    pct = (100.0 * agree / total) if total else 100.0
+    pct = 100.0 * agree / total
     n_unknown = sum(unknown.values())
     n_wrong = sum(wrong.values())
     failures = []
