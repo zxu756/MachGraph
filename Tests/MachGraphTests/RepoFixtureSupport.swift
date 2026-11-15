@@ -21,6 +21,12 @@ enum RepoFixtures {
     static func thinARM64SampleData() throws -> Data {
         try Data(contentsOf: thinARM64SampleURL)
     }
+
+    /// `Fixtures/sys_crn7_8_llvm_table.tsv`: all 2,048 `SYS` (`op0=1, L=0`) encodings across
+    /// `op1=0..7`, `CRn in {7,8}`, `CRm=0..15`, `op2=0..7` paired with real `llvm-objdump` mnemonics.
+    static var sysAliasTableURL: URL {
+        repositoryRoot.appendingPathComponent("Fixtures/sys_crn7_8_llvm_table.tsv", isDirectory: false)
+    }
 }
 
 /// A `UserDefaults` stand-in that keeps every value in process memory.

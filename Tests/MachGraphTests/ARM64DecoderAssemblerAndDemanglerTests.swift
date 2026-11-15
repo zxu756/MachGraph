@@ -658,11 +658,12 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
             #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
         }
 
-        // Counterexamples: unallocated hint codes remain `hint #<imm>` as in llvm-objdump.
+        // Counterexamples: unallocated hint codes remain `hint #<imm>` (llvm-objdump also emits `hint`,
+        // formatting the immediate as `#0x9`, `#0x11`, and `#39` respectively).
         let hintCounterexamples: [(UInt32, String)] = [
-            (0xD503_213F, "hint #9"),     // hint #9  -> llvm-objdump: `hint #9`
+            (0xD503_213F, "hint #9"),     // hint #9  -> llvm-objdump: `hint #0x9`
             (0xD503_223F, "hint #0x11"),  // hint #17 -> llvm-objdump: `hint #0x11`
-            (0xD503_24FF, "hint #0x27"),  // hint #39 -> llvm-objdump: `hint #0x27`
+            (0xD503_24FF, "hint #0x27"),  // hint #39 -> llvm-objdump: `hint #39`
         ]
         for (word, expected) in hintCounterexamples {
             let decoded = decoder.decode(word: word, at: pc)
@@ -670,5 +671,98 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
             #expect(decoded.mnemonicText == "hint")
             #expect(decoded.formattedDisassembly == expected)
         }
+    }
+
+    @Test("SYS preferred aliases match Apple llvm-objdump across all 2,048 op1/CRn∈{7,8}/CRm/op2 encodings")
+    func sysPreferredAliasesMatchLLVMReferenceTable() throws {
+        let rawText = try String(contentsOf: RepoFixtures.sysAliasTableURL, encoding: .utf8)
+        let lines = rawText.split(whereSeparator: \.isNewline).map(String.init)
+
+        let comments = lines.filter { $0.hasPrefix("#") }.joined(separator: "\n")
+        #expect(comments.contains("Apple LLVM version"))
+        #expect(comments.contains("xcrun llvm-objdump --macho -d --no-show-raw-insn"))
+        #expect(comments.contains("--mcpu=apple-m1"))
+
+        var rows: [(word: UInt32, mnemonic: String)] = []
+        rows.reserveCapacity(2048)
+        for line in lines where !line.hasPrefix("#") && !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            let parts = line.split(separator: "\t")
+            #expect(parts.count == 2, "Malformed table row: \(line)")
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            rows.append((word, String(parts[1])))
+        }
+        #expect(rows.count == 2048)
+
+        let decoder = A64InstructionDecoder()
+        let pc = VirtualAddress(0x1_0000_1000)
+        var mismatchSamples: [String] = []
+
+        for (wordRt0, expectedMnemonic) in rows {
+            for rtVariant in [wordRt0, wordRt0 | 0x1F] {
+                let decoded = decoder.decode(word: rtVariant, at: pc)
+                if decoded.mnemonic != .sys || decoded.mnemonicText != expectedMnemonic {
+                    if mismatchSamples.count < 10 {
+                        mismatchSamples.append(
+                            String(format: "0x%08x expected %@ got %@", rtVariant, expectedMnemonic, decoded.mnemonicText)
+                        )
+                    }
+                }
+            }
+        }
+        #expect(mismatchSamples.isEmpty, "SYS alias mismatches (sample): \(mismatchSamples.joined(separator: "; "))")
+
+        // Concrete runtime words from /usr/libexec/rosetta/runtime plus registerless / SYSL / non-{7,8} CRn checks:
+        #expect(decoder.decode(word: 0xD50B_7520, at: pc).formattedDisassembly == "ic ivau, x0")
+        #expect(decoder.decode(word: 0xD50B_7423, at: pc).formattedDisassembly == "dc zva, x3")
+        #expect(decoder.decode(word: 0xD508_751F, at: pc).formattedDisassembly == "ic iallu")
+        #expect(decoder.decode(word: 0xD508_831F, at: pc).formattedDisassembly == "tlbi vmalle1is")
+        #expect(decoder.decode(word: 0xD508_8325, at: pc).formattedDisassembly == "tlbi vae1is, x5")
+        #expect(decoder.decode(word: 0xD508_7802, at: pc).formattedDisassembly == "at s1e1r, x2")
+        #expect(decoder.decode(word: 0xD52B_7520, at: pc).mnemonicText == "sysl")
+        #expect(decoder.decode(word: 0xD508_6000, at: pc).mnemonicText == "sys")
+    }
+
+    @Test("G34: Unallocated SMOV and DUP encodings in AdvSIMD Copy decode as .inst while valid forms still decode")
+    func smovAndDupUnallocatedEncodingsDecodeAsInst() {
+        let decoder = A64InstructionDecoder()
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // All 12 unallocated AdvSIMD Copy words (Rn=1, Rd=2) where llvm-objdump prints `.long`:
+        let unallocatedWords: [UInt32] = [
+            // DUP (element): Q=0, imm5 in {0b01000, 0b11000} (1d is unallocated)
+            0x0E08_0422,
+            0x0E18_0422,
+            // DUP (general): Q=0, imm5 in {0b01000, 0b11000} (1d is unallocated)
+            0x0E08_0C22,
+            0x0E18_0C22,
+            // SMOV: Q=0 with .s (imm5 in {0b00100, 0b01100, 0b10100, 0b11100})
+            0x0E04_2C22,
+            0x0E0C_2C22,
+            0x0E14_2C22,
+            0x0E1C_2C22,
+            // SMOV: Q=0 with .d (imm5 in {0b01000, 0b11000})
+            0x0E08_2C22,
+            0x0E18_2C22,
+            // SMOV: Q=1 with .d (imm5 in {0b01000, 0b11000})
+            0x4E08_2C22,
+            0x4E18_2C22,
+        ]
+        for word in unallocatedWords {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "Expected .unknown for 0x\(String(word, radix: 16)), got \(decoded.mnemonic)")
+            #expect(decoded.mnemonicText == ".inst", "Expected .inst for 0x\(String(word, radix: 16)), got \(decoded.formattedDisassembly)")
+        }
+
+        // Allocated SMOV & DUP forms must continue decoding cleanly:
+        #expect(decoder.decode(word: 0x0E01_2C22, at: pc).formattedDisassembly == "smov w2, v1.b[0]")
+        #expect(decoder.decode(word: 0x0E02_2C22, at: pc).formattedDisassembly == "smov w2, v1.h[0]")
+        #expect(decoder.decode(word: 0x4E01_2C22, at: pc).formattedDisassembly == "smov x2, v1.b[0]")
+        #expect(decoder.decode(word: 0x4E02_2C22, at: pc).formattedDisassembly == "smov x2, v1.h[0]")
+        #expect(decoder.decode(word: 0x4E04_2C22, at: pc).formattedDisassembly == "smov x2, v1.s[0]")
+        #expect(decoder.decode(word: 0x0E04_0422, at: pc).formattedDisassembly == "dup v2.2s, v1.s[0]")
+        #expect(decoder.decode(word: 0x4E08_0422, at: pc).formattedDisassembly == "dup v2.2d, v1.d[0]")
+        #expect(decoder.decode(word: 0x0E04_0C22, at: pc).formattedDisassembly == "dup v2.2s, w1")
+        #expect(decoder.decode(word: 0x4E08_0C22, at: pc).formattedDisassembly == "dup v2.2d, x1")
     }
 }

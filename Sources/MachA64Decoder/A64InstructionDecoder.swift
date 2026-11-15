@@ -1153,7 +1153,38 @@ public struct A64InstructionDecoder: Sendable {
         // SYS / SYSL (Cache, TLB & Address Translation maintenance)
         if op0 == 1 {
             let xtReg = A64Register.x(rt, allowSP: false)
-            let alias = A64SystemOpHelpers.sysMaintenanceAlias(op1: op1, crn: crn, crm: crm, op2: op2)
+            if !isRead, let preferred = A64SystemOpHelpers.sysPreferredAlias(op1: op1, crn: crn, crm: crm, op2: op2) {
+                var aliasOperands: [A64Operand] = []
+                if let op = preferred.operation {
+                    aliasOperands.append(.barrierOption(op))
+                }
+                if preferred.takesRegister {
+                    aliasOperands.append(.register(xtReg))
+                }
+                let aliasOperandText: String
+                switch (preferred.operation, preferred.takesRegister) {
+                case (let op?, true):
+                    aliasOperandText = "\(op), \(xtReg.canonicalName)"
+                case (let op?, false):
+                    aliasOperandText = op
+                case (nil, true):
+                    aliasOperandText = xtReg.canonicalName
+                case (nil, false):
+                    aliasOperandText = ""
+                }
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .sys,
+                    mnemonicText: preferred.mnemonic,
+                    operands: aliasOperands,
+                    operandText: aliasOperandText,
+                    group: .branchAndSystem,
+                    readsRegisters: preferred.takesRegister ? activeRegs([xtReg]) : [],
+                    writesRegisters: []
+                )
+            }
+
             let opStr = rt == 31
                 ? "#\(op1), c\(crn), c\(crm), #\(op2)"
                 : "#\(op1), c\(crn), c\(crm), #\(op2), \(xtReg.canonicalName)"
@@ -1168,8 +1199,7 @@ public struct A64InstructionDecoder: Sendable {
                 operandText: opStr,
                 group: .branchAndSystem,
                 readsRegisters: isRead ? [] : activeRegs([xtReg]),
-                writesRegisters: isRead ? activeRegs([xtReg]) : [],
-                autoComment: alias
+                writesRegisters: isRead ? activeRegs([xtReg]) : []
             )
         }
 
@@ -3138,6 +3168,7 @@ public struct A64InstructionDecoder: Sendable {
             let laneIndex = imm5 >> (tz + 1)
 
             if !u && imm4 == 0b0001 { // DUP <Vd>.<T>, <R><n>
+                guard q || tz < 3 else { return nil }
                 let gpRn = A64Register.gp(rn, is64Bit: tz == 3)
                 let vRd = A64Register.v(rd, arrangement: vecArr)
                 return A64DecodedInstruction(
@@ -3147,6 +3178,7 @@ public struct A64InstructionDecoder: Sendable {
                 )
             }
             if !u && imm4 == 0b0000 { // DUP <Vd>.<T>, <Vn>.<Ts>[index]
+                guard q || tz < 3 else { return nil }
                 let vRd = A64Register.v(rd, arrangement: vecArr)
                 let vRn = A64Register.v(rn, arrangement: elemChar)
                 return A64DecodedInstruction(
@@ -3169,6 +3201,7 @@ public struct A64InstructionDecoder: Sendable {
                 )
             }
             if !u && imm4 == 0b0101 { // SMOV <Wd|Xd>, <Vn>.<Ts>[index]
+                guard tz < (q ? 3 : 2) else { return nil }
                 let gpRd = A64Register.gp(rd, is64Bit: q)
                 let vRn = A64Register.v(rn, arrangement: elemChar)
                 return A64DecodedInstruction(

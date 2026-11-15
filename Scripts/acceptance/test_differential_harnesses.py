@@ -35,12 +35,12 @@ macho_differential = _load_script_module("macho_differential_mod", "macho-differ
 
 
 class TestItem1MachOReferenceCommand(unittest.TestCase):
-    """G32 (part 1): shared reference command includes --macho across mnemonic_normalization, differential, and mnemonic-agreement."""
+    """G32 (part 1) + G42: shared reference command includes --macho and --mcpu=apple-m1 across all slices."""
 
     def test_shared_reference_command_has_macho_and_handles_thin_macho(self):
         expected_template = (
             "xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> "
-            "--mattr=+bti --section=__TEXT,__text <file>"
+            "--mcpu=apple-m1 --mattr=+bti --section=__TEXT,__text <file>"
         )
         self.assertTrue(
             hasattr(mnemonic_normalization, "REFERENCE_COMMAND_TEMPLATE"),
@@ -57,6 +57,7 @@ class TestItem1MachOReferenceCommand(unittest.TestCase):
 
         cmd = mnemonic_normalization.build_reference_command("/usr/libexec/rosetta/oahd-helper", "arm64")
         self.assertIn("--macho", cmd)
+        self.assertIn("--mcpu=apple-m1", cmd)
         self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 3)
 
         # Single-architecture arm64 Mach-O must yield >0 reference instructions
@@ -64,6 +65,13 @@ class TestItem1MachOReferenceCommand(unittest.TestCase):
         if os.path.isfile(thin_bin):
             ref = mnemonic_agreement.reference_listing(thin_bin, "arm64")
             self.assertGreater(len(ref), 10000, "thin arm64 binary must yield >10k reference instructions with --macho")
+
+        # Pure arm64 Rosetta runtime must decode LSE/CRC32 instructions under --mcpu=apple-m1 (G42)
+        runtime_bin = "/usr/libexec/rosetta/runtime"
+        if os.path.isfile(runtime_bin):
+            ref_rt = mnemonic_agreement.reference_listing(runtime_bin, "arm64")
+            self.assertEqual(ref_rt.get(0x5394), "ldset", "G42: 0x5394 in rosetta/runtime must decode as ldset with --mcpu=apple-m1")
+            self.assertEqual(ref_rt.get(0x669C), "crc32cx", "G42: 0x669c in rosetta/runtime must decode as crc32cx with --mcpu=apple-m1")
 
 
 def _make_fake_machgraph_script(directory: str, disasm_stdout: str) -> str:

@@ -569,4 +569,48 @@ struct CFGDominatorsSugiyamaAndXrefsTests {
             )
         }
     }
+
+    @Test("G40: Jump-table recovery ignores vector mov v<n> matching the switch index register between adrp/ldr and br")
+    func switchJumpTableIgnoresVectorMovWithIndexRegisterNumber() throws {
+        let data = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: false)
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "G40Switch.arm64")
+        let baselineIndex = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "G40Switch.arm64")
+        let dispatchFn = try #require(baselineIndex.function(named: "_dispatch_command"))
+        let expectedTargets = try #require(dispatchFn.jumpTables.first).targetAddresses
+        #expect(expectedTargets.count == 4)
+
+        // Switch index register is w2 (<n> = 2); ldrsw loads table offset into x2 (<n> = 2).
+        // Inserting `mov v2.16b, v1.16b` (0x4EA1_1C22) and `mov v2.d[0], x1` (0x4E08_1C22) between
+        // adrp/ldrsw and br must NOT clobber GP register x2 in symbolic jump-table tracking.
+        let words: [UInt32] = [
+            0x7100_0C5F, // cmp w2, #3
+            0x5400_0148, // b.hi +0x28
+            0x9000_0008, // adrp x8, 0x100001000
+            0x9114_0108, // add x8, x8, #0x500  (constVA = 0x100001500)
+            0xB8A2_5902, // ldrsw x2, [x8, w2, uxtw #2]
+            0x4EA1_1C22, // mov v2.16b, v1.16b  (vector ORR preferred alias, v<n> with <n> == 2)
+            0x4E08_1C22, // mov v2.d[0], x1     (general INS preferred alias, v<n> with <n> == 2)
+            0x8B02_0108, // add x8, x8, x2
+            0xD61F_0100, // br x8
+        ]
+        let decoder = A64InstructionDecoder()
+        let insns = words.enumerated().map { idx, word in
+            decoder.decode(word: word, at: dispatchFn.address.adding(UInt64(idx * 4)))
+        }
+        #expect(insns[5].mnemonic == .mov)
+        #expect(insns[5].formattedDisassembly == "mov v2.16b, v1.16b")
+        #expect(insns[6].mnemonic == .mov)
+        #expect(insns[6].formattedDisassembly == "mov v2.d[0], x1")
+
+        let descriptors = FunctionDiscoveryEngine().recoverJumpTableDescriptors(
+            in: insns,
+            functionStart: dispatchFn.address,
+            functionEnd: dispatchFn.endAddress,
+            image: image,
+            data: data
+        )
+        let recovered = try #require(descriptors.first)
+        #expect(recovered.indexRegister?.index == 2)
+        #expect(recovered.jumpTable.targetAddresses == expectedTargets)
+    }
 }

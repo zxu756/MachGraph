@@ -594,6 +594,18 @@ public enum A64PrefetchOpTable {
 
 // MARK: - PSTATE Immediate Fields & System Operation Names
 
+public struct A64SysPreferredAlias: Sendable, Equatable {
+    public let mnemonic: String
+    public let operation: String?
+    public let takesRegister: Bool
+
+    public init(mnemonic: String, operation: String?, takesRegister: Bool) {
+        self.mnemonic = mnemonic
+        self.operation = operation
+        self.takesRegister = takesRegister
+    }
+}
+
 public enum A64SystemOpHelpers {
     public static func pstateFieldName(op1: UInt32, op2: UInt32) -> String? {
         switch (op1, op2) {
@@ -609,21 +621,148 @@ public enum A64SystemOpHelpers {
         }
     }
 
-    public static func sysMaintenanceAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> String? {
+    /// Preferred architectural / Apple LLVM alias for `SYS` (`op0 == 0b01`, `L == 0`) by instruction bitfields.
+    public static func sysPreferredAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> A64SysPreferredAlias? {
         switch (op1, crn, crm, op2) {
-        case (3, 7, 4, 1): return "dc zva"
-        case (3, 7, 5, 1): return "ic ivau"
-        case (3, 7, 10, 1): return "dc cvac"
-        case (3, 7, 11, 1): return "dc cvau"
-        case (3, 7, 14, 1): return "dc civac"
-        case (0, 7, 1, 0): return "ic ialluis"
-        case (0, 7, 5, 0): return "ic iallu"
-        case (0, 7, 8, 0): return "at s1e1r"
-        case (0, 7, 8, 1): return "at s1e1w"
-        case (0, 8, 3, 0): return "tlbi vmalle1is"
-        case (0, 8, 7, 0): return "tlbi vmalle1"
-        default: return nil
+        // op1 = 0, CRn = 7: IC / DC / AT (EL1)
+        case (0, 7, 1, 0):  return .init(mnemonic: "ic", operation: "ialluis", takesRegister: false)
+        case (0, 7, 5, 0):  return .init(mnemonic: "ic", operation: "iallu", takesRegister: false)
+        case (0, 7, 6, 1):  return .init(mnemonic: "dc", operation: "ivac", takesRegister: true)
+        case (0, 7, 6, 2):  return .init(mnemonic: "dc", operation: "isw", takesRegister: true)
+        case (0, 7, 8, 0):  return .init(mnemonic: "at", operation: "s1e1r", takesRegister: true)
+        case (0, 7, 8, 1):  return .init(mnemonic: "at", operation: "s1e1w", takesRegister: true)
+        case (0, 7, 8, 2):  return .init(mnemonic: "at", operation: "s1e0r", takesRegister: true)
+        case (0, 7, 8, 3):  return .init(mnemonic: "at", operation: "s1e0w", takesRegister: true)
+        case (0, 7, 9, 0):  return .init(mnemonic: "at", operation: "s1e1rp", takesRegister: true)
+        case (0, 7, 9, 1):  return .init(mnemonic: "at", operation: "s1e1wp", takesRegister: true)
+        case (0, 7, 9, 2):  return .init(mnemonic: "at", operation: "s1e1a", takesRegister: true)
+        case (0, 7, 10, 2): return .init(mnemonic: "dc", operation: "csw", takesRegister: true)
+        case (0, 7, 14, 2): return .init(mnemonic: "dc", operation: "cisw", takesRegister: true)
+
+        // op1 = 0, CRn = 8: TLBI (EL1)
+        case (0, 8, 1, 0):  return .init(mnemonic: "tlbi", operation: "vmalle1os", takesRegister: false)
+        case (0, 8, 1, 1):  return .init(mnemonic: "tlbi", operation: "vae1os", takesRegister: true)
+        case (0, 8, 1, 2):  return .init(mnemonic: "tlbi", operation: "aside1os", takesRegister: true)
+        case (0, 8, 1, 3):  return .init(mnemonic: "tlbi", operation: "vaae1os", takesRegister: true)
+        case (0, 8, 1, 5):  return .init(mnemonic: "tlbi", operation: "vale1os", takesRegister: true)
+        case (0, 8, 1, 7):  return .init(mnemonic: "tlbi", operation: "vaale1os", takesRegister: true)
+        case (0, 8, 2, 1):  return .init(mnemonic: "tlbi", operation: "rvae1is", takesRegister: true)
+        case (0, 8, 2, 3):  return .init(mnemonic: "tlbi", operation: "rvaae1is", takesRegister: true)
+        case (0, 8, 2, 5):  return .init(mnemonic: "tlbi", operation: "rvale1is", takesRegister: true)
+        case (0, 8, 2, 7):  return .init(mnemonic: "tlbi", operation: "rvaale1is", takesRegister: true)
+        case (0, 8, 3, 0):  return .init(mnemonic: "tlbi", operation: "vmalle1is", takesRegister: false)
+        case (0, 8, 3, 1):  return .init(mnemonic: "tlbi", operation: "vae1is", takesRegister: true)
+        case (0, 8, 3, 2):  return .init(mnemonic: "tlbi", operation: "aside1is", takesRegister: true)
+        case (0, 8, 3, 3):  return .init(mnemonic: "tlbi", operation: "vaae1is", takesRegister: true)
+        case (0, 8, 3, 5):  return .init(mnemonic: "tlbi", operation: "vale1is", takesRegister: true)
+        case (0, 8, 3, 7):  return .init(mnemonic: "tlbi", operation: "vaale1is", takesRegister: true)
+        case (0, 8, 5, 1):  return .init(mnemonic: "tlbi", operation: "rvae1os", takesRegister: true)
+        case (0, 8, 5, 3):  return .init(mnemonic: "tlbi", operation: "rvaae1os", takesRegister: true)
+        case (0, 8, 5, 5):  return .init(mnemonic: "tlbi", operation: "rvale1os", takesRegister: true)
+        case (0, 8, 5, 7):  return .init(mnemonic: "tlbi", operation: "rvaale1os", takesRegister: true)
+        case (0, 8, 6, 1):  return .init(mnemonic: "tlbi", operation: "rvae1", takesRegister: true)
+        case (0, 8, 6, 3):  return .init(mnemonic: "tlbi", operation: "rvaae1", takesRegister: true)
+        case (0, 8, 6, 5):  return .init(mnemonic: "tlbi", operation: "rvale1", takesRegister: true)
+        case (0, 8, 6, 7):  return .init(mnemonic: "tlbi", operation: "rvaale1", takesRegister: true)
+        case (0, 8, 7, 0):  return .init(mnemonic: "tlbi", operation: "vmalle1", takesRegister: false)
+        case (0, 8, 7, 1):  return .init(mnemonic: "tlbi", operation: "vae1", takesRegister: true)
+        case (0, 8, 7, 2):  return .init(mnemonic: "tlbi", operation: "aside1", takesRegister: true)
+        case (0, 8, 7, 3):  return .init(mnemonic: "tlbi", operation: "vaae1", takesRegister: true)
+        case (0, 8, 7, 5):  return .init(mnemonic: "tlbi", operation: "vale1", takesRegister: true)
+        case (0, 8, 7, 7):  return .init(mnemonic: "tlbi", operation: "vaale1", takesRegister: true)
+
+        // op1 = 3, CRn = 7: CFP / DVP / CPP / DC / IC (EL0)
+        case (3, 7, 3, 4):  return .init(mnemonic: "cfp", operation: "rctx", takesRegister: true)
+        case (3, 7, 3, 5):  return .init(mnemonic: "dvp", operation: "rctx", takesRegister: true)
+        case (3, 7, 3, 7):  return .init(mnemonic: "cpp", operation: "rctx", takesRegister: true)
+        case (3, 7, 4, 1):  return .init(mnemonic: "dc", operation: "zva", takesRegister: true)
+        case (3, 7, 5, 1):  return .init(mnemonic: "ic", operation: "ivau", takesRegister: true)
+        case (3, 7, 10, 1): return .init(mnemonic: "dc", operation: "cvac", takesRegister: true)
+        case (3, 7, 11, 1): return .init(mnemonic: "dc", operation: "cvau", takesRegister: true)
+        case (3, 7, 12, 1): return .init(mnemonic: "dc", operation: "cvap", takesRegister: true)
+        case (3, 7, 13, 1): return .init(mnemonic: "dc", operation: "cvadp", takesRegister: true)
+        case (3, 7, 14, 1): return .init(mnemonic: "dc", operation: "civac", takesRegister: true)
+
+        // op1 = 4, CRn = 7: AT (EL2)
+        case (4, 7, 8, 0):  return .init(mnemonic: "at", operation: "s1e2r", takesRegister: true)
+        case (4, 7, 8, 1):  return .init(mnemonic: "at", operation: "s1e2w", takesRegister: true)
+        case (4, 7, 8, 4):  return .init(mnemonic: "at", operation: "s12e1r", takesRegister: true)
+        case (4, 7, 8, 5):  return .init(mnemonic: "at", operation: "s12e1w", takesRegister: true)
+        case (4, 7, 8, 6):  return .init(mnemonic: "at", operation: "s12e0r", takesRegister: true)
+        case (4, 7, 8, 7):  return .init(mnemonic: "at", operation: "s12e0w", takesRegister: true)
+        case (4, 7, 9, 2):  return .init(mnemonic: "at", operation: "s1e2a", takesRegister: true)
+
+        // op1 = 4, CRn = 8: TLBI (EL2 / Stage 2)
+        case (4, 8, 0, 1):  return .init(mnemonic: "tlbi", operation: "ipas2e1is", takesRegister: true)
+        case (4, 8, 0, 2):  return .init(mnemonic: "tlbi", operation: "ripas2e1is", takesRegister: true)
+        case (4, 8, 0, 5):  return .init(mnemonic: "tlbi", operation: "ipas2le1is", takesRegister: true)
+        case (4, 8, 0, 6):  return .init(mnemonic: "tlbi", operation: "ripas2le1is", takesRegister: true)
+        case (4, 8, 1, 0):  return .init(mnemonic: "tlbi", operation: "alle2os", takesRegister: false)
+        case (4, 8, 1, 1):  return .init(mnemonic: "tlbi", operation: "vae2os", takesRegister: true)
+        case (4, 8, 1, 4):  return .init(mnemonic: "tlbi", operation: "alle1os", takesRegister: false)
+        case (4, 8, 1, 5):  return .init(mnemonic: "tlbi", operation: "vale2os", takesRegister: true)
+        case (4, 8, 1, 6):  return .init(mnemonic: "tlbi", operation: "vmalls12e1os", takesRegister: false)
+        case (4, 8, 2, 1):  return .init(mnemonic: "tlbi", operation: "rvae2is", takesRegister: true)
+        case (4, 8, 2, 5):  return .init(mnemonic: "tlbi", operation: "rvale2is", takesRegister: true)
+        case (4, 8, 3, 0):  return .init(mnemonic: "tlbi", operation: "alle2is", takesRegister: false)
+        case (4, 8, 3, 1):  return .init(mnemonic: "tlbi", operation: "vae2is", takesRegister: true)
+        case (4, 8, 3, 4):  return .init(mnemonic: "tlbi", operation: "alle1is", takesRegister: false)
+        case (4, 8, 3, 5):  return .init(mnemonic: "tlbi", operation: "vale2is", takesRegister: true)
+        case (4, 8, 3, 6):  return .init(mnemonic: "tlbi", operation: "vmalls12e1is", takesRegister: false)
+        case (4, 8, 4, 0):  return .init(mnemonic: "tlbi", operation: "ipas2e1os", takesRegister: true)
+        case (4, 8, 4, 1):  return .init(mnemonic: "tlbi", operation: "ipas2e1", takesRegister: true)
+        case (4, 8, 4, 2):  return .init(mnemonic: "tlbi", operation: "ripas2e1", takesRegister: true)
+        case (4, 8, 4, 3):  return .init(mnemonic: "tlbi", operation: "ripas2e1os", takesRegister: true)
+        case (4, 8, 4, 4):  return .init(mnemonic: "tlbi", operation: "ipas2le1os", takesRegister: true)
+        case (4, 8, 4, 5):  return .init(mnemonic: "tlbi", operation: "ipas2le1", takesRegister: true)
+        case (4, 8, 4, 6):  return .init(mnemonic: "tlbi", operation: "ripas2le1", takesRegister: true)
+        case (4, 8, 4, 7):  return .init(mnemonic: "tlbi", operation: "ripas2le1os", takesRegister: true)
+        case (4, 8, 5, 1):  return .init(mnemonic: "tlbi", operation: "rvae2os", takesRegister: true)
+        case (4, 8, 5, 5):  return .init(mnemonic: "tlbi", operation: "rvale2os", takesRegister: true)
+        case (4, 8, 6, 1):  return .init(mnemonic: "tlbi", operation: "rvae2", takesRegister: true)
+        case (4, 8, 6, 5):  return .init(mnemonic: "tlbi", operation: "rvale2", takesRegister: true)
+        case (4, 8, 7, 0):  return .init(mnemonic: "tlbi", operation: "alle2", takesRegister: false)
+        case (4, 8, 7, 1):  return .init(mnemonic: "tlbi", operation: "vae2", takesRegister: true)
+        case (4, 8, 7, 4):  return .init(mnemonic: "tlbi", operation: "alle1", takesRegister: false)
+        case (4, 8, 7, 5):  return .init(mnemonic: "tlbi", operation: "vale2", takesRegister: true)
+        case (4, 8, 7, 6):  return .init(mnemonic: "tlbi", operation: "vmalls12e1", takesRegister: false)
+
+        // op1 = 6, CRn = 7: APAS / AT (EL3)
+        case (6, 7, 0, 0):  return .init(mnemonic: "apas", operation: nil, takesRegister: true)
+        case (6, 7, 8, 0):  return .init(mnemonic: "at", operation: "s1e3r", takesRegister: true)
+        case (6, 7, 8, 1):  return .init(mnemonic: "at", operation: "s1e3w", takesRegister: true)
+        case (6, 7, 9, 2):  return .init(mnemonic: "at", operation: "s1e3a", takesRegister: true)
+
+        // op1 = 6, CRn = 8: TLBI (EL3)
+        case (6, 8, 1, 0):  return .init(mnemonic: "tlbi", operation: "alle3os", takesRegister: false)
+        case (6, 8, 1, 1):  return .init(mnemonic: "tlbi", operation: "vae3os", takesRegister: true)
+        case (6, 8, 1, 5):  return .init(mnemonic: "tlbi", operation: "vale3os", takesRegister: true)
+        case (6, 8, 2, 1):  return .init(mnemonic: "tlbi", operation: "rvae3is", takesRegister: true)
+        case (6, 8, 2, 5):  return .init(mnemonic: "tlbi", operation: "rvale3is", takesRegister: true)
+        case (6, 8, 3, 0):  return .init(mnemonic: "tlbi", operation: "alle3is", takesRegister: false)
+        case (6, 8, 3, 1):  return .init(mnemonic: "tlbi", operation: "vae3is", takesRegister: true)
+        case (6, 8, 3, 5):  return .init(mnemonic: "tlbi", operation: "vale3is", takesRegister: true)
+        case (6, 8, 5, 1):  return .init(mnemonic: "tlbi", operation: "rvae3os", takesRegister: true)
+        case (6, 8, 5, 5):  return .init(mnemonic: "tlbi", operation: "rvale3os", takesRegister: true)
+        case (6, 8, 6, 1):  return .init(mnemonic: "tlbi", operation: "rvae3", takesRegister: true)
+        case (6, 8, 6, 5):  return .init(mnemonic: "tlbi", operation: "rvale3", takesRegister: true)
+        case (6, 8, 7, 0):  return .init(mnemonic: "tlbi", operation: "alle3", takesRegister: false)
+        case (6, 8, 7, 1):  return .init(mnemonic: "tlbi", operation: "vae3", takesRegister: true)
+        case (6, 8, 7, 5):  return .init(mnemonic: "tlbi", operation: "vale3", takesRegister: true)
+
+        default:
+            return nil
         }
+    }
+
+    public static func sysMaintenanceAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> String? {
+        guard let preferred = sysPreferredAlias(op1: op1, crn: crn, crm: crm, op2: op2) else {
+            return nil
+        }
+        if let op = preferred.operation {
+            return "\(preferred.mnemonic) \(op)"
+        }
+        return preferred.mnemonic
     }
 }
 
