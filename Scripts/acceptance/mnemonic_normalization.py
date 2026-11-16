@@ -2,16 +2,19 @@
 """Single source of truth for ARM64 mnemonic normalization in differential checks.
 
 Both `mnemonic-agreement.py` and `differential.py` import this module so the
-allowed normalization table exists in exactly one place.
+allowed normalization table and fixed reference command exist in one place.
 
-Policy (fixed by `02-machgraph.md`, M1 item 3):
-  - Exactly three rules are permitted.
-  - This table may only shrink in future milestones (M2 removes rules as
-    MachGraph aligns wide-immediate `mov` and `udf`), never grow.
+Policy (fixed by `02-machgraph.md`, M1 item 3 and M2 item 1 / D-M2-1):
+  - Rule 3 (Darwin vector arrangement suffix) has been removed now that the
+    reference command enables `-mllvm=-aarch64-neon-syntax=generic`.
+  - Only two rules remain (`wide_immediate_mov` and `permanently_undefined_udf`),
+    and this table may only shrink (to zero in M2), never grow.
 """
 
+import os
 import re
-from typing import List, Tuple
+import subprocess
+from typing import Iterable, List, Optional, Tuple
 
 REFERENCE_COMMAND_TEMPLATE = (
     "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
@@ -37,8 +40,10 @@ def build_reference_command(binary: str, arch: str) -> List[str]:
         binary,
     ]
 
-# Declarative table of the ONLY three permitted normalization rules, each with
-# its architectural rationale.
+
+# Declarative table of the ONLY permitted normalization rules, each with its
+# architectural rationale. Rule 3 (Darwin vector arrangement suffix) was removed
+# in M2 Stage 1 under D-M2-1.
 NORMALIZATION_RULES = (
     {
         "id": "wide_immediate_mov",
@@ -61,36 +66,102 @@ NORMALIZATION_RULES = (
             "directives for undefined encodings (scheduled for M2)."
         ),
     },
-    {
-        "id": "darwin_vector_arrangement_suffix",
-        "reference": "<mnemonic>.<arrangement> (excluding b.<cond>)",
-        "machgraph": "<mnemonic> (arrangement attached to vector register operands)",
-        "reason": (
-            "Apple's llvm-objdump Mach-O printer appends Neon arrangement "
-            "specifiers to the mnemonic (e.g. 'fmov.2d', 'cmeq.16b'), whereas "
-            "MachGraph places arrangement suffixes on the vector register "
-            "operands ('fmov v0.2d, ...'). Conditional branches ('b.eq', "
-            "'b.ne', ...) are kept intact because the condition is part of the "
-            "branch mnemonic."
-        ),
-    },
 )
 
-NORMALIZATION_SUMMARY = "movz/movn->mov, udf->.inst, vector suffix dropped"
+NORMALIZATION_SUMMARY = "movz/movn->mov, udf->.inst"
 
-_DARWIN_ARRANGEMENT_SUFFIX_RE = re.compile(r"\.(?:16b|8b|8h|4h|4s|2s|2d|1d|1q|b|h|s|d|q)$")
+_NEON_ARRANGEMENT_SUFFIX_RE = re.compile(
+    r"^[a-z0-9_]+\.(?:16b|8b|8h|4h|2h|4s|2s|2d|1d|1q|b|h|s|d|q)$"
+)
+_GENERIC_NEON_OPERAND_RE = re.compile(
+    r"\bv(?:3[01]|[12]?[0-9])\.(?:16b|8b|8h|4h|2h|4s|2s|2d|1d|1q|b|h|s|d|q)\b"
+)
+_SAMPLE_INSN_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
+
+
+def has_neon_arrangement_suffix(mnemonic: str) -> bool:
+    """Return True if `mnemonic` carries an Apple/Darwin Neon arrangement suffix (excluding `b.<cond>`)."""
+    lowered = mnemonic.strip().lower()
+    if lowered.startswith(("b.", "bc.")):
+        return False
+    return bool(_NEON_ARRANGEMENT_SUFFIX_RE.match(lowered))
+
+
+def find_non_generic_neon_mnemonic(
+    entries: Iterable[Tuple[int, str]],
+) -> Optional[Tuple[int, str]]:
+    """Return `(address, mnemonic)` for the first Darwin-suffixed Neon mnemonic, or `None`."""
+    for addr, raw_mnem in entries:
+        if has_neon_arrangement_suffix(raw_mnem):
+            return (addr, raw_mnem.strip().lower())
+    return None
+
+
+def verify_reference_generic_neon_syntax(
+    sample_binary: str = "/bin/ls",
+    arch: str = "arm64e",
+) -> Optional[str]:
+    """Sample-check `llvm-objdump` output to confirm `-mllvm=-aarch64-neon-syntax=generic` is honored.
+
+    Returns `None` when generic Neon syntax is confirmed, or an error string on failure.
+    """
+    if not os.path.isfile(sample_binary):
+        return f"generic Neon syntax self-check failed: sample binary not found: {sample_binary}"
+    try:
+        proc = subprocess.run(
+            build_reference_command(sample_binary, arch),
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=60.0,
+        )
+    except subprocess.TimeoutExpired:
+        return f"generic Neon syntax self-check timed out on {sample_binary}"
+    except OSError as exc:
+        return f"generic Neon syntax self-check failed to launch llvm-objdump: {exc}"
+
+    if proc.returncode != 0:
+        err_snip = proc.stderr.decode("utf-8", errors="replace").strip()[:240]
+        return (
+            f"generic Neon syntax self-check failed: llvm-objdump exited {proc.returncode} "
+            f"on {sample_binary}: {err_snip}"
+        )
+
+    text = proc.stdout.decode("utf-8", errors="replace")
+    insn_count = 0
+    generic_neon_operands = 0
+    for line in text.splitlines():
+        if line.strip() == "Contents of (__TEXT,__text) section":
+            break
+        m = _SAMPLE_INSN_LINE_RE.match(line)
+        if not m:
+            continue
+        insn_count += 1
+        addr = int(m.group(1), 16)
+        raw_mnem = m.group(2).lower()
+        raw_ops = (m.group(3) or "").split(";")[0].strip().lower()
+        if has_neon_arrangement_suffix(raw_mnem):
+            return (
+                f"generic Neon syntax self-check failed on {sample_binary}: "
+                f"reference output contains arrangement-suffixed mnemonic '{raw_mnem}' at 0x{addr:x}"
+            )
+        if _GENERIC_NEON_OPERAND_RE.search(raw_ops):
+            generic_neon_operands += 1
+
+    if insn_count >= 100 and generic_neon_operands == 0:
+        return (
+            f"generic Neon syntax self-check failed on {sample_binary}: "
+            f"sampled {insn_count} instructions without observing any generic Neon operand (vN.<arrangement>)"
+        )
+    return None
 
 
 def normalize_reference_mnemonic(mnemonic: str) -> str:
-    """Apply Rule 3: strip a Neon arrangement suffix on the reference mnemonic, keeping `b.<cond>`."""
-    lowered = mnemonic.strip().lower()
-    if lowered.startswith("b."):
-        return lowered
-    return _DARWIN_ARRANGEMENT_SUFFIX_RE.sub("", lowered)
+    """Lowercase and trim a reference mnemonic without stripping any arrangement suffix."""
+    return mnemonic.strip().lower()
 
 
 def mnemonics_agree(normalized_reference: str, machgraph_mnemonic: str) -> bool:
-    """Compare a Rule-3-normalized reference mnemonic against a MachGraph mnemonic under Rules 1 and 2."""
+    """Compare a reference mnemonic against a MachGraph mnemonic under Rules 1 and 2."""
     mg = machgraph_mnemonic.strip().lower()
     if mg == normalized_reference:
         return True

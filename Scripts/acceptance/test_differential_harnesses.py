@@ -59,7 +59,7 @@ class TestItem1MachOReferenceCommand(unittest.TestCase):
         cmd = mnemonic_normalization.build_reference_command("/usr/libexec/rosetta/oahd-helper", "arm64")
         self.assertIn("--macho", cmd)
         self.assertIn("--mcpu=apple-m1", cmd)
-        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 3)
+        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
 
         # Single-architecture arm64 Mach-O must yield >0 reference instructions
         thin_bin = "/usr/libexec/rosetta/oahd-helper"
@@ -929,6 +929,149 @@ class TestItem9M2ReferenceCommandFlags(unittest.TestCase):
                 f"Expected numeric bl targets under --no-symbolic-operands, got sample: {bl_targets[:5]}",
             )
             self.assertTrue(saw_generic_neon, "Expected generic Neon syntax 'movi v0.2d, ...' in /bin/csh")
+
+
+class TestItem10DropRule3AndGenericNeonSelfCheck(unittest.TestCase):
+    """M2 Stage 1: delete Rule 3 (vector arrangement suffix) and fail hard if reference output is not generic syntax."""
+
+    def test_rule3_removed_and_arrangement_suffix_not_normalized(self):
+        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
+        rule_ids = [r["id"] for r in mnemonic_normalization.NORMALIZATION_RULES]
+        self.assertEqual(rule_ids, ["wide_immediate_mov", "permanently_undefined_udf"])
+        self.assertNotIn("vector suffix", mnemonic_normalization.NORMALIZATION_SUMMARY)
+
+        # Without Rule 3, Apple-style suffixed mnemonics must NOT agree with generic mnemonics
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("mov.16b", "mov")[0], "wrong")
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("fmov.2d", "fmov")[0], "wrong")
+        # Conditional branches remain exact matches
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("b.eq", "b.eq")[0], "agree")
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("b.hs", "b.hs")[0], "agree")
+
+    def test_startup_self_check_detects_non_generic_neon_syntax(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        self.assertTrue(
+            hasattr(mnemonic_normalization, "verify_reference_generic_neon_syntax"),
+            "mnemonic_normalization must define verify_reference_generic_neon_syntax",
+        )
+        # Real /bin/ls under build_reference_command must pass the generic-syntax self-check
+        self.assertIsNone(mnemonic_normalization.verify_reference_generic_neon_syntax("/bin/ls", "arm64e"))
+
+        # Simulated regression: llvm-objdump ignores -mllvm=-aarch64-neon-syntax=generic and emits movi.2d
+        apple_syntax_out = (
+            b"/bin/ls:\n"
+            b"100001af4:\tmovi.2d\tv0, #0000000000000000\n"
+            b"100001af8:\tret\n"
+        )
+        with mock.patch.object(
+            mnemonic_normalization.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(["xcrun"], 0, stdout=apple_syntax_out, stderr=b""),
+        ):
+            err = mnemonic_normalization.verify_reference_generic_neon_syntax("/bin/ls", "arm64e")
+        self.assertIsNotNone(err)
+        self.assertIn("movi.2d", err)
+
+        # Simulated regression: >=100 instructions in sample binary with zero generic vN.<arr> operands
+        scalar_only_120 = b"/bin/ls:\n" + b"".join(
+            f"{0x1000 + 4 * i:x}:\tnop\n".encode("ascii") for i in range(120)
+        )
+        with mock.patch.object(
+            mnemonic_normalization.subprocess,
+            "run",
+            return_value=subprocess.CompletedProcess(["xcrun"], 0, stdout=scalar_only_120, stderr=b""),
+        ):
+            err_no_vec = mnemonic_normalization.verify_reference_generic_neon_syntax("/bin/ls", "arm64e")
+        self.assertIsNotNone(err_no_vec)
+
+        # Even if the target binary itself is purely scalar (e.g., /usr/bin/true), differential.py exits 1
+        # when the startup generic-syntax self-check fails.
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = os.path.join(tmp, "scalar.bin")
+            with open(fake_bin, "wb") as fh:
+                fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+            fake_mg = _make_fake_machgraph_script(
+                tmp, "; Section __TEXT,__text @ 0x1000\n0x0000000000001000\td503201f\tnop\t\n"
+            )
+            err_buf = io.StringIO()
+            with mock.patch.object(
+                differential, "verify_reference_generic_neon_syntax", return_value="Darwin syntax detected"
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", fake_bin, "--machgraph", fake_mg]
+            ), redirect_stdout(
+                io.StringIO()
+            ), redirect_stderr(
+                err_buf
+            ):
+                rc = differential.main()
+            self.assertEqual(rc, 1)
+            self.assertIn("Darwin syntax detected", err_buf.getvalue())
+
+    def test_per_file_reference_check_rejects_darwin_suffix_even_for_unknown_insn(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = os.path.join(tmp, "neon_unknown.bin")
+            with open(fake_bin, "wb") as fh:
+                fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+            # MachGraph emits .inst at 0x1004; if Rule 3 or silent unknown classification were active,
+            # 'sub.2d' vs '.inst' would be counted as unknown and exit 0 instead of failing!
+            mg_out = (
+                "; Section __TEXT,__text @ 0x1000\n"
+                "0x0000000000001000\td503201f\tnop\t\n"
+                "0x0000000000001004\t6ee18401\t.inst\t0x6ee18401\n"
+            )
+            fake_mg = _make_fake_machgraph_script(tmp, mg_out)
+            report_json = os.path.join(tmp, "report.json")
+            ref_stdout = (
+                b"\nneon_unknown.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"1000:\tnop\n"
+                b"1004:\tsub.2d\tv1, v0, v1\n"
+            )
+            real_run = subprocess.run
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd and cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64\n", stderr=b"")
+                if len(cmd) >= 2 and cmd[0] == "xcrun" and cmd[1] == "llvm-objdump":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"Apple LLVM version 21.0.0\n", stderr=b"")
+                    if "/bin/ls" in cmd:
+                        return real_run(cmd, *args, **kwargs)
+                    return subprocess.CompletedProcess(cmd, 0, stdout=ref_stdout, stderr=b"")
+                return real_run(cmd, *args, **kwargs)
+
+            with mock.patch.object(differential.subprocess, "run", side_effect=fake_run), mock.patch.object(
+                sys, "argv", ["differential.py", fake_bin, "--machgraph", fake_mg, "--json-out", report_json]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc = differential.main()
+
+            self.assertEqual(rc, 1, "Reference output with 'sub.2d' must fail hard, not pass as unknown")
+            with open(report_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            self.assertEqual(payload["verdict"], "FAIL")
+            self.assertEqual(payload["summary"]["crashes_or_failures"], 1)
+            self.assertIn("sub.2d", payload["failures"][0]["error"])
+
+        # Same check for mnemonic-agreement.py
+        ref_101 = {0x1000 + 4 * i: "nop" for i in range(100)}
+        ref_101[0x1190] = "sub.2d"
+        mg_101 = {0x1000 + 4 * i: "nop" for i in range(100)}
+        mg_101[0x1190] = ".inst"
+        err_ma = io.StringIO()
+        with mock.patch.object(mnemonic_agreement, "reference_listing", return_value=ref_101), mock.patch.object(
+            mnemonic_agreement, "machgraph_listing", return_value=mg_101
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--max-wrong", "0"]
+        ), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(
+            err_ma
+        ):
+            self.assertEqual(mnemonic_agreement.main(), 1)
+        self.assertIn("sub.2d", err_ma.getvalue())
 
 
 if __name__ == "__main__":

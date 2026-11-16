@@ -6,7 +6,7 @@ Usage:
                         [--min-agreement <percent>] [--max-wrong <n>]
 
 Both tools disassemble `__TEXT,__text` of the chosen slice using the fixed
-reference command and single shared 3-rule normalization table in
+reference command and single shared 2-rule normalization table in
 `mnemonic_normalization.py`.
 
 The result line starts with [PASS]/[FAIL] when a threshold was given and with [INFO] when the run only
@@ -31,6 +31,8 @@ from mnemonic_normalization import (  # noqa: E402
     REFERENCE_COMMAND_TEMPLATE,
     build_reference_command,
     classify_mnemonic_pair,
+    find_non_generic_neon_mnemonic,
+    verify_reference_generic_neon_syntax,
 )
 
 _INSN_LINE_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
@@ -127,7 +129,21 @@ def main() -> int:
     parser.add_argument("--label", default=None, help="prefix for the result line")
     args = parser.parse_args()
 
+    syntax_err = verify_reference_generic_neon_syntax()
+    if syntax_err is not None:
+        print(f"[FAIL] {syntax_err}", file=sys.stderr)
+        return 1
+
     ref = reference_listing(args.binary, args.arch)
+    bad_neon = find_non_generic_neon_mnemonic(ref.items())
+    if bad_neon is not None:
+        bad_addr, bad_mnem = bad_neon
+        print(
+            f"[FAIL] non-generic Neon syntax in reference output for {args.binary}: "
+            f"saw arrangement-suffixed mnemonic '{bad_mnem}' at 0x{bad_addr:x}",
+            file=sys.stderr,
+        )
+        return 1
     mine = machgraph_listing(args.machgraph, args.binary)
     if len(ref) == 0 and len(mine) > 0:
         print(

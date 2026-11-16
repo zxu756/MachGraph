@@ -8,9 +8,9 @@ Usage:
 Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32 / G42 / D-M2-1):
   xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
 
-Normalization rules: imported from `mnemonic_normalization.py` (only the three
-narrow rules: `movz`/`movn` == `mov`, `udf` == `.inst`, drop reference vector
-arrangement suffix while keeping `b.<cond>`).
+Normalization rules: imported from `mnemonic_normalization.py` (only the two
+narrow rules remaining in M2 Stage 1: `movz`/`movn` == `mov`, `udf` == `.inst`;
+generic Neon syntax is enforced on reference output).
 
 Exit status:
   0 when crashes/failures == 0, missing_addresses == 0, and wrong_instructions == 0
@@ -42,6 +42,8 @@ from mnemonic_normalization import (  # noqa: E402
     REFERENCE_COMMAND_TEMPLATE,
     build_reference_command,
     classify_mnemonic_pair,
+    find_non_generic_neon_mnemonic,
+    verify_reference_generic_neon_syntax,
 )
 
 QUICK_FILES = ["/bin/ls"]
@@ -221,6 +223,22 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             raw_mnem = m.group(2).lower()
             raw_ops = (m.group(3) or "").split(";")[0].strip()
             ref_map[addr] = (raw_mnem, raw_ops)
+
+    bad_neon = find_non_generic_neon_mnemonic((addr, mnem) for addr, (mnem, _ops) in ref_map.items())
+    if bad_neon is not None:
+        bad_addr, bad_mnem = bad_neon
+        return {
+            "path": path,
+            "arch": arch,
+            "total": len(ref_map),
+            "seconds": 0.0,
+            "failure": (
+                f"non-generic Neon syntax in reference output: saw arrangement-suffixed mnemonic "
+                f"'{bad_mnem}' at {hex(bad_addr)}"
+            ),
+            "exit_code": 1,
+            "timed_out": False,
+        }
 
     env = dict(
         os.environ,
@@ -476,6 +494,11 @@ def main() -> int:
         print(f"[FAIL] No candidate binaries found for '{corpus_name}'", file=sys.stderr)
         return 1
 
+    syntax_err = verify_reference_generic_neon_syntax()
+    if syntax_err is not None:
+        print(f"[FAIL] {syntax_err}", file=sys.stderr)
+        return 1
+
     utc_now = datetime.datetime.now(datetime.timezone.utc)
     date_str = utc_now.strftime("%Y-%m-%d")
     json_out_path = args.json_out
@@ -550,7 +573,7 @@ def main() -> int:
         f"MachGraph:    {env_meta['machgraph_binary']} @ {env_meta['machgraph_commit'][:12]} "
         f"(worktree_clean={env_meta['worktree_clean']})"
     )
-    print(f"Rules (3):    {NORMALIZATION_SUMMARY}")
+    print(f"Rules ({len(NORMALIZATION_RULES)}):    {NORMALIZATION_SUMMARY}")
     print("")
 
     for r in rows:
