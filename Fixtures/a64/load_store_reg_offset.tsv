@@ -1,0 +1,1019 @@
+# A64 encoding reference table: load_store_reg_offset
+# ARM DDI 0487 C4.1.94.10 Load/store register (register offset): (word & 0x3b200c00) == 0x38200800.
+# Enumerates size=0..3, V=0..1, opc=0..3, option=0..7 (all 8 values), S=0..1 with fixed Rn=2, Rm=3:
+# Rt=1 for load/store forms (31 x 8 x 2 = 496 rows), plus all prfop=0..31 for (size=3, V=0, opc=2)
+# PRFM/RPRFM space (1 x 8 x 2 x 32 = 512 rows), totaling 1,008 rows.
+# Rows: 1008 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e load_store_reg_offset.s -o load_store_reg_offset.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text load_store_reg_offset.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate load_store_reg_offset
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x38230841	.long	0x38230841
+0x38231841	.long	0x38231841
+0x38232841	.long	0x38232841
+0x38233841	.long	0x38233841
+0x38234841	strb	w1, [x2, w3, uxtw]
+0x38235841	strb	w1, [x2, w3, uxtw #0]
+0x38236841	strb	w1, [x2, x3]
+0x38237841	strb	w1, [x2, x3, lsl #0]
+0x38238841	.long	0x38238841
+0x38239841	.long	0x38239841
+0x3823a841	.long	0x3823a841
+0x3823b841	.long	0x3823b841
+0x3823c841	strb	w1, [x2, w3, sxtw]
+0x3823d841	strb	w1, [x2, w3, sxtw #0]
+0x3823e841	strb	w1, [x2, x3, sxtx]
+0x3823f841	strb	w1, [x2, x3, sxtx #0]
+0x38630841	.long	0x38630841
+0x38631841	.long	0x38631841
+0x38632841	.long	0x38632841
+0x38633841	.long	0x38633841
+0x38634841	ldrb	w1, [x2, w3, uxtw]
+0x38635841	ldrb	w1, [x2, w3, uxtw #0]
+0x38636841	ldrb	w1, [x2, x3]
+0x38637841	ldrb	w1, [x2, x3, lsl #0]
+0x38638841	.long	0x38638841
+0x38639841	.long	0x38639841
+0x3863a841	.long	0x3863a841
+0x3863b841	.long	0x3863b841
+0x3863c841	ldrb	w1, [x2, w3, sxtw]
+0x3863d841	ldrb	w1, [x2, w3, sxtw #0]
+0x3863e841	ldrb	w1, [x2, x3, sxtx]
+0x3863f841	ldrb	w1, [x2, x3, sxtx #0]
+0x38a30841	.long	0x38a30841
+0x38a31841	.long	0x38a31841
+0x38a32841	.long	0x38a32841
+0x38a33841	.long	0x38a33841
+0x38a34841	ldrsb	x1, [x2, w3, uxtw]
+0x38a35841	ldrsb	x1, [x2, w3, uxtw #0]
+0x38a36841	ldrsb	x1, [x2, x3]
+0x38a37841	ldrsb	x1, [x2, x3, lsl #0]
+0x38a38841	.long	0x38a38841
+0x38a39841	.long	0x38a39841
+0x38a3a841	.long	0x38a3a841
+0x38a3b841	.long	0x38a3b841
+0x38a3c841	ldrsb	x1, [x2, w3, sxtw]
+0x38a3d841	ldrsb	x1, [x2, w3, sxtw #0]
+0x38a3e841	ldrsb	x1, [x2, x3, sxtx]
+0x38a3f841	ldrsb	x1, [x2, x3, sxtx #0]
+0x38e30841	.long	0x38e30841
+0x38e31841	.long	0x38e31841
+0x38e32841	.long	0x38e32841
+0x38e33841	.long	0x38e33841
+0x38e34841	ldrsb	w1, [x2, w3, uxtw]
+0x38e35841	ldrsb	w1, [x2, w3, uxtw #0]
+0x38e36841	ldrsb	w1, [x2, x3]
+0x38e37841	ldrsb	w1, [x2, x3, lsl #0]
+0x38e38841	.long	0x38e38841
+0x38e39841	.long	0x38e39841
+0x38e3a841	.long	0x38e3a841
+0x38e3b841	.long	0x38e3b841
+0x38e3c841	ldrsb	w1, [x2, w3, sxtw]
+0x38e3d841	ldrsb	w1, [x2, w3, sxtw #0]
+0x38e3e841	ldrsb	w1, [x2, x3, sxtx]
+0x38e3f841	ldrsb	w1, [x2, x3, sxtx #0]
+0x3c230841	.long	0x3c230841
+0x3c231841	.long	0x3c231841
+0x3c232841	.long	0x3c232841
+0x3c233841	.long	0x3c233841
+0x3c234841	str	b1, [x2, w3, uxtw]
+0x3c235841	str	b1, [x2, w3, uxtw #0]
+0x3c236841	str	b1, [x2, x3]
+0x3c237841	str	b1, [x2, x3, lsl #0]
+0x3c238841	.long	0x3c238841
+0x3c239841	.long	0x3c239841
+0x3c23a841	.long	0x3c23a841
+0x3c23b841	.long	0x3c23b841
+0x3c23c841	str	b1, [x2, w3, sxtw]
+0x3c23d841	str	b1, [x2, w3, sxtw #0]
+0x3c23e841	str	b1, [x2, x3, sxtx]
+0x3c23f841	str	b1, [x2, x3, sxtx #0]
+0x3c630841	.long	0x3c630841
+0x3c631841	.long	0x3c631841
+0x3c632841	.long	0x3c632841
+0x3c633841	.long	0x3c633841
+0x3c634841	ldr	b1, [x2, w3, uxtw]
+0x3c635841	ldr	b1, [x2, w3, uxtw #0]
+0x3c636841	ldr	b1, [x2, x3]
+0x3c637841	ldr	b1, [x2, x3, lsl #0]
+0x3c638841	.long	0x3c638841
+0x3c639841	.long	0x3c639841
+0x3c63a841	.long	0x3c63a841
+0x3c63b841	.long	0x3c63b841
+0x3c63c841	ldr	b1, [x2, w3, sxtw]
+0x3c63d841	ldr	b1, [x2, w3, sxtw #0]
+0x3c63e841	ldr	b1, [x2, x3, sxtx]
+0x3c63f841	ldr	b1, [x2, x3, sxtx #0]
+0x3ca30841	.long	0x3ca30841
+0x3ca31841	.long	0x3ca31841
+0x3ca32841	.long	0x3ca32841
+0x3ca33841	.long	0x3ca33841
+0x3ca34841	str	q1, [x2, w3, uxtw]
+0x3ca35841	str	q1, [x2, w3, uxtw #4]
+0x3ca36841	str	q1, [x2, x3]
+0x3ca37841	str	q1, [x2, x3, lsl #4]
+0x3ca38841	.long	0x3ca38841
+0x3ca39841	.long	0x3ca39841
+0x3ca3a841	.long	0x3ca3a841
+0x3ca3b841	.long	0x3ca3b841
+0x3ca3c841	str	q1, [x2, w3, sxtw]
+0x3ca3d841	str	q1, [x2, w3, sxtw #4]
+0x3ca3e841	str	q1, [x2, x3, sxtx]
+0x3ca3f841	str	q1, [x2, x3, sxtx #4]
+0x3ce30841	.long	0x3ce30841
+0x3ce31841	.long	0x3ce31841
+0x3ce32841	.long	0x3ce32841
+0x3ce33841	.long	0x3ce33841
+0x3ce34841	ldr	q1, [x2, w3, uxtw]
+0x3ce35841	ldr	q1, [x2, w3, uxtw #4]
+0x3ce36841	ldr	q1, [x2, x3]
+0x3ce37841	ldr	q1, [x2, x3, lsl #4]
+0x3ce38841	.long	0x3ce38841
+0x3ce39841	.long	0x3ce39841
+0x3ce3a841	.long	0x3ce3a841
+0x3ce3b841	.long	0x3ce3b841
+0x3ce3c841	ldr	q1, [x2, w3, sxtw]
+0x3ce3d841	ldr	q1, [x2, w3, sxtw #4]
+0x3ce3e841	ldr	q1, [x2, x3, sxtx]
+0x3ce3f841	ldr	q1, [x2, x3, sxtx #4]
+0x78230841	.long	0x78230841
+0x78231841	.long	0x78231841
+0x78232841	.long	0x78232841
+0x78233841	.long	0x78233841
+0x78234841	strh	w1, [x2, w3, uxtw]
+0x78235841	strh	w1, [x2, w3, uxtw #1]
+0x78236841	strh	w1, [x2, x3]
+0x78237841	strh	w1, [x2, x3, lsl #1]
+0x78238841	.long	0x78238841
+0x78239841	.long	0x78239841
+0x7823a841	.long	0x7823a841
+0x7823b841	.long	0x7823b841
+0x7823c841	strh	w1, [x2, w3, sxtw]
+0x7823d841	strh	w1, [x2, w3, sxtw #1]
+0x7823e841	strh	w1, [x2, x3, sxtx]
+0x7823f841	strh	w1, [x2, x3, sxtx #1]
+0x78630841	.long	0x78630841
+0x78631841	.long	0x78631841
+0x78632841	.long	0x78632841
+0x78633841	.long	0x78633841
+0x78634841	ldrh	w1, [x2, w3, uxtw]
+0x78635841	ldrh	w1, [x2, w3, uxtw #1]
+0x78636841	ldrh	w1, [x2, x3]
+0x78637841	ldrh	w1, [x2, x3, lsl #1]
+0x78638841	.long	0x78638841
+0x78639841	.long	0x78639841
+0x7863a841	.long	0x7863a841
+0x7863b841	.long	0x7863b841
+0x7863c841	ldrh	w1, [x2, w3, sxtw]
+0x7863d841	ldrh	w1, [x2, w3, sxtw #1]
+0x7863e841	ldrh	w1, [x2, x3, sxtx]
+0x7863f841	ldrh	w1, [x2, x3, sxtx #1]
+0x78a30841	.long	0x78a30841
+0x78a31841	.long	0x78a31841
+0x78a32841	.long	0x78a32841
+0x78a33841	.long	0x78a33841
+0x78a34841	ldrsh	x1, [x2, w3, uxtw]
+0x78a35841	ldrsh	x1, [x2, w3, uxtw #1]
+0x78a36841	ldrsh	x1, [x2, x3]
+0x78a37841	ldrsh	x1, [x2, x3, lsl #1]
+0x78a38841	.long	0x78a38841
+0x78a39841	.long	0x78a39841
+0x78a3a841	.long	0x78a3a841
+0x78a3b841	.long	0x78a3b841
+0x78a3c841	ldrsh	x1, [x2, w3, sxtw]
+0x78a3d841	ldrsh	x1, [x2, w3, sxtw #1]
+0x78a3e841	ldrsh	x1, [x2, x3, sxtx]
+0x78a3f841	ldrsh	x1, [x2, x3, sxtx #1]
+0x78e30841	.long	0x78e30841
+0x78e31841	.long	0x78e31841
+0x78e32841	.long	0x78e32841
+0x78e33841	.long	0x78e33841
+0x78e34841	ldrsh	w1, [x2, w3, uxtw]
+0x78e35841	ldrsh	w1, [x2, w3, uxtw #1]
+0x78e36841	ldrsh	w1, [x2, x3]
+0x78e37841	ldrsh	w1, [x2, x3, lsl #1]
+0x78e38841	.long	0x78e38841
+0x78e39841	.long	0x78e39841
+0x78e3a841	.long	0x78e3a841
+0x78e3b841	.long	0x78e3b841
+0x78e3c841	ldrsh	w1, [x2, w3, sxtw]
+0x78e3d841	ldrsh	w1, [x2, w3, sxtw #1]
+0x78e3e841	ldrsh	w1, [x2, x3, sxtx]
+0x78e3f841	ldrsh	w1, [x2, x3, sxtx #1]
+0x7c230841	.long	0x7c230841
+0x7c231841	.long	0x7c231841
+0x7c232841	.long	0x7c232841
+0x7c233841	.long	0x7c233841
+0x7c234841	str	h1, [x2, w3, uxtw]
+0x7c235841	str	h1, [x2, w3, uxtw #1]
+0x7c236841	str	h1, [x2, x3]
+0x7c237841	str	h1, [x2, x3, lsl #1]
+0x7c238841	.long	0x7c238841
+0x7c239841	.long	0x7c239841
+0x7c23a841	.long	0x7c23a841
+0x7c23b841	.long	0x7c23b841
+0x7c23c841	str	h1, [x2, w3, sxtw]
+0x7c23d841	str	h1, [x2, w3, sxtw #1]
+0x7c23e841	str	h1, [x2, x3, sxtx]
+0x7c23f841	str	h1, [x2, x3, sxtx #1]
+0x7c630841	.long	0x7c630841
+0x7c631841	.long	0x7c631841
+0x7c632841	.long	0x7c632841
+0x7c633841	.long	0x7c633841
+0x7c634841	ldr	h1, [x2, w3, uxtw]
+0x7c635841	ldr	h1, [x2, w3, uxtw #1]
+0x7c636841	ldr	h1, [x2, x3]
+0x7c637841	ldr	h1, [x2, x3, lsl #1]
+0x7c638841	.long	0x7c638841
+0x7c639841	.long	0x7c639841
+0x7c63a841	.long	0x7c63a841
+0x7c63b841	.long	0x7c63b841
+0x7c63c841	ldr	h1, [x2, w3, sxtw]
+0x7c63d841	ldr	h1, [x2, w3, sxtw #1]
+0x7c63e841	ldr	h1, [x2, x3, sxtx]
+0x7c63f841	ldr	h1, [x2, x3, sxtx #1]
+0x7ca30841	.long	0x7ca30841
+0x7ca31841	.long	0x7ca31841
+0x7ca32841	.long	0x7ca32841
+0x7ca33841	.long	0x7ca33841
+0x7ca34841	.long	0x7ca34841
+0x7ca35841	.long	0x7ca35841
+0x7ca36841	.long	0x7ca36841
+0x7ca37841	.long	0x7ca37841
+0x7ca38841	.long	0x7ca38841
+0x7ca39841	.long	0x7ca39841
+0x7ca3a841	.long	0x7ca3a841
+0x7ca3b841	.long	0x7ca3b841
+0x7ca3c841	.long	0x7ca3c841
+0x7ca3d841	.long	0x7ca3d841
+0x7ca3e841	.long	0x7ca3e841
+0x7ca3f841	.long	0x7ca3f841
+0x7ce30841	.long	0x7ce30841
+0x7ce31841	.long	0x7ce31841
+0x7ce32841	.long	0x7ce32841
+0x7ce33841	.long	0x7ce33841
+0x7ce34841	.long	0x7ce34841
+0x7ce35841	.long	0x7ce35841
+0x7ce36841	.long	0x7ce36841
+0x7ce37841	.long	0x7ce37841
+0x7ce38841	.long	0x7ce38841
+0x7ce39841	.long	0x7ce39841
+0x7ce3a841	.long	0x7ce3a841
+0x7ce3b841	.long	0x7ce3b841
+0x7ce3c841	.long	0x7ce3c841
+0x7ce3d841	.long	0x7ce3d841
+0x7ce3e841	.long	0x7ce3e841
+0x7ce3f841	.long	0x7ce3f841
+0xb8230841	.long	0xb8230841
+0xb8231841	.long	0xb8231841
+0xb8232841	.long	0xb8232841
+0xb8233841	.long	0xb8233841
+0xb8234841	str	w1, [x2, w3, uxtw]
+0xb8235841	str	w1, [x2, w3, uxtw #2]
+0xb8236841	str	w1, [x2, x3]
+0xb8237841	str	w1, [x2, x3, lsl #2]
+0xb8238841	.long	0xb8238841
+0xb8239841	.long	0xb8239841
+0xb823a841	.long	0xb823a841
+0xb823b841	.long	0xb823b841
+0xb823c841	str	w1, [x2, w3, sxtw]
+0xb823d841	str	w1, [x2, w3, sxtw #2]
+0xb823e841	str	w1, [x2, x3, sxtx]
+0xb823f841	str	w1, [x2, x3, sxtx #2]
+0xb8630841	.long	0xb8630841
+0xb8631841	.long	0xb8631841
+0xb8632841	.long	0xb8632841
+0xb8633841	.long	0xb8633841
+0xb8634841	ldr	w1, [x2, w3, uxtw]
+0xb8635841	ldr	w1, [x2, w3, uxtw #2]
+0xb8636841	ldr	w1, [x2, x3]
+0xb8637841	ldr	w1, [x2, x3, lsl #2]
+0xb8638841	.long	0xb8638841
+0xb8639841	.long	0xb8639841
+0xb863a841	.long	0xb863a841
+0xb863b841	.long	0xb863b841
+0xb863c841	ldr	w1, [x2, w3, sxtw]
+0xb863d841	ldr	w1, [x2, w3, sxtw #2]
+0xb863e841	ldr	w1, [x2, x3, sxtx]
+0xb863f841	ldr	w1, [x2, x3, sxtx #2]
+0xb8a30841	.long	0xb8a30841
+0xb8a31841	.long	0xb8a31841
+0xb8a32841	.long	0xb8a32841
+0xb8a33841	.long	0xb8a33841
+0xb8a34841	ldrsw	x1, [x2, w3, uxtw]
+0xb8a35841	ldrsw	x1, [x2, w3, uxtw #2]
+0xb8a36841	ldrsw	x1, [x2, x3]
+0xb8a37841	ldrsw	x1, [x2, x3, lsl #2]
+0xb8a38841	.long	0xb8a38841
+0xb8a39841	.long	0xb8a39841
+0xb8a3a841	.long	0xb8a3a841
+0xb8a3b841	.long	0xb8a3b841
+0xb8a3c841	ldrsw	x1, [x2, w3, sxtw]
+0xb8a3d841	ldrsw	x1, [x2, w3, sxtw #2]
+0xb8a3e841	ldrsw	x1, [x2, x3, sxtx]
+0xb8a3f841	ldrsw	x1, [x2, x3, sxtx #2]
+0xb8e30841	.long	0xb8e30841
+0xb8e31841	.long	0xb8e31841
+0xb8e32841	.long	0xb8e32841
+0xb8e33841	.long	0xb8e33841
+0xb8e34841	.long	0xb8e34841
+0xb8e35841	.long	0xb8e35841
+0xb8e36841	.long	0xb8e36841
+0xb8e37841	.long	0xb8e37841
+0xb8e38841	.long	0xb8e38841
+0xb8e39841	.long	0xb8e39841
+0xb8e3a841	.long	0xb8e3a841
+0xb8e3b841	.long	0xb8e3b841
+0xb8e3c841	.long	0xb8e3c841
+0xb8e3d841	.long	0xb8e3d841
+0xb8e3e841	.long	0xb8e3e841
+0xb8e3f841	.long	0xb8e3f841
+0xbc230841	.long	0xbc230841
+0xbc231841	.long	0xbc231841
+0xbc232841	.long	0xbc232841
+0xbc233841	.long	0xbc233841
+0xbc234841	str	s1, [x2, w3, uxtw]
+0xbc235841	str	s1, [x2, w3, uxtw #2]
+0xbc236841	str	s1, [x2, x3]
+0xbc237841	str	s1, [x2, x3, lsl #2]
+0xbc238841	.long	0xbc238841
+0xbc239841	.long	0xbc239841
+0xbc23a841	.long	0xbc23a841
+0xbc23b841	.long	0xbc23b841
+0xbc23c841	str	s1, [x2, w3, sxtw]
+0xbc23d841	str	s1, [x2, w3, sxtw #2]
+0xbc23e841	str	s1, [x2, x3, sxtx]
+0xbc23f841	str	s1, [x2, x3, sxtx #2]
+0xbc630841	.long	0xbc630841
+0xbc631841	.long	0xbc631841
+0xbc632841	.long	0xbc632841
+0xbc633841	.long	0xbc633841
+0xbc634841	ldr	s1, [x2, w3, uxtw]
+0xbc635841	ldr	s1, [x2, w3, uxtw #2]
+0xbc636841	ldr	s1, [x2, x3]
+0xbc637841	ldr	s1, [x2, x3, lsl #2]
+0xbc638841	.long	0xbc638841
+0xbc639841	.long	0xbc639841
+0xbc63a841	.long	0xbc63a841
+0xbc63b841	.long	0xbc63b841
+0xbc63c841	ldr	s1, [x2, w3, sxtw]
+0xbc63d841	ldr	s1, [x2, w3, sxtw #2]
+0xbc63e841	ldr	s1, [x2, x3, sxtx]
+0xbc63f841	ldr	s1, [x2, x3, sxtx #2]
+0xbca30841	.long	0xbca30841
+0xbca31841	.long	0xbca31841
+0xbca32841	.long	0xbca32841
+0xbca33841	.long	0xbca33841
+0xbca34841	.long	0xbca34841
+0xbca35841	.long	0xbca35841
+0xbca36841	.long	0xbca36841
+0xbca37841	.long	0xbca37841
+0xbca38841	.long	0xbca38841
+0xbca39841	.long	0xbca39841
+0xbca3a841	.long	0xbca3a841
+0xbca3b841	.long	0xbca3b841
+0xbca3c841	.long	0xbca3c841
+0xbca3d841	.long	0xbca3d841
+0xbca3e841	.long	0xbca3e841
+0xbca3f841	.long	0xbca3f841
+0xbce30841	.long	0xbce30841
+0xbce31841	.long	0xbce31841
+0xbce32841	.long	0xbce32841
+0xbce33841	.long	0xbce33841
+0xbce34841	.long	0xbce34841
+0xbce35841	.long	0xbce35841
+0xbce36841	.long	0xbce36841
+0xbce37841	.long	0xbce37841
+0xbce38841	.long	0xbce38841
+0xbce39841	.long	0xbce39841
+0xbce3a841	.long	0xbce3a841
+0xbce3b841	.long	0xbce3b841
+0xbce3c841	.long	0xbce3c841
+0xbce3d841	.long	0xbce3d841
+0xbce3e841	.long	0xbce3e841
+0xbce3f841	.long	0xbce3f841
+0xf8230841	.long	0xf8230841
+0xf8231841	.long	0xf8231841
+0xf8232841	.long	0xf8232841
+0xf8233841	.long	0xf8233841
+0xf8234841	str	x1, [x2, w3, uxtw]
+0xf8235841	str	x1, [x2, w3, uxtw #3]
+0xf8236841	str	x1, [x2, x3]
+0xf8237841	str	x1, [x2, x3, lsl #3]
+0xf8238841	.long	0xf8238841
+0xf8239841	.long	0xf8239841
+0xf823a841	.long	0xf823a841
+0xf823b841	.long	0xf823b841
+0xf823c841	str	x1, [x2, w3, sxtw]
+0xf823d841	str	x1, [x2, w3, sxtw #3]
+0xf823e841	str	x1, [x2, x3, sxtx]
+0xf823f841	str	x1, [x2, x3, sxtx #3]
+0xf8630841	.long	0xf8630841
+0xf8631841	.long	0xf8631841
+0xf8632841	.long	0xf8632841
+0xf8633841	.long	0xf8633841
+0xf8634841	ldr	x1, [x2, w3, uxtw]
+0xf8635841	ldr	x1, [x2, w3, uxtw #3]
+0xf8636841	ldr	x1, [x2, x3]
+0xf8637841	ldr	x1, [x2, x3, lsl #3]
+0xf8638841	.long	0xf8638841
+0xf8639841	.long	0xf8639841
+0xf863a841	.long	0xf863a841
+0xf863b841	.long	0xf863b841
+0xf863c841	ldr	x1, [x2, w3, sxtw]
+0xf863d841	ldr	x1, [x2, w3, sxtw #3]
+0xf863e841	ldr	x1, [x2, x3, sxtx]
+0xf863f841	ldr	x1, [x2, x3, sxtx #3]
+0xf8a30840	.long	0xf8a30840
+0xf8a30841	.long	0xf8a30841
+0xf8a30842	.long	0xf8a30842
+0xf8a30843	.long	0xf8a30843
+0xf8a30844	.long	0xf8a30844
+0xf8a30845	.long	0xf8a30845
+0xf8a30846	.long	0xf8a30846
+0xf8a30847	.long	0xf8a30847
+0xf8a30848	.long	0xf8a30848
+0xf8a30849	.long	0xf8a30849
+0xf8a3084a	.long	0xf8a3084a
+0xf8a3084b	.long	0xf8a3084b
+0xf8a3084c	.long	0xf8a3084c
+0xf8a3084d	.long	0xf8a3084d
+0xf8a3084e	.long	0xf8a3084e
+0xf8a3084f	.long	0xf8a3084f
+0xf8a30850	.long	0xf8a30850
+0xf8a30851	.long	0xf8a30851
+0xf8a30852	.long	0xf8a30852
+0xf8a30853	.long	0xf8a30853
+0xf8a30854	.long	0xf8a30854
+0xf8a30855	.long	0xf8a30855
+0xf8a30856	.long	0xf8a30856
+0xf8a30857	.long	0xf8a30857
+0xf8a30858	.long	0xf8a30858
+0xf8a30859	.long	0xf8a30859
+0xf8a3085a	.long	0xf8a3085a
+0xf8a3085b	.long	0xf8a3085b
+0xf8a3085c	.long	0xf8a3085c
+0xf8a3085d	.long	0xf8a3085d
+0xf8a3085e	.long	0xf8a3085e
+0xf8a3085f	.long	0xf8a3085f
+0xf8a31840	.long	0xf8a31840
+0xf8a31841	.long	0xf8a31841
+0xf8a31842	.long	0xf8a31842
+0xf8a31843	.long	0xf8a31843
+0xf8a31844	.long	0xf8a31844
+0xf8a31845	.long	0xf8a31845
+0xf8a31846	.long	0xf8a31846
+0xf8a31847	.long	0xf8a31847
+0xf8a31848	.long	0xf8a31848
+0xf8a31849	.long	0xf8a31849
+0xf8a3184a	.long	0xf8a3184a
+0xf8a3184b	.long	0xf8a3184b
+0xf8a3184c	.long	0xf8a3184c
+0xf8a3184d	.long	0xf8a3184d
+0xf8a3184e	.long	0xf8a3184e
+0xf8a3184f	.long	0xf8a3184f
+0xf8a31850	.long	0xf8a31850
+0xf8a31851	.long	0xf8a31851
+0xf8a31852	.long	0xf8a31852
+0xf8a31853	.long	0xf8a31853
+0xf8a31854	.long	0xf8a31854
+0xf8a31855	.long	0xf8a31855
+0xf8a31856	.long	0xf8a31856
+0xf8a31857	.long	0xf8a31857
+0xf8a31858	.long	0xf8a31858
+0xf8a31859	.long	0xf8a31859
+0xf8a3185a	.long	0xf8a3185a
+0xf8a3185b	.long	0xf8a3185b
+0xf8a3185c	.long	0xf8a3185c
+0xf8a3185d	.long	0xf8a3185d
+0xf8a3185e	.long	0xf8a3185e
+0xf8a3185f	.long	0xf8a3185f
+0xf8a32840	.long	0xf8a32840
+0xf8a32841	.long	0xf8a32841
+0xf8a32842	.long	0xf8a32842
+0xf8a32843	.long	0xf8a32843
+0xf8a32844	.long	0xf8a32844
+0xf8a32845	.long	0xf8a32845
+0xf8a32846	.long	0xf8a32846
+0xf8a32847	.long	0xf8a32847
+0xf8a32848	.long	0xf8a32848
+0xf8a32849	.long	0xf8a32849
+0xf8a3284a	.long	0xf8a3284a
+0xf8a3284b	.long	0xf8a3284b
+0xf8a3284c	.long	0xf8a3284c
+0xf8a3284d	.long	0xf8a3284d
+0xf8a3284e	.long	0xf8a3284e
+0xf8a3284f	.long	0xf8a3284f
+0xf8a32850	.long	0xf8a32850
+0xf8a32851	.long	0xf8a32851
+0xf8a32852	.long	0xf8a32852
+0xf8a32853	.long	0xf8a32853
+0xf8a32854	.long	0xf8a32854
+0xf8a32855	.long	0xf8a32855
+0xf8a32856	.long	0xf8a32856
+0xf8a32857	.long	0xf8a32857
+0xf8a32858	.long	0xf8a32858
+0xf8a32859	.long	0xf8a32859
+0xf8a3285a	.long	0xf8a3285a
+0xf8a3285b	.long	0xf8a3285b
+0xf8a3285c	.long	0xf8a3285c
+0xf8a3285d	.long	0xf8a3285d
+0xf8a3285e	.long	0xf8a3285e
+0xf8a3285f	.long	0xf8a3285f
+0xf8a33840	.long	0xf8a33840
+0xf8a33841	.long	0xf8a33841
+0xf8a33842	.long	0xf8a33842
+0xf8a33843	.long	0xf8a33843
+0xf8a33844	.long	0xf8a33844
+0xf8a33845	.long	0xf8a33845
+0xf8a33846	.long	0xf8a33846
+0xf8a33847	.long	0xf8a33847
+0xf8a33848	.long	0xf8a33848
+0xf8a33849	.long	0xf8a33849
+0xf8a3384a	.long	0xf8a3384a
+0xf8a3384b	.long	0xf8a3384b
+0xf8a3384c	.long	0xf8a3384c
+0xf8a3384d	.long	0xf8a3384d
+0xf8a3384e	.long	0xf8a3384e
+0xf8a3384f	.long	0xf8a3384f
+0xf8a33850	.long	0xf8a33850
+0xf8a33851	.long	0xf8a33851
+0xf8a33852	.long	0xf8a33852
+0xf8a33853	.long	0xf8a33853
+0xf8a33854	.long	0xf8a33854
+0xf8a33855	.long	0xf8a33855
+0xf8a33856	.long	0xf8a33856
+0xf8a33857	.long	0xf8a33857
+0xf8a33858	.long	0xf8a33858
+0xf8a33859	.long	0xf8a33859
+0xf8a3385a	.long	0xf8a3385a
+0xf8a3385b	.long	0xf8a3385b
+0xf8a3385c	.long	0xf8a3385c
+0xf8a3385d	.long	0xf8a3385d
+0xf8a3385e	.long	0xf8a3385e
+0xf8a3385f	.long	0xf8a3385f
+0xf8a34840	prfm	pldl1keep, [x2, w3, uxtw]
+0xf8a34841	prfm	pldl1strm, [x2, w3, uxtw]
+0xf8a34842	prfm	pldl2keep, [x2, w3, uxtw]
+0xf8a34843	prfm	pldl2strm, [x2, w3, uxtw]
+0xf8a34844	prfm	pldl3keep, [x2, w3, uxtw]
+0xf8a34845	prfm	pldl3strm, [x2, w3, uxtw]
+0xf8a34846	prfm	#0x6, [x2, w3, uxtw]
+0xf8a34847	prfm	#0x7, [x2, w3, uxtw]
+0xf8a34848	prfm	plil1keep, [x2, w3, uxtw]
+0xf8a34849	prfm	plil1strm, [x2, w3, uxtw]
+0xf8a3484a	prfm	plil2keep, [x2, w3, uxtw]
+0xf8a3484b	prfm	plil2strm, [x2, w3, uxtw]
+0xf8a3484c	prfm	plil3keep, [x2, w3, uxtw]
+0xf8a3484d	prfm	plil3strm, [x2, w3, uxtw]
+0xf8a3484e	prfm	#0xe, [x2, w3, uxtw]
+0xf8a3484f	prfm	#0xf, [x2, w3, uxtw]
+0xf8a34850	prfm	pstl1keep, [x2, w3, uxtw]
+0xf8a34851	prfm	pstl1strm, [x2, w3, uxtw]
+0xf8a34852	prfm	pstl2keep, [x2, w3, uxtw]
+0xf8a34853	prfm	pstl2strm, [x2, w3, uxtw]
+0xf8a34854	prfm	pstl3keep, [x2, w3, uxtw]
+0xf8a34855	prfm	pstl3strm, [x2, w3, uxtw]
+0xf8a34856	prfm	#0x16, [x2, w3, uxtw]
+0xf8a34857	prfm	#0x17, [x2, w3, uxtw]
+0xf8a34858	rprfm	pldkeep, x3, [x2]
+0xf8a34859	rprfm	pstkeep, x3, [x2]
+0xf8a3485a	rprfm	#0x2, x3, [x2]
+0xf8a3485b	rprfm	#0x3, x3, [x2]
+0xf8a3485c	rprfm	pldstrm, x3, [x2]
+0xf8a3485d	rprfm	pststrm, x3, [x2]
+0xf8a3485e	rprfm	#0x6, x3, [x2]
+0xf8a3485f	rprfm	#0x7, x3, [x2]
+0xf8a35840	prfm	pldl1keep, [x2, w3, uxtw #3]
+0xf8a35841	prfm	pldl1strm, [x2, w3, uxtw #3]
+0xf8a35842	prfm	pldl2keep, [x2, w3, uxtw #3]
+0xf8a35843	prfm	pldl2strm, [x2, w3, uxtw #3]
+0xf8a35844	prfm	pldl3keep, [x2, w3, uxtw #3]
+0xf8a35845	prfm	pldl3strm, [x2, w3, uxtw #3]
+0xf8a35846	prfm	#0x6, [x2, w3, uxtw #3]
+0xf8a35847	prfm	#0x7, [x2, w3, uxtw #3]
+0xf8a35848	prfm	plil1keep, [x2, w3, uxtw #3]
+0xf8a35849	prfm	plil1strm, [x2, w3, uxtw #3]
+0xf8a3584a	prfm	plil2keep, [x2, w3, uxtw #3]
+0xf8a3584b	prfm	plil2strm, [x2, w3, uxtw #3]
+0xf8a3584c	prfm	plil3keep, [x2, w3, uxtw #3]
+0xf8a3584d	prfm	plil3strm, [x2, w3, uxtw #3]
+0xf8a3584e	prfm	#0xe, [x2, w3, uxtw #3]
+0xf8a3584f	prfm	#0xf, [x2, w3, uxtw #3]
+0xf8a35850	prfm	pstl1keep, [x2, w3, uxtw #3]
+0xf8a35851	prfm	pstl1strm, [x2, w3, uxtw #3]
+0xf8a35852	prfm	pstl2keep, [x2, w3, uxtw #3]
+0xf8a35853	prfm	pstl2strm, [x2, w3, uxtw #3]
+0xf8a35854	prfm	pstl3keep, [x2, w3, uxtw #3]
+0xf8a35855	prfm	pstl3strm, [x2, w3, uxtw #3]
+0xf8a35856	prfm	#0x16, [x2, w3, uxtw #3]
+0xf8a35857	prfm	#0x17, [x2, w3, uxtw #3]
+0xf8a35858	rprfm	#0x8, x3, [x2]
+0xf8a35859	rprfm	#0x9, x3, [x2]
+0xf8a3585a	rprfm	#0xa, x3, [x2]
+0xf8a3585b	rprfm	#0xb, x3, [x2]
+0xf8a3585c	rprfm	#0xc, x3, [x2]
+0xf8a3585d	rprfm	#0xd, x3, [x2]
+0xf8a3585e	rprfm	#0xe, x3, [x2]
+0xf8a3585f	rprfm	#0xf, x3, [x2]
+0xf8a36840	prfm	pldl1keep, [x2, x3]
+0xf8a36841	prfm	pldl1strm, [x2, x3]
+0xf8a36842	prfm	pldl2keep, [x2, x3]
+0xf8a36843	prfm	pldl2strm, [x2, x3]
+0xf8a36844	prfm	pldl3keep, [x2, x3]
+0xf8a36845	prfm	pldl3strm, [x2, x3]
+0xf8a36846	prfm	#0x6, [x2, x3]
+0xf8a36847	prfm	#0x7, [x2, x3]
+0xf8a36848	prfm	plil1keep, [x2, x3]
+0xf8a36849	prfm	plil1strm, [x2, x3]
+0xf8a3684a	prfm	plil2keep, [x2, x3]
+0xf8a3684b	prfm	plil2strm, [x2, x3]
+0xf8a3684c	prfm	plil3keep, [x2, x3]
+0xf8a3684d	prfm	plil3strm, [x2, x3]
+0xf8a3684e	prfm	#0xe, [x2, x3]
+0xf8a3684f	prfm	#0xf, [x2, x3]
+0xf8a36850	prfm	pstl1keep, [x2, x3]
+0xf8a36851	prfm	pstl1strm, [x2, x3]
+0xf8a36852	prfm	pstl2keep, [x2, x3]
+0xf8a36853	prfm	pstl2strm, [x2, x3]
+0xf8a36854	prfm	pstl3keep, [x2, x3]
+0xf8a36855	prfm	pstl3strm, [x2, x3]
+0xf8a36856	prfm	#0x16, [x2, x3]
+0xf8a36857	prfm	#0x17, [x2, x3]
+0xf8a36858	rprfm	#0x10, x3, [x2]
+0xf8a36859	rprfm	#0x11, x3, [x2]
+0xf8a3685a	rprfm	#0x12, x3, [x2]
+0xf8a3685b	rprfm	#0x13, x3, [x2]
+0xf8a3685c	rprfm	#0x14, x3, [x2]
+0xf8a3685d	rprfm	#0x15, x3, [x2]
+0xf8a3685e	rprfm	#0x16, x3, [x2]
+0xf8a3685f	rprfm	#0x17, x3, [x2]
+0xf8a37840	prfm	pldl1keep, [x2, x3, lsl #3]
+0xf8a37841	prfm	pldl1strm, [x2, x3, lsl #3]
+0xf8a37842	prfm	pldl2keep, [x2, x3, lsl #3]
+0xf8a37843	prfm	pldl2strm, [x2, x3, lsl #3]
+0xf8a37844	prfm	pldl3keep, [x2, x3, lsl #3]
+0xf8a37845	prfm	pldl3strm, [x2, x3, lsl #3]
+0xf8a37846	prfm	#0x6, [x2, x3, lsl #3]
+0xf8a37847	prfm	#0x7, [x2, x3, lsl #3]
+0xf8a37848	prfm	plil1keep, [x2, x3, lsl #3]
+0xf8a37849	prfm	plil1strm, [x2, x3, lsl #3]
+0xf8a3784a	prfm	plil2keep, [x2, x3, lsl #3]
+0xf8a3784b	prfm	plil2strm, [x2, x3, lsl #3]
+0xf8a3784c	prfm	plil3keep, [x2, x3, lsl #3]
+0xf8a3784d	prfm	plil3strm, [x2, x3, lsl #3]
+0xf8a3784e	prfm	#0xe, [x2, x3, lsl #3]
+0xf8a3784f	prfm	#0xf, [x2, x3, lsl #3]
+0xf8a37850	prfm	pstl1keep, [x2, x3, lsl #3]
+0xf8a37851	prfm	pstl1strm, [x2, x3, lsl #3]
+0xf8a37852	prfm	pstl2keep, [x2, x3, lsl #3]
+0xf8a37853	prfm	pstl2strm, [x2, x3, lsl #3]
+0xf8a37854	prfm	pstl3keep, [x2, x3, lsl #3]
+0xf8a37855	prfm	pstl3strm, [x2, x3, lsl #3]
+0xf8a37856	prfm	#0x16, [x2, x3, lsl #3]
+0xf8a37857	prfm	#0x17, [x2, x3, lsl #3]
+0xf8a37858	rprfm	#0x18, x3, [x2]
+0xf8a37859	rprfm	#0x19, x3, [x2]
+0xf8a3785a	rprfm	#0x1a, x3, [x2]
+0xf8a3785b	rprfm	#0x1b, x3, [x2]
+0xf8a3785c	rprfm	#0x1c, x3, [x2]
+0xf8a3785d	rprfm	#0x1d, x3, [x2]
+0xf8a3785e	rprfm	#0x1e, x3, [x2]
+0xf8a3785f	rprfm	#0x1f, x3, [x2]
+0xf8a38840	.long	0xf8a38840
+0xf8a38841	.long	0xf8a38841
+0xf8a38842	.long	0xf8a38842
+0xf8a38843	.long	0xf8a38843
+0xf8a38844	.long	0xf8a38844
+0xf8a38845	.long	0xf8a38845
+0xf8a38846	.long	0xf8a38846
+0xf8a38847	.long	0xf8a38847
+0xf8a38848	.long	0xf8a38848
+0xf8a38849	.long	0xf8a38849
+0xf8a3884a	.long	0xf8a3884a
+0xf8a3884b	.long	0xf8a3884b
+0xf8a3884c	.long	0xf8a3884c
+0xf8a3884d	.long	0xf8a3884d
+0xf8a3884e	.long	0xf8a3884e
+0xf8a3884f	.long	0xf8a3884f
+0xf8a38850	.long	0xf8a38850
+0xf8a38851	.long	0xf8a38851
+0xf8a38852	.long	0xf8a38852
+0xf8a38853	.long	0xf8a38853
+0xf8a38854	.long	0xf8a38854
+0xf8a38855	.long	0xf8a38855
+0xf8a38856	.long	0xf8a38856
+0xf8a38857	.long	0xf8a38857
+0xf8a38858	.long	0xf8a38858
+0xf8a38859	.long	0xf8a38859
+0xf8a3885a	.long	0xf8a3885a
+0xf8a3885b	.long	0xf8a3885b
+0xf8a3885c	.long	0xf8a3885c
+0xf8a3885d	.long	0xf8a3885d
+0xf8a3885e	.long	0xf8a3885e
+0xf8a3885f	.long	0xf8a3885f
+0xf8a39840	.long	0xf8a39840
+0xf8a39841	.long	0xf8a39841
+0xf8a39842	.long	0xf8a39842
+0xf8a39843	.long	0xf8a39843
+0xf8a39844	.long	0xf8a39844
+0xf8a39845	.long	0xf8a39845
+0xf8a39846	.long	0xf8a39846
+0xf8a39847	.long	0xf8a39847
+0xf8a39848	.long	0xf8a39848
+0xf8a39849	.long	0xf8a39849
+0xf8a3984a	.long	0xf8a3984a
+0xf8a3984b	.long	0xf8a3984b
+0xf8a3984c	.long	0xf8a3984c
+0xf8a3984d	.long	0xf8a3984d
+0xf8a3984e	.long	0xf8a3984e
+0xf8a3984f	.long	0xf8a3984f
+0xf8a39850	.long	0xf8a39850
+0xf8a39851	.long	0xf8a39851
+0xf8a39852	.long	0xf8a39852
+0xf8a39853	.long	0xf8a39853
+0xf8a39854	.long	0xf8a39854
+0xf8a39855	.long	0xf8a39855
+0xf8a39856	.long	0xf8a39856
+0xf8a39857	.long	0xf8a39857
+0xf8a39858	.long	0xf8a39858
+0xf8a39859	.long	0xf8a39859
+0xf8a3985a	.long	0xf8a3985a
+0xf8a3985b	.long	0xf8a3985b
+0xf8a3985c	.long	0xf8a3985c
+0xf8a3985d	.long	0xf8a3985d
+0xf8a3985e	.long	0xf8a3985e
+0xf8a3985f	.long	0xf8a3985f
+0xf8a3a840	.long	0xf8a3a840
+0xf8a3a841	.long	0xf8a3a841
+0xf8a3a842	.long	0xf8a3a842
+0xf8a3a843	.long	0xf8a3a843
+0xf8a3a844	.long	0xf8a3a844
+0xf8a3a845	.long	0xf8a3a845
+0xf8a3a846	.long	0xf8a3a846
+0xf8a3a847	.long	0xf8a3a847
+0xf8a3a848	.long	0xf8a3a848
+0xf8a3a849	.long	0xf8a3a849
+0xf8a3a84a	.long	0xf8a3a84a
+0xf8a3a84b	.long	0xf8a3a84b
+0xf8a3a84c	.long	0xf8a3a84c
+0xf8a3a84d	.long	0xf8a3a84d
+0xf8a3a84e	.long	0xf8a3a84e
+0xf8a3a84f	.long	0xf8a3a84f
+0xf8a3a850	.long	0xf8a3a850
+0xf8a3a851	.long	0xf8a3a851
+0xf8a3a852	.long	0xf8a3a852
+0xf8a3a853	.long	0xf8a3a853
+0xf8a3a854	.long	0xf8a3a854
+0xf8a3a855	.long	0xf8a3a855
+0xf8a3a856	.long	0xf8a3a856
+0xf8a3a857	.long	0xf8a3a857
+0xf8a3a858	.long	0xf8a3a858
+0xf8a3a859	.long	0xf8a3a859
+0xf8a3a85a	.long	0xf8a3a85a
+0xf8a3a85b	.long	0xf8a3a85b
+0xf8a3a85c	.long	0xf8a3a85c
+0xf8a3a85d	.long	0xf8a3a85d
+0xf8a3a85e	.long	0xf8a3a85e
+0xf8a3a85f	.long	0xf8a3a85f
+0xf8a3b840	.long	0xf8a3b840
+0xf8a3b841	.long	0xf8a3b841
+0xf8a3b842	.long	0xf8a3b842
+0xf8a3b843	.long	0xf8a3b843
+0xf8a3b844	.long	0xf8a3b844
+0xf8a3b845	.long	0xf8a3b845
+0xf8a3b846	.long	0xf8a3b846
+0xf8a3b847	.long	0xf8a3b847
+0xf8a3b848	.long	0xf8a3b848
+0xf8a3b849	.long	0xf8a3b849
+0xf8a3b84a	.long	0xf8a3b84a
+0xf8a3b84b	.long	0xf8a3b84b
+0xf8a3b84c	.long	0xf8a3b84c
+0xf8a3b84d	.long	0xf8a3b84d
+0xf8a3b84e	.long	0xf8a3b84e
+0xf8a3b84f	.long	0xf8a3b84f
+0xf8a3b850	.long	0xf8a3b850
+0xf8a3b851	.long	0xf8a3b851
+0xf8a3b852	.long	0xf8a3b852
+0xf8a3b853	.long	0xf8a3b853
+0xf8a3b854	.long	0xf8a3b854
+0xf8a3b855	.long	0xf8a3b855
+0xf8a3b856	.long	0xf8a3b856
+0xf8a3b857	.long	0xf8a3b857
+0xf8a3b858	.long	0xf8a3b858
+0xf8a3b859	.long	0xf8a3b859
+0xf8a3b85a	.long	0xf8a3b85a
+0xf8a3b85b	.long	0xf8a3b85b
+0xf8a3b85c	.long	0xf8a3b85c
+0xf8a3b85d	.long	0xf8a3b85d
+0xf8a3b85e	.long	0xf8a3b85e
+0xf8a3b85f	.long	0xf8a3b85f
+0xf8a3c840	prfm	pldl1keep, [x2, w3, sxtw]
+0xf8a3c841	prfm	pldl1strm, [x2, w3, sxtw]
+0xf8a3c842	prfm	pldl2keep, [x2, w3, sxtw]
+0xf8a3c843	prfm	pldl2strm, [x2, w3, sxtw]
+0xf8a3c844	prfm	pldl3keep, [x2, w3, sxtw]
+0xf8a3c845	prfm	pldl3strm, [x2, w3, sxtw]
+0xf8a3c846	prfm	#0x6, [x2, w3, sxtw]
+0xf8a3c847	prfm	#0x7, [x2, w3, sxtw]
+0xf8a3c848	prfm	plil1keep, [x2, w3, sxtw]
+0xf8a3c849	prfm	plil1strm, [x2, w3, sxtw]
+0xf8a3c84a	prfm	plil2keep, [x2, w3, sxtw]
+0xf8a3c84b	prfm	plil2strm, [x2, w3, sxtw]
+0xf8a3c84c	prfm	plil3keep, [x2, w3, sxtw]
+0xf8a3c84d	prfm	plil3strm, [x2, w3, sxtw]
+0xf8a3c84e	prfm	#0xe, [x2, w3, sxtw]
+0xf8a3c84f	prfm	#0xf, [x2, w3, sxtw]
+0xf8a3c850	prfm	pstl1keep, [x2, w3, sxtw]
+0xf8a3c851	prfm	pstl1strm, [x2, w3, sxtw]
+0xf8a3c852	prfm	pstl2keep, [x2, w3, sxtw]
+0xf8a3c853	prfm	pstl2strm, [x2, w3, sxtw]
+0xf8a3c854	prfm	pstl3keep, [x2, w3, sxtw]
+0xf8a3c855	prfm	pstl3strm, [x2, w3, sxtw]
+0xf8a3c856	prfm	#0x16, [x2, w3, sxtw]
+0xf8a3c857	prfm	#0x17, [x2, w3, sxtw]
+0xf8a3c858	rprfm	#0x20, x3, [x2]
+0xf8a3c859	rprfm	#0x21, x3, [x2]
+0xf8a3c85a	rprfm	#0x22, x3, [x2]
+0xf8a3c85b	rprfm	#0x23, x3, [x2]
+0xf8a3c85c	rprfm	#0x24, x3, [x2]
+0xf8a3c85d	rprfm	#0x25, x3, [x2]
+0xf8a3c85e	rprfm	#0x26, x3, [x2]
+0xf8a3c85f	rprfm	#0x27, x3, [x2]
+0xf8a3d840	prfm	pldl1keep, [x2, w3, sxtw #3]
+0xf8a3d841	prfm	pldl1strm, [x2, w3, sxtw #3]
+0xf8a3d842	prfm	pldl2keep, [x2, w3, sxtw #3]
+0xf8a3d843	prfm	pldl2strm, [x2, w3, sxtw #3]
+0xf8a3d844	prfm	pldl3keep, [x2, w3, sxtw #3]
+0xf8a3d845	prfm	pldl3strm, [x2, w3, sxtw #3]
+0xf8a3d846	prfm	#0x6, [x2, w3, sxtw #3]
+0xf8a3d847	prfm	#0x7, [x2, w3, sxtw #3]
+0xf8a3d848	prfm	plil1keep, [x2, w3, sxtw #3]
+0xf8a3d849	prfm	plil1strm, [x2, w3, sxtw #3]
+0xf8a3d84a	prfm	plil2keep, [x2, w3, sxtw #3]
+0xf8a3d84b	prfm	plil2strm, [x2, w3, sxtw #3]
+0xf8a3d84c	prfm	plil3keep, [x2, w3, sxtw #3]
+0xf8a3d84d	prfm	plil3strm, [x2, w3, sxtw #3]
+0xf8a3d84e	prfm	#0xe, [x2, w3, sxtw #3]
+0xf8a3d84f	prfm	#0xf, [x2, w3, sxtw #3]
+0xf8a3d850	prfm	pstl1keep, [x2, w3, sxtw #3]
+0xf8a3d851	prfm	pstl1strm, [x2, w3, sxtw #3]
+0xf8a3d852	prfm	pstl2keep, [x2, w3, sxtw #3]
+0xf8a3d853	prfm	pstl2strm, [x2, w3, sxtw #3]
+0xf8a3d854	prfm	pstl3keep, [x2, w3, sxtw #3]
+0xf8a3d855	prfm	pstl3strm, [x2, w3, sxtw #3]
+0xf8a3d856	prfm	#0x16, [x2, w3, sxtw #3]
+0xf8a3d857	prfm	#0x17, [x2, w3, sxtw #3]
+0xf8a3d858	rprfm	#0x28, x3, [x2]
+0xf8a3d859	rprfm	#0x29, x3, [x2]
+0xf8a3d85a	rprfm	#0x2a, x3, [x2]
+0xf8a3d85b	rprfm	#0x2b, x3, [x2]
+0xf8a3d85c	rprfm	#0x2c, x3, [x2]
+0xf8a3d85d	rprfm	#0x2d, x3, [x2]
+0xf8a3d85e	rprfm	#0x2e, x3, [x2]
+0xf8a3d85f	rprfm	#0x2f, x3, [x2]
+0xf8a3e840	prfm	pldl1keep, [x2, x3, sxtx]
+0xf8a3e841	prfm	pldl1strm, [x2, x3, sxtx]
+0xf8a3e842	prfm	pldl2keep, [x2, x3, sxtx]
+0xf8a3e843	prfm	pldl2strm, [x2, x3, sxtx]
+0xf8a3e844	prfm	pldl3keep, [x2, x3, sxtx]
+0xf8a3e845	prfm	pldl3strm, [x2, x3, sxtx]
+0xf8a3e846	prfm	#0x6, [x2, x3, sxtx]
+0xf8a3e847	prfm	#0x7, [x2, x3, sxtx]
+0xf8a3e848	prfm	plil1keep, [x2, x3, sxtx]
+0xf8a3e849	prfm	plil1strm, [x2, x3, sxtx]
+0xf8a3e84a	prfm	plil2keep, [x2, x3, sxtx]
+0xf8a3e84b	prfm	plil2strm, [x2, x3, sxtx]
+0xf8a3e84c	prfm	plil3keep, [x2, x3, sxtx]
+0xf8a3e84d	prfm	plil3strm, [x2, x3, sxtx]
+0xf8a3e84e	prfm	#0xe, [x2, x3, sxtx]
+0xf8a3e84f	prfm	#0xf, [x2, x3, sxtx]
+0xf8a3e850	prfm	pstl1keep, [x2, x3, sxtx]
+0xf8a3e851	prfm	pstl1strm, [x2, x3, sxtx]
+0xf8a3e852	prfm	pstl2keep, [x2, x3, sxtx]
+0xf8a3e853	prfm	pstl2strm, [x2, x3, sxtx]
+0xf8a3e854	prfm	pstl3keep, [x2, x3, sxtx]
+0xf8a3e855	prfm	pstl3strm, [x2, x3, sxtx]
+0xf8a3e856	prfm	#0x16, [x2, x3, sxtx]
+0xf8a3e857	prfm	#0x17, [x2, x3, sxtx]
+0xf8a3e858	rprfm	#0x30, x3, [x2]
+0xf8a3e859	rprfm	#0x31, x3, [x2]
+0xf8a3e85a	rprfm	#0x32, x3, [x2]
+0xf8a3e85b	rprfm	#0x33, x3, [x2]
+0xf8a3e85c	rprfm	#0x34, x3, [x2]
+0xf8a3e85d	rprfm	#0x35, x3, [x2]
+0xf8a3e85e	rprfm	#0x36, x3, [x2]
+0xf8a3e85f	rprfm	#0x37, x3, [x2]
+0xf8a3f840	prfm	pldl1keep, [x2, x3, sxtx #3]
+0xf8a3f841	prfm	pldl1strm, [x2, x3, sxtx #3]
+0xf8a3f842	prfm	pldl2keep, [x2, x3, sxtx #3]
+0xf8a3f843	prfm	pldl2strm, [x2, x3, sxtx #3]
+0xf8a3f844	prfm	pldl3keep, [x2, x3, sxtx #3]
+0xf8a3f845	prfm	pldl3strm, [x2, x3, sxtx #3]
+0xf8a3f846	prfm	#0x6, [x2, x3, sxtx #3]
+0xf8a3f847	prfm	#0x7, [x2, x3, sxtx #3]
+0xf8a3f848	prfm	plil1keep, [x2, x3, sxtx #3]
+0xf8a3f849	prfm	plil1strm, [x2, x3, sxtx #3]
+0xf8a3f84a	prfm	plil2keep, [x2, x3, sxtx #3]
+0xf8a3f84b	prfm	plil2strm, [x2, x3, sxtx #3]
+0xf8a3f84c	prfm	plil3keep, [x2, x3, sxtx #3]
+0xf8a3f84d	prfm	plil3strm, [x2, x3, sxtx #3]
+0xf8a3f84e	prfm	#0xe, [x2, x3, sxtx #3]
+0xf8a3f84f	prfm	#0xf, [x2, x3, sxtx #3]
+0xf8a3f850	prfm	pstl1keep, [x2, x3, sxtx #3]
+0xf8a3f851	prfm	pstl1strm, [x2, x3, sxtx #3]
+0xf8a3f852	prfm	pstl2keep, [x2, x3, sxtx #3]
+0xf8a3f853	prfm	pstl2strm, [x2, x3, sxtx #3]
+0xf8a3f854	prfm	pstl3keep, [x2, x3, sxtx #3]
+0xf8a3f855	prfm	pstl3strm, [x2, x3, sxtx #3]
+0xf8a3f856	prfm	#0x16, [x2, x3, sxtx #3]
+0xf8a3f857	prfm	#0x17, [x2, x3, sxtx #3]
+0xf8a3f858	rprfm	#0x38, x3, [x2]
+0xf8a3f859	rprfm	#0x39, x3, [x2]
+0xf8a3f85a	rprfm	#0x3a, x3, [x2]
+0xf8a3f85b	rprfm	#0x3b, x3, [x2]
+0xf8a3f85c	rprfm	#0x3c, x3, [x2]
+0xf8a3f85d	rprfm	#0x3d, x3, [x2]
+0xf8a3f85e	rprfm	#0x3e, x3, [x2]
+0xf8a3f85f	rprfm	#0x3f, x3, [x2]
+0xf8e30841	.long	0xf8e30841
+0xf8e31841	.long	0xf8e31841
+0xf8e32841	.long	0xf8e32841
+0xf8e33841	.long	0xf8e33841
+0xf8e34841	.long	0xf8e34841
+0xf8e35841	.long	0xf8e35841
+0xf8e36841	.long	0xf8e36841
+0xf8e37841	.long	0xf8e37841
+0xf8e38841	.long	0xf8e38841
+0xf8e39841	.long	0xf8e39841
+0xf8e3a841	.long	0xf8e3a841
+0xf8e3b841	.long	0xf8e3b841
+0xf8e3c841	.long	0xf8e3c841
+0xf8e3d841	.long	0xf8e3d841
+0xf8e3e841	.long	0xf8e3e841
+0xf8e3f841	.long	0xf8e3f841
+0xfc230841	.long	0xfc230841
+0xfc231841	.long	0xfc231841
+0xfc232841	.long	0xfc232841
+0xfc233841	.long	0xfc233841
+0xfc234841	str	d1, [x2, w3, uxtw]
+0xfc235841	str	d1, [x2, w3, uxtw #3]
+0xfc236841	str	d1, [x2, x3]
+0xfc237841	str	d1, [x2, x3, lsl #3]
+0xfc238841	.long	0xfc238841
+0xfc239841	.long	0xfc239841
+0xfc23a841	.long	0xfc23a841
+0xfc23b841	.long	0xfc23b841
+0xfc23c841	str	d1, [x2, w3, sxtw]
+0xfc23d841	str	d1, [x2, w3, sxtw #3]
+0xfc23e841	str	d1, [x2, x3, sxtx]
+0xfc23f841	str	d1, [x2, x3, sxtx #3]
+0xfc630841	.long	0xfc630841
+0xfc631841	.long	0xfc631841
+0xfc632841	.long	0xfc632841
+0xfc633841	.long	0xfc633841
+0xfc634841	ldr	d1, [x2, w3, uxtw]
+0xfc635841	ldr	d1, [x2, w3, uxtw #3]
+0xfc636841	ldr	d1, [x2, x3]
+0xfc637841	ldr	d1, [x2, x3, lsl #3]
+0xfc638841	.long	0xfc638841
+0xfc639841	.long	0xfc639841
+0xfc63a841	.long	0xfc63a841
+0xfc63b841	.long	0xfc63b841
+0xfc63c841	ldr	d1, [x2, w3, sxtw]
+0xfc63d841	ldr	d1, [x2, w3, sxtw #3]
+0xfc63e841	ldr	d1, [x2, x3, sxtx]
+0xfc63f841	ldr	d1, [x2, x3, sxtx #3]
+0xfca30841	.long	0xfca30841
+0xfca31841	.long	0xfca31841
+0xfca32841	.long	0xfca32841
+0xfca33841	.long	0xfca33841
+0xfca34841	.long	0xfca34841
+0xfca35841	.long	0xfca35841
+0xfca36841	.long	0xfca36841
+0xfca37841	.long	0xfca37841
+0xfca38841	.long	0xfca38841
+0xfca39841	.long	0xfca39841
+0xfca3a841	.long	0xfca3a841
+0xfca3b841	.long	0xfca3b841
+0xfca3c841	.long	0xfca3c841
+0xfca3d841	.long	0xfca3d841
+0xfca3e841	.long	0xfca3e841
+0xfca3f841	.long	0xfca3f841
+0xfce30841	.long	0xfce30841
+0xfce31841	.long	0xfce31841
+0xfce32841	.long	0xfce32841
+0xfce33841	.long	0xfce33841
+0xfce34841	.long	0xfce34841
+0xfce35841	.long	0xfce35841
+0xfce36841	.long	0xfce36841
+0xfce37841	.long	0xfce37841
+0xfce38841	.long	0xfce38841
+0xfce39841	.long	0xfce39841
+0xfce3a841	.long	0xfce3a841
+0xfce3b841	.long	0xfce3b841
+0xfce3c841	.long	0xfce3c841
+0xfce3d841	.long	0xfce3d841
+0xfce3e841	.long	0xfce3e841
+0xfce3f841	.long	0xfce3f841
