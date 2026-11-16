@@ -1,0 +1,1035 @@
+# A64 encoding reference table: lse_atomic
+# ARM DDI 0487 C4.1.94.8 Atomic memory operations: (word & 0x3f200c00) == 0x38200000.
+# Enumerates all 4 x 2 x 2 x 2 x 8 x 4 = 1,024 combinations of size=0..3, A=0..1, R=0..1,
+# o3=0..1, opc=0..7, and (Rs, Rn, Rt) in {(3,2,1), (3,2,31), (31,2,1), (3,31,31)}
+# (covering Rt=ZR acquire retention, A=0 ST* two-operand aliases, Rs=11111 LDAPR*, and Rn=SP).
+# Rows: 1024 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e lse_atomic.s -o lse_atomic.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text lse_atomic.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate lse_atomic
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x38230041	ldaddb	w3, w1, [x2]
+0x3823005f	staddb	w3, [x2]
+0x383f0041	ldaddb	wzr, w1, [x2]
+0x382303ff	staddb	w3, [sp]
+0x38231041	ldclrb	w3, w1, [x2]
+0x3823105f	stclrb	w3, [x2]
+0x383f1041	ldclrb	wzr, w1, [x2]
+0x382313ff	stclrb	w3, [sp]
+0x38232041	ldeorb	w3, w1, [x2]
+0x3823205f	steorb	w3, [x2]
+0x383f2041	ldeorb	wzr, w1, [x2]
+0x382323ff	steorb	w3, [sp]
+0x38233041	ldsetb	w3, w1, [x2]
+0x3823305f	stsetb	w3, [x2]
+0x383f3041	ldsetb	wzr, w1, [x2]
+0x382333ff	stsetb	w3, [sp]
+0x38234041	ldsmaxb	w3, w1, [x2]
+0x3823405f	stsmaxb	w3, [x2]
+0x383f4041	ldsmaxb	wzr, w1, [x2]
+0x382343ff	stsmaxb	w3, [sp]
+0x38235041	ldsminb	w3, w1, [x2]
+0x3823505f	stsminb	w3, [x2]
+0x383f5041	ldsminb	wzr, w1, [x2]
+0x382353ff	stsminb	w3, [sp]
+0x38236041	ldumaxb	w3, w1, [x2]
+0x3823605f	stumaxb	w3, [x2]
+0x383f6041	ldumaxb	wzr, w1, [x2]
+0x382363ff	stumaxb	w3, [sp]
+0x38237041	lduminb	w3, w1, [x2]
+0x3823705f	stuminb	w3, [x2]
+0x383f7041	lduminb	wzr, w1, [x2]
+0x382373ff	stuminb	w3, [sp]
+0x38238041	swpb	w3, w1, [x2]
+0x3823805f	swpb	w3, wzr, [x2]
+0x383f8041	swpb	wzr, w1, [x2]
+0x382383ff	swpb	w3, wzr, [sp]
+0x38239041	.long	0x38239041
+0x3823905f	.long	0x3823905f
+0x383f9041	.long	0x383f9041
+0x382393ff	.long	0x382393ff
+0x3823a041	.long	0x3823a041
+0x3823a05f	.long	0x3823a05f
+0x383fa041	.long	0x383fa041
+0x3823a3ff	.long	0x3823a3ff
+0x3823b041	.long	0x3823b041
+0x3823b05f	.long	0x3823b05f
+0x383fb041	.long	0x383fb041
+0x3823b3ff	.long	0x3823b3ff
+0x3823c041	.long	0x3823c041
+0x3823c05f	.long	0x3823c05f
+0x383fc041	.long	0x383fc041
+0x3823c3ff	.long	0x3823c3ff
+0x3823d041	.long	0x3823d041
+0x3823d05f	.long	0x3823d05f
+0x383fd041	.long	0x383fd041
+0x3823d3ff	.long	0x3823d3ff
+0x3823e041	.long	0x3823e041
+0x3823e05f	.long	0x3823e05f
+0x383fe041	.long	0x383fe041
+0x3823e3ff	.long	0x3823e3ff
+0x3823f041	.long	0x3823f041
+0x3823f05f	.long	0x3823f05f
+0x383ff041	.long	0x383ff041
+0x3823f3ff	.long	0x3823f3ff
+0x38630041	ldaddlb	w3, w1, [x2]
+0x3863005f	staddlb	w3, [x2]
+0x387f0041	ldaddlb	wzr, w1, [x2]
+0x386303ff	staddlb	w3, [sp]
+0x38631041	ldclrlb	w3, w1, [x2]
+0x3863105f	stclrlb	w3, [x2]
+0x387f1041	ldclrlb	wzr, w1, [x2]
+0x386313ff	stclrlb	w3, [sp]
+0x38632041	ldeorlb	w3, w1, [x2]
+0x3863205f	steorlb	w3, [x2]
+0x387f2041	ldeorlb	wzr, w1, [x2]
+0x386323ff	steorlb	w3, [sp]
+0x38633041	ldsetlb	w3, w1, [x2]
+0x3863305f	stsetlb	w3, [x2]
+0x387f3041	ldsetlb	wzr, w1, [x2]
+0x386333ff	stsetlb	w3, [sp]
+0x38634041	ldsmaxlb	w3, w1, [x2]
+0x3863405f	stsmaxlb	w3, [x2]
+0x387f4041	ldsmaxlb	wzr, w1, [x2]
+0x386343ff	stsmaxlb	w3, [sp]
+0x38635041	ldsminlb	w3, w1, [x2]
+0x3863505f	stsminlb	w3, [x2]
+0x387f5041	ldsminlb	wzr, w1, [x2]
+0x386353ff	stsminlb	w3, [sp]
+0x38636041	ldumaxlb	w3, w1, [x2]
+0x3863605f	stumaxlb	w3, [x2]
+0x387f6041	ldumaxlb	wzr, w1, [x2]
+0x386363ff	stumaxlb	w3, [sp]
+0x38637041	lduminlb	w3, w1, [x2]
+0x3863705f	stuminlb	w3, [x2]
+0x387f7041	lduminlb	wzr, w1, [x2]
+0x386373ff	stuminlb	w3, [sp]
+0x38638041	swplb	w3, w1, [x2]
+0x3863805f	swplb	w3, wzr, [x2]
+0x387f8041	swplb	wzr, w1, [x2]
+0x386383ff	swplb	w3, wzr, [sp]
+0x38639041	.long	0x38639041
+0x3863905f	.long	0x3863905f
+0x387f9041	.long	0x387f9041
+0x386393ff	.long	0x386393ff
+0x3863a041	.long	0x3863a041
+0x3863a05f	.long	0x3863a05f
+0x387fa041	.long	0x387fa041
+0x3863a3ff	.long	0x3863a3ff
+0x3863b041	.long	0x3863b041
+0x3863b05f	.long	0x3863b05f
+0x387fb041	.long	0x387fb041
+0x3863b3ff	.long	0x3863b3ff
+0x3863c041	.long	0x3863c041
+0x3863c05f	.long	0x3863c05f
+0x387fc041	.long	0x387fc041
+0x3863c3ff	.long	0x3863c3ff
+0x3863d041	.long	0x3863d041
+0x3863d05f	.long	0x3863d05f
+0x387fd041	.long	0x387fd041
+0x3863d3ff	.long	0x3863d3ff
+0x3863e041	.long	0x3863e041
+0x3863e05f	.long	0x3863e05f
+0x387fe041	.long	0x387fe041
+0x3863e3ff	.long	0x3863e3ff
+0x3863f041	.long	0x3863f041
+0x3863f05f	.long	0x3863f05f
+0x387ff041	.long	0x387ff041
+0x3863f3ff	.long	0x3863f3ff
+0x38a30041	ldaddab	w3, w1, [x2]
+0x38a3005f	ldaddab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf0041	ldaddab	wzr, w1, [x2]
+0x38a303ff	ldaddab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a31041	ldclrab	w3, w1, [x2]
+0x38a3105f	ldclrab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf1041	ldclrab	wzr, w1, [x2]
+0x38a313ff	ldclrab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a32041	ldeorab	w3, w1, [x2]
+0x38a3205f	ldeorab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf2041	ldeorab	wzr, w1, [x2]
+0x38a323ff	ldeorab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a33041	ldsetab	w3, w1, [x2]
+0x38a3305f	ldsetab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf3041	ldsetab	wzr, w1, [x2]
+0x38a333ff	ldsetab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a34041	ldsmaxab	w3, w1, [x2]
+0x38a3405f	ldsmaxab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf4041	ldsmaxab	wzr, w1, [x2]
+0x38a343ff	ldsmaxab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a35041	ldsminab	w3, w1, [x2]
+0x38a3505f	ldsminab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf5041	ldsminab	wzr, w1, [x2]
+0x38a353ff	ldsminab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a36041	ldumaxab	w3, w1, [x2]
+0x38a3605f	ldumaxab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf6041	ldumaxab	wzr, w1, [x2]
+0x38a363ff	ldumaxab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a37041	lduminab	w3, w1, [x2]
+0x38a3705f	lduminab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf7041	lduminab	wzr, w1, [x2]
+0x38a373ff	lduminab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a38041	swpab	w3, w1, [x2]
+0x38a3805f	swpab	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38bf8041	swpab	wzr, w1, [x2]
+0x38a383ff	swpab	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38a39041	.long	0x38a39041
+0x38a3905f	.long	0x38a3905f
+0x38bf9041	.long	0x38bf9041
+0x38a393ff	.long	0x38a393ff
+0x38a3a041	.long	0x38a3a041
+0x38a3a05f	.long	0x38a3a05f
+0x38bfa041	.long	0x38bfa041
+0x38a3a3ff	.long	0x38a3a3ff
+0x38a3b041	.long	0x38a3b041
+0x38a3b05f	.long	0x38a3b05f
+0x38bfb041	.long	0x38bfb041
+0x38a3b3ff	.long	0x38a3b3ff
+0x38a3c041	.long	0x38a3c041
+0x38a3c05f	.long	0x38a3c05f
+0x38bfc041	ldaprb	w1, [x2]
+0x38a3c3ff	.long	0x38a3c3ff
+0x38a3d041	.long	0x38a3d041
+0x38a3d05f	.long	0x38a3d05f
+0x38bfd041	.long	0x38bfd041
+0x38a3d3ff	.long	0x38a3d3ff
+0x38a3e041	.long	0x38a3e041
+0x38a3e05f	.long	0x38a3e05f
+0x38bfe041	.long	0x38bfe041
+0x38a3e3ff	.long	0x38a3e3ff
+0x38a3f041	.long	0x38a3f041
+0x38a3f05f	.long	0x38a3f05f
+0x38bff041	.long	0x38bff041
+0x38a3f3ff	.long	0x38a3f3ff
+0x38e30041	ldaddalb	w3, w1, [x2]
+0x38e3005f	ldaddalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff0041	ldaddalb	wzr, w1, [x2]
+0x38e303ff	ldaddalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e31041	ldclralb	w3, w1, [x2]
+0x38e3105f	ldclralb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff1041	ldclralb	wzr, w1, [x2]
+0x38e313ff	ldclralb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e32041	ldeoralb	w3, w1, [x2]
+0x38e3205f	ldeoralb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff2041	ldeoralb	wzr, w1, [x2]
+0x38e323ff	ldeoralb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e33041	ldsetalb	w3, w1, [x2]
+0x38e3305f	ldsetalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff3041	ldsetalb	wzr, w1, [x2]
+0x38e333ff	ldsetalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e34041	ldsmaxalb	w3, w1, [x2]
+0x38e3405f	ldsmaxalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff4041	ldsmaxalb	wzr, w1, [x2]
+0x38e343ff	ldsmaxalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e35041	ldsminalb	w3, w1, [x2]
+0x38e3505f	ldsminalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff5041	ldsminalb	wzr, w1, [x2]
+0x38e353ff	ldsminalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e36041	ldumaxalb	w3, w1, [x2]
+0x38e3605f	ldumaxalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff6041	ldumaxalb	wzr, w1, [x2]
+0x38e363ff	ldumaxalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e37041	lduminalb	w3, w1, [x2]
+0x38e3705f	lduminalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff7041	lduminalb	wzr, w1, [x2]
+0x38e373ff	lduminalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e38041	swpalb	w3, w1, [x2]
+0x38e3805f	swpalb	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x38ff8041	swpalb	wzr, w1, [x2]
+0x38e383ff	swpalb	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x38e39041	.long	0x38e39041
+0x38e3905f	.long	0x38e3905f
+0x38ff9041	.long	0x38ff9041
+0x38e393ff	.long	0x38e393ff
+0x38e3a041	.long	0x38e3a041
+0x38e3a05f	.long	0x38e3a05f
+0x38ffa041	.long	0x38ffa041
+0x38e3a3ff	.long	0x38e3a3ff
+0x38e3b041	.long	0x38e3b041
+0x38e3b05f	.long	0x38e3b05f
+0x38ffb041	.long	0x38ffb041
+0x38e3b3ff	.long	0x38e3b3ff
+0x38e3c041	.long	0x38e3c041
+0x38e3c05f	.long	0x38e3c05f
+0x38ffc041	.long	0x38ffc041
+0x38e3c3ff	.long	0x38e3c3ff
+0x38e3d041	.long	0x38e3d041
+0x38e3d05f	.long	0x38e3d05f
+0x38ffd041	.long	0x38ffd041
+0x38e3d3ff	.long	0x38e3d3ff
+0x38e3e041	.long	0x38e3e041
+0x38e3e05f	.long	0x38e3e05f
+0x38ffe041	.long	0x38ffe041
+0x38e3e3ff	.long	0x38e3e3ff
+0x38e3f041	.long	0x38e3f041
+0x38e3f05f	.long	0x38e3f05f
+0x38fff041	.long	0x38fff041
+0x38e3f3ff	.long	0x38e3f3ff
+0x78230041	ldaddh	w3, w1, [x2]
+0x7823005f	staddh	w3, [x2]
+0x783f0041	ldaddh	wzr, w1, [x2]
+0x782303ff	staddh	w3, [sp]
+0x78231041	ldclrh	w3, w1, [x2]
+0x7823105f	stclrh	w3, [x2]
+0x783f1041	ldclrh	wzr, w1, [x2]
+0x782313ff	stclrh	w3, [sp]
+0x78232041	ldeorh	w3, w1, [x2]
+0x7823205f	steorh	w3, [x2]
+0x783f2041	ldeorh	wzr, w1, [x2]
+0x782323ff	steorh	w3, [sp]
+0x78233041	ldseth	w3, w1, [x2]
+0x7823305f	stseth	w3, [x2]
+0x783f3041	ldseth	wzr, w1, [x2]
+0x782333ff	stseth	w3, [sp]
+0x78234041	ldsmaxh	w3, w1, [x2]
+0x7823405f	stsmaxh	w3, [x2]
+0x783f4041	ldsmaxh	wzr, w1, [x2]
+0x782343ff	stsmaxh	w3, [sp]
+0x78235041	ldsminh	w3, w1, [x2]
+0x7823505f	stsminh	w3, [x2]
+0x783f5041	ldsminh	wzr, w1, [x2]
+0x782353ff	stsminh	w3, [sp]
+0x78236041	ldumaxh	w3, w1, [x2]
+0x7823605f	stumaxh	w3, [x2]
+0x783f6041	ldumaxh	wzr, w1, [x2]
+0x782363ff	stumaxh	w3, [sp]
+0x78237041	lduminh	w3, w1, [x2]
+0x7823705f	stuminh	w3, [x2]
+0x783f7041	lduminh	wzr, w1, [x2]
+0x782373ff	stuminh	w3, [sp]
+0x78238041	swph	w3, w1, [x2]
+0x7823805f	swph	w3, wzr, [x2]
+0x783f8041	swph	wzr, w1, [x2]
+0x782383ff	swph	w3, wzr, [sp]
+0x78239041	.long	0x78239041
+0x7823905f	.long	0x7823905f
+0x783f9041	.long	0x783f9041
+0x782393ff	.long	0x782393ff
+0x7823a041	.long	0x7823a041
+0x7823a05f	.long	0x7823a05f
+0x783fa041	.long	0x783fa041
+0x7823a3ff	.long	0x7823a3ff
+0x7823b041	.long	0x7823b041
+0x7823b05f	.long	0x7823b05f
+0x783fb041	.long	0x783fb041
+0x7823b3ff	.long	0x7823b3ff
+0x7823c041	.long	0x7823c041
+0x7823c05f	.long	0x7823c05f
+0x783fc041	.long	0x783fc041
+0x7823c3ff	.long	0x7823c3ff
+0x7823d041	.long	0x7823d041
+0x7823d05f	.long	0x7823d05f
+0x783fd041	.long	0x783fd041
+0x7823d3ff	.long	0x7823d3ff
+0x7823e041	.long	0x7823e041
+0x7823e05f	.long	0x7823e05f
+0x783fe041	.long	0x783fe041
+0x7823e3ff	.long	0x7823e3ff
+0x7823f041	.long	0x7823f041
+0x7823f05f	.long	0x7823f05f
+0x783ff041	.long	0x783ff041
+0x7823f3ff	.long	0x7823f3ff
+0x78630041	ldaddlh	w3, w1, [x2]
+0x7863005f	staddlh	w3, [x2]
+0x787f0041	ldaddlh	wzr, w1, [x2]
+0x786303ff	staddlh	w3, [sp]
+0x78631041	ldclrlh	w3, w1, [x2]
+0x7863105f	stclrlh	w3, [x2]
+0x787f1041	ldclrlh	wzr, w1, [x2]
+0x786313ff	stclrlh	w3, [sp]
+0x78632041	ldeorlh	w3, w1, [x2]
+0x7863205f	steorlh	w3, [x2]
+0x787f2041	ldeorlh	wzr, w1, [x2]
+0x786323ff	steorlh	w3, [sp]
+0x78633041	ldsetlh	w3, w1, [x2]
+0x7863305f	stsetlh	w3, [x2]
+0x787f3041	ldsetlh	wzr, w1, [x2]
+0x786333ff	stsetlh	w3, [sp]
+0x78634041	ldsmaxlh	w3, w1, [x2]
+0x7863405f	stsmaxlh	w3, [x2]
+0x787f4041	ldsmaxlh	wzr, w1, [x2]
+0x786343ff	stsmaxlh	w3, [sp]
+0x78635041	ldsminlh	w3, w1, [x2]
+0x7863505f	stsminlh	w3, [x2]
+0x787f5041	ldsminlh	wzr, w1, [x2]
+0x786353ff	stsminlh	w3, [sp]
+0x78636041	ldumaxlh	w3, w1, [x2]
+0x7863605f	stumaxlh	w3, [x2]
+0x787f6041	ldumaxlh	wzr, w1, [x2]
+0x786363ff	stumaxlh	w3, [sp]
+0x78637041	lduminlh	w3, w1, [x2]
+0x7863705f	stuminlh	w3, [x2]
+0x787f7041	lduminlh	wzr, w1, [x2]
+0x786373ff	stuminlh	w3, [sp]
+0x78638041	swplh	w3, w1, [x2]
+0x7863805f	swplh	w3, wzr, [x2]
+0x787f8041	swplh	wzr, w1, [x2]
+0x786383ff	swplh	w3, wzr, [sp]
+0x78639041	.long	0x78639041
+0x7863905f	.long	0x7863905f
+0x787f9041	.long	0x787f9041
+0x786393ff	.long	0x786393ff
+0x7863a041	.long	0x7863a041
+0x7863a05f	.long	0x7863a05f
+0x787fa041	.long	0x787fa041
+0x7863a3ff	.long	0x7863a3ff
+0x7863b041	.long	0x7863b041
+0x7863b05f	.long	0x7863b05f
+0x787fb041	.long	0x787fb041
+0x7863b3ff	.long	0x7863b3ff
+0x7863c041	.long	0x7863c041
+0x7863c05f	.long	0x7863c05f
+0x787fc041	.long	0x787fc041
+0x7863c3ff	.long	0x7863c3ff
+0x7863d041	.long	0x7863d041
+0x7863d05f	.long	0x7863d05f
+0x787fd041	.long	0x787fd041
+0x7863d3ff	.long	0x7863d3ff
+0x7863e041	.long	0x7863e041
+0x7863e05f	.long	0x7863e05f
+0x787fe041	.long	0x787fe041
+0x7863e3ff	.long	0x7863e3ff
+0x7863f041	.long	0x7863f041
+0x7863f05f	.long	0x7863f05f
+0x787ff041	.long	0x787ff041
+0x7863f3ff	.long	0x7863f3ff
+0x78a30041	ldaddah	w3, w1, [x2]
+0x78a3005f	ldaddah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf0041	ldaddah	wzr, w1, [x2]
+0x78a303ff	ldaddah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a31041	ldclrah	w3, w1, [x2]
+0x78a3105f	ldclrah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf1041	ldclrah	wzr, w1, [x2]
+0x78a313ff	ldclrah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a32041	ldeorah	w3, w1, [x2]
+0x78a3205f	ldeorah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf2041	ldeorah	wzr, w1, [x2]
+0x78a323ff	ldeorah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a33041	ldsetah	w3, w1, [x2]
+0x78a3305f	ldsetah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf3041	ldsetah	wzr, w1, [x2]
+0x78a333ff	ldsetah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a34041	ldsmaxah	w3, w1, [x2]
+0x78a3405f	ldsmaxah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf4041	ldsmaxah	wzr, w1, [x2]
+0x78a343ff	ldsmaxah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a35041	ldsminah	w3, w1, [x2]
+0x78a3505f	ldsminah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf5041	ldsminah	wzr, w1, [x2]
+0x78a353ff	ldsminah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a36041	ldumaxah	w3, w1, [x2]
+0x78a3605f	ldumaxah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf6041	ldumaxah	wzr, w1, [x2]
+0x78a363ff	ldumaxah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a37041	lduminah	w3, w1, [x2]
+0x78a3705f	lduminah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf7041	lduminah	wzr, w1, [x2]
+0x78a373ff	lduminah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a38041	swpah	w3, w1, [x2]
+0x78a3805f	swpah	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78bf8041	swpah	wzr, w1, [x2]
+0x78a383ff	swpah	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78a39041	.long	0x78a39041
+0x78a3905f	.long	0x78a3905f
+0x78bf9041	.long	0x78bf9041
+0x78a393ff	.long	0x78a393ff
+0x78a3a041	.long	0x78a3a041
+0x78a3a05f	.long	0x78a3a05f
+0x78bfa041	.long	0x78bfa041
+0x78a3a3ff	.long	0x78a3a3ff
+0x78a3b041	.long	0x78a3b041
+0x78a3b05f	.long	0x78a3b05f
+0x78bfb041	.long	0x78bfb041
+0x78a3b3ff	.long	0x78a3b3ff
+0x78a3c041	.long	0x78a3c041
+0x78a3c05f	.long	0x78a3c05f
+0x78bfc041	ldaprh	w1, [x2]
+0x78a3c3ff	.long	0x78a3c3ff
+0x78a3d041	.long	0x78a3d041
+0x78a3d05f	.long	0x78a3d05f
+0x78bfd041	.long	0x78bfd041
+0x78a3d3ff	.long	0x78a3d3ff
+0x78a3e041	.long	0x78a3e041
+0x78a3e05f	.long	0x78a3e05f
+0x78bfe041	.long	0x78bfe041
+0x78a3e3ff	.long	0x78a3e3ff
+0x78a3f041	.long	0x78a3f041
+0x78a3f05f	.long	0x78a3f05f
+0x78bff041	.long	0x78bff041
+0x78a3f3ff	.long	0x78a3f3ff
+0x78e30041	ldaddalh	w3, w1, [x2]
+0x78e3005f	ldaddalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff0041	ldaddalh	wzr, w1, [x2]
+0x78e303ff	ldaddalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e31041	ldclralh	w3, w1, [x2]
+0x78e3105f	ldclralh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff1041	ldclralh	wzr, w1, [x2]
+0x78e313ff	ldclralh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e32041	ldeoralh	w3, w1, [x2]
+0x78e3205f	ldeoralh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff2041	ldeoralh	wzr, w1, [x2]
+0x78e323ff	ldeoralh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e33041	ldsetalh	w3, w1, [x2]
+0x78e3305f	ldsetalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff3041	ldsetalh	wzr, w1, [x2]
+0x78e333ff	ldsetalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e34041	ldsmaxalh	w3, w1, [x2]
+0x78e3405f	ldsmaxalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff4041	ldsmaxalh	wzr, w1, [x2]
+0x78e343ff	ldsmaxalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e35041	ldsminalh	w3, w1, [x2]
+0x78e3505f	ldsminalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff5041	ldsminalh	wzr, w1, [x2]
+0x78e353ff	ldsminalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e36041	ldumaxalh	w3, w1, [x2]
+0x78e3605f	ldumaxalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff6041	ldumaxalh	wzr, w1, [x2]
+0x78e363ff	ldumaxalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e37041	lduminalh	w3, w1, [x2]
+0x78e3705f	lduminalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff7041	lduminalh	wzr, w1, [x2]
+0x78e373ff	lduminalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e38041	swpalh	w3, w1, [x2]
+0x78e3805f	swpalh	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0x78ff8041	swpalh	wzr, w1, [x2]
+0x78e383ff	swpalh	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0x78e39041	.long	0x78e39041
+0x78e3905f	.long	0x78e3905f
+0x78ff9041	.long	0x78ff9041
+0x78e393ff	.long	0x78e393ff
+0x78e3a041	.long	0x78e3a041
+0x78e3a05f	.long	0x78e3a05f
+0x78ffa041	.long	0x78ffa041
+0x78e3a3ff	.long	0x78e3a3ff
+0x78e3b041	.long	0x78e3b041
+0x78e3b05f	.long	0x78e3b05f
+0x78ffb041	.long	0x78ffb041
+0x78e3b3ff	.long	0x78e3b3ff
+0x78e3c041	.long	0x78e3c041
+0x78e3c05f	.long	0x78e3c05f
+0x78ffc041	.long	0x78ffc041
+0x78e3c3ff	.long	0x78e3c3ff
+0x78e3d041	.long	0x78e3d041
+0x78e3d05f	.long	0x78e3d05f
+0x78ffd041	.long	0x78ffd041
+0x78e3d3ff	.long	0x78e3d3ff
+0x78e3e041	.long	0x78e3e041
+0x78e3e05f	.long	0x78e3e05f
+0x78ffe041	.long	0x78ffe041
+0x78e3e3ff	.long	0x78e3e3ff
+0x78e3f041	.long	0x78e3f041
+0x78e3f05f	.long	0x78e3f05f
+0x78fff041	.long	0x78fff041
+0x78e3f3ff	.long	0x78e3f3ff
+0xb8230041	ldadd	w3, w1, [x2]
+0xb823005f	stadd	w3, [x2]
+0xb83f0041	ldadd	wzr, w1, [x2]
+0xb82303ff	stadd	w3, [sp]
+0xb8231041	ldclr	w3, w1, [x2]
+0xb823105f	stclr	w3, [x2]
+0xb83f1041	ldclr	wzr, w1, [x2]
+0xb82313ff	stclr	w3, [sp]
+0xb8232041	ldeor	w3, w1, [x2]
+0xb823205f	steor	w3, [x2]
+0xb83f2041	ldeor	wzr, w1, [x2]
+0xb82323ff	steor	w3, [sp]
+0xb8233041	ldset	w3, w1, [x2]
+0xb823305f	stset	w3, [x2]
+0xb83f3041	ldset	wzr, w1, [x2]
+0xb82333ff	stset	w3, [sp]
+0xb8234041	ldsmax	w3, w1, [x2]
+0xb823405f	stsmax	w3, [x2]
+0xb83f4041	ldsmax	wzr, w1, [x2]
+0xb82343ff	stsmax	w3, [sp]
+0xb8235041	ldsmin	w3, w1, [x2]
+0xb823505f	stsmin	w3, [x2]
+0xb83f5041	ldsmin	wzr, w1, [x2]
+0xb82353ff	stsmin	w3, [sp]
+0xb8236041	ldumax	w3, w1, [x2]
+0xb823605f	stumax	w3, [x2]
+0xb83f6041	ldumax	wzr, w1, [x2]
+0xb82363ff	stumax	w3, [sp]
+0xb8237041	ldumin	w3, w1, [x2]
+0xb823705f	stumin	w3, [x2]
+0xb83f7041	ldumin	wzr, w1, [x2]
+0xb82373ff	stumin	w3, [sp]
+0xb8238041	swp	w3, w1, [x2]
+0xb823805f	swp	w3, wzr, [x2]
+0xb83f8041	swp	wzr, w1, [x2]
+0xb82383ff	swp	w3, wzr, [sp]
+0xb8239041	.long	0xb8239041
+0xb823905f	.long	0xb823905f
+0xb83f9041	.long	0xb83f9041
+0xb82393ff	.long	0xb82393ff
+0xb823a041	.long	0xb823a041
+0xb823a05f	.long	0xb823a05f
+0xb83fa041	.long	0xb83fa041
+0xb823a3ff	.long	0xb823a3ff
+0xb823b041	.long	0xb823b041
+0xb823b05f	.long	0xb823b05f
+0xb83fb041	.long	0xb83fb041
+0xb823b3ff	.long	0xb823b3ff
+0xb823c041	.long	0xb823c041
+0xb823c05f	.long	0xb823c05f
+0xb83fc041	.long	0xb83fc041
+0xb823c3ff	.long	0xb823c3ff
+0xb823d041	.long	0xb823d041
+0xb823d05f	.long	0xb823d05f
+0xb83fd041	.long	0xb83fd041
+0xb823d3ff	.long	0xb823d3ff
+0xb823e041	.long	0xb823e041
+0xb823e05f	.long	0xb823e05f
+0xb83fe041	.long	0xb83fe041
+0xb823e3ff	.long	0xb823e3ff
+0xb823f041	.long	0xb823f041
+0xb823f05f	.long	0xb823f05f
+0xb83ff041	.long	0xb83ff041
+0xb823f3ff	.long	0xb823f3ff
+0xb8630041	ldaddl	w3, w1, [x2]
+0xb863005f	staddl	w3, [x2]
+0xb87f0041	ldaddl	wzr, w1, [x2]
+0xb86303ff	staddl	w3, [sp]
+0xb8631041	ldclrl	w3, w1, [x2]
+0xb863105f	stclrl	w3, [x2]
+0xb87f1041	ldclrl	wzr, w1, [x2]
+0xb86313ff	stclrl	w3, [sp]
+0xb8632041	ldeorl	w3, w1, [x2]
+0xb863205f	steorl	w3, [x2]
+0xb87f2041	ldeorl	wzr, w1, [x2]
+0xb86323ff	steorl	w3, [sp]
+0xb8633041	ldsetl	w3, w1, [x2]
+0xb863305f	stsetl	w3, [x2]
+0xb87f3041	ldsetl	wzr, w1, [x2]
+0xb86333ff	stsetl	w3, [sp]
+0xb8634041	ldsmaxl	w3, w1, [x2]
+0xb863405f	stsmaxl	w3, [x2]
+0xb87f4041	ldsmaxl	wzr, w1, [x2]
+0xb86343ff	stsmaxl	w3, [sp]
+0xb8635041	ldsminl	w3, w1, [x2]
+0xb863505f	stsminl	w3, [x2]
+0xb87f5041	ldsminl	wzr, w1, [x2]
+0xb86353ff	stsminl	w3, [sp]
+0xb8636041	ldumaxl	w3, w1, [x2]
+0xb863605f	stumaxl	w3, [x2]
+0xb87f6041	ldumaxl	wzr, w1, [x2]
+0xb86363ff	stumaxl	w3, [sp]
+0xb8637041	lduminl	w3, w1, [x2]
+0xb863705f	stuminl	w3, [x2]
+0xb87f7041	lduminl	wzr, w1, [x2]
+0xb86373ff	stuminl	w3, [sp]
+0xb8638041	swpl	w3, w1, [x2]
+0xb863805f	swpl	w3, wzr, [x2]
+0xb87f8041	swpl	wzr, w1, [x2]
+0xb86383ff	swpl	w3, wzr, [sp]
+0xb8639041	.long	0xb8639041
+0xb863905f	.long	0xb863905f
+0xb87f9041	.long	0xb87f9041
+0xb86393ff	.long	0xb86393ff
+0xb863a041	.long	0xb863a041
+0xb863a05f	.long	0xb863a05f
+0xb87fa041	.long	0xb87fa041
+0xb863a3ff	.long	0xb863a3ff
+0xb863b041	.long	0xb863b041
+0xb863b05f	.long	0xb863b05f
+0xb87fb041	.long	0xb87fb041
+0xb863b3ff	.long	0xb863b3ff
+0xb863c041	.long	0xb863c041
+0xb863c05f	.long	0xb863c05f
+0xb87fc041	.long	0xb87fc041
+0xb863c3ff	.long	0xb863c3ff
+0xb863d041	.long	0xb863d041
+0xb863d05f	.long	0xb863d05f
+0xb87fd041	.long	0xb87fd041
+0xb863d3ff	.long	0xb863d3ff
+0xb863e041	.long	0xb863e041
+0xb863e05f	.long	0xb863e05f
+0xb87fe041	.long	0xb87fe041
+0xb863e3ff	.long	0xb863e3ff
+0xb863f041	.long	0xb863f041
+0xb863f05f	.long	0xb863f05f
+0xb87ff041	.long	0xb87ff041
+0xb863f3ff	.long	0xb863f3ff
+0xb8a30041	ldadda	w3, w1, [x2]
+0xb8a3005f	ldadda	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf0041	ldadda	wzr, w1, [x2]
+0xb8a303ff	ldadda	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a31041	ldclra	w3, w1, [x2]
+0xb8a3105f	ldclra	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf1041	ldclra	wzr, w1, [x2]
+0xb8a313ff	ldclra	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a32041	ldeora	w3, w1, [x2]
+0xb8a3205f	ldeora	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf2041	ldeora	wzr, w1, [x2]
+0xb8a323ff	ldeora	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a33041	ldseta	w3, w1, [x2]
+0xb8a3305f	ldseta	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf3041	ldseta	wzr, w1, [x2]
+0xb8a333ff	ldseta	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a34041	ldsmaxa	w3, w1, [x2]
+0xb8a3405f	ldsmaxa	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf4041	ldsmaxa	wzr, w1, [x2]
+0xb8a343ff	ldsmaxa	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a35041	ldsmina	w3, w1, [x2]
+0xb8a3505f	ldsmina	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf5041	ldsmina	wzr, w1, [x2]
+0xb8a353ff	ldsmina	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a36041	ldumaxa	w3, w1, [x2]
+0xb8a3605f	ldumaxa	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf6041	ldumaxa	wzr, w1, [x2]
+0xb8a363ff	ldumaxa	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a37041	ldumina	w3, w1, [x2]
+0xb8a3705f	ldumina	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf7041	ldumina	wzr, w1, [x2]
+0xb8a373ff	ldumina	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a38041	swpa	w3, w1, [x2]
+0xb8a3805f	swpa	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8bf8041	swpa	wzr, w1, [x2]
+0xb8a383ff	swpa	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8a39041	.long	0xb8a39041
+0xb8a3905f	.long	0xb8a3905f
+0xb8bf9041	.long	0xb8bf9041
+0xb8a393ff	.long	0xb8a393ff
+0xb8a3a041	.long	0xb8a3a041
+0xb8a3a05f	.long	0xb8a3a05f
+0xb8bfa041	.long	0xb8bfa041
+0xb8a3a3ff	.long	0xb8a3a3ff
+0xb8a3b041	.long	0xb8a3b041
+0xb8a3b05f	.long	0xb8a3b05f
+0xb8bfb041	.long	0xb8bfb041
+0xb8a3b3ff	.long	0xb8a3b3ff
+0xb8a3c041	.long	0xb8a3c041
+0xb8a3c05f	.long	0xb8a3c05f
+0xb8bfc041	ldapr	w1, [x2]
+0xb8a3c3ff	.long	0xb8a3c3ff
+0xb8a3d041	.long	0xb8a3d041
+0xb8a3d05f	.long	0xb8a3d05f
+0xb8bfd041	.long	0xb8bfd041
+0xb8a3d3ff	.long	0xb8a3d3ff
+0xb8a3e041	.long	0xb8a3e041
+0xb8a3e05f	.long	0xb8a3e05f
+0xb8bfe041	.long	0xb8bfe041
+0xb8a3e3ff	.long	0xb8a3e3ff
+0xb8a3f041	.long	0xb8a3f041
+0xb8a3f05f	.long	0xb8a3f05f
+0xb8bff041	.long	0xb8bff041
+0xb8a3f3ff	.long	0xb8a3f3ff
+0xb8e30041	ldaddal	w3, w1, [x2]
+0xb8e3005f	ldaddal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff0041	ldaddal	wzr, w1, [x2]
+0xb8e303ff	ldaddal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e31041	ldclral	w3, w1, [x2]
+0xb8e3105f	ldclral	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff1041	ldclral	wzr, w1, [x2]
+0xb8e313ff	ldclral	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e32041	ldeoral	w3, w1, [x2]
+0xb8e3205f	ldeoral	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff2041	ldeoral	wzr, w1, [x2]
+0xb8e323ff	ldeoral	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e33041	ldsetal	w3, w1, [x2]
+0xb8e3305f	ldsetal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff3041	ldsetal	wzr, w1, [x2]
+0xb8e333ff	ldsetal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e34041	ldsmaxal	w3, w1, [x2]
+0xb8e3405f	ldsmaxal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff4041	ldsmaxal	wzr, w1, [x2]
+0xb8e343ff	ldsmaxal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e35041	ldsminal	w3, w1, [x2]
+0xb8e3505f	ldsminal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff5041	ldsminal	wzr, w1, [x2]
+0xb8e353ff	ldsminal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e36041	ldumaxal	w3, w1, [x2]
+0xb8e3605f	ldumaxal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff6041	ldumaxal	wzr, w1, [x2]
+0xb8e363ff	ldumaxal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e37041	lduminal	w3, w1, [x2]
+0xb8e3705f	lduminal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff7041	lduminal	wzr, w1, [x2]
+0xb8e373ff	lduminal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e38041	swpal	w3, w1, [x2]
+0xb8e3805f	swpal	w3, wzr, [x2] ; acquire semantics dropped since destination is zero
+0xb8ff8041	swpal	wzr, w1, [x2]
+0xb8e383ff	swpal	w3, wzr, [sp] ; acquire semantics dropped since destination is zero
+0xb8e39041	.long	0xb8e39041
+0xb8e3905f	.long	0xb8e3905f
+0xb8ff9041	.long	0xb8ff9041
+0xb8e393ff	.long	0xb8e393ff
+0xb8e3a041	.long	0xb8e3a041
+0xb8e3a05f	.long	0xb8e3a05f
+0xb8ffa041	.long	0xb8ffa041
+0xb8e3a3ff	.long	0xb8e3a3ff
+0xb8e3b041	.long	0xb8e3b041
+0xb8e3b05f	.long	0xb8e3b05f
+0xb8ffb041	.long	0xb8ffb041
+0xb8e3b3ff	.long	0xb8e3b3ff
+0xb8e3c041	.long	0xb8e3c041
+0xb8e3c05f	.long	0xb8e3c05f
+0xb8ffc041	.long	0xb8ffc041
+0xb8e3c3ff	.long	0xb8e3c3ff
+0xb8e3d041	.long	0xb8e3d041
+0xb8e3d05f	.long	0xb8e3d05f
+0xb8ffd041	.long	0xb8ffd041
+0xb8e3d3ff	.long	0xb8e3d3ff
+0xb8e3e041	.long	0xb8e3e041
+0xb8e3e05f	.long	0xb8e3e05f
+0xb8ffe041	.long	0xb8ffe041
+0xb8e3e3ff	.long	0xb8e3e3ff
+0xb8e3f041	.long	0xb8e3f041
+0xb8e3f05f	.long	0xb8e3f05f
+0xb8fff041	.long	0xb8fff041
+0xb8e3f3ff	.long	0xb8e3f3ff
+0xf8230041	ldadd	x3, x1, [x2]
+0xf823005f	stadd	x3, [x2]
+0xf83f0041	ldadd	xzr, x1, [x2]
+0xf82303ff	stadd	x3, [sp]
+0xf8231041	ldclr	x3, x1, [x2]
+0xf823105f	stclr	x3, [x2]
+0xf83f1041	ldclr	xzr, x1, [x2]
+0xf82313ff	stclr	x3, [sp]
+0xf8232041	ldeor	x3, x1, [x2]
+0xf823205f	steor	x3, [x2]
+0xf83f2041	ldeor	xzr, x1, [x2]
+0xf82323ff	steor	x3, [sp]
+0xf8233041	ldset	x3, x1, [x2]
+0xf823305f	stset	x3, [x2]
+0xf83f3041	ldset	xzr, x1, [x2]
+0xf82333ff	stset	x3, [sp]
+0xf8234041	ldsmax	x3, x1, [x2]
+0xf823405f	stsmax	x3, [x2]
+0xf83f4041	ldsmax	xzr, x1, [x2]
+0xf82343ff	stsmax	x3, [sp]
+0xf8235041	ldsmin	x3, x1, [x2]
+0xf823505f	stsmin	x3, [x2]
+0xf83f5041	ldsmin	xzr, x1, [x2]
+0xf82353ff	stsmin	x3, [sp]
+0xf8236041	ldumax	x3, x1, [x2]
+0xf823605f	stumax	x3, [x2]
+0xf83f6041	ldumax	xzr, x1, [x2]
+0xf82363ff	stumax	x3, [sp]
+0xf8237041	ldumin	x3, x1, [x2]
+0xf823705f	stumin	x3, [x2]
+0xf83f7041	ldumin	xzr, x1, [x2]
+0xf82373ff	stumin	x3, [sp]
+0xf8238041	swp	x3, x1, [x2]
+0xf823805f	swp	x3, xzr, [x2]
+0xf83f8041	swp	xzr, x1, [x2]
+0xf82383ff	swp	x3, xzr, [sp]
+0xf8239041	.long	0xf8239041
+0xf823905f	.long	0xf823905f
+0xf83f9041	.long	0xf83f9041
+0xf82393ff	.long	0xf82393ff
+0xf823a041	.long	0xf823a041
+0xf823a05f	.long	0xf823a05f
+0xf83fa041	.long	0xf83fa041
+0xf823a3ff	.long	0xf823a3ff
+0xf823b041	.long	0xf823b041
+0xf823b05f	.long	0xf823b05f
+0xf83fb041	.long	0xf83fb041
+0xf823b3ff	.long	0xf823b3ff
+0xf823c041	.long	0xf823c041
+0xf823c05f	.long	0xf823c05f
+0xf83fc041	.long	0xf83fc041
+0xf823c3ff	.long	0xf823c3ff
+0xf823d041	.long	0xf823d041
+0xf823d05f	.long	0xf823d05f
+0xf83fd041	.long	0xf83fd041
+0xf823d3ff	.long	0xf823d3ff
+0xf823e041	.long	0xf823e041
+0xf823e05f	.long	0xf823e05f
+0xf83fe041	.long	0xf83fe041
+0xf823e3ff	.long	0xf823e3ff
+0xf823f041	.long	0xf823f041
+0xf823f05f	.long	0xf823f05f
+0xf83ff041	.long	0xf83ff041
+0xf823f3ff	.long	0xf823f3ff
+0xf8630041	ldaddl	x3, x1, [x2]
+0xf863005f	staddl	x3, [x2]
+0xf87f0041	ldaddl	xzr, x1, [x2]
+0xf86303ff	staddl	x3, [sp]
+0xf8631041	ldclrl	x3, x1, [x2]
+0xf863105f	stclrl	x3, [x2]
+0xf87f1041	ldclrl	xzr, x1, [x2]
+0xf86313ff	stclrl	x3, [sp]
+0xf8632041	ldeorl	x3, x1, [x2]
+0xf863205f	steorl	x3, [x2]
+0xf87f2041	ldeorl	xzr, x1, [x2]
+0xf86323ff	steorl	x3, [sp]
+0xf8633041	ldsetl	x3, x1, [x2]
+0xf863305f	stsetl	x3, [x2]
+0xf87f3041	ldsetl	xzr, x1, [x2]
+0xf86333ff	stsetl	x3, [sp]
+0xf8634041	ldsmaxl	x3, x1, [x2]
+0xf863405f	stsmaxl	x3, [x2]
+0xf87f4041	ldsmaxl	xzr, x1, [x2]
+0xf86343ff	stsmaxl	x3, [sp]
+0xf8635041	ldsminl	x3, x1, [x2]
+0xf863505f	stsminl	x3, [x2]
+0xf87f5041	ldsminl	xzr, x1, [x2]
+0xf86353ff	stsminl	x3, [sp]
+0xf8636041	ldumaxl	x3, x1, [x2]
+0xf863605f	stumaxl	x3, [x2]
+0xf87f6041	ldumaxl	xzr, x1, [x2]
+0xf86363ff	stumaxl	x3, [sp]
+0xf8637041	lduminl	x3, x1, [x2]
+0xf863705f	stuminl	x3, [x2]
+0xf87f7041	lduminl	xzr, x1, [x2]
+0xf86373ff	stuminl	x3, [sp]
+0xf8638041	swpl	x3, x1, [x2]
+0xf863805f	swpl	x3, xzr, [x2]
+0xf87f8041	swpl	xzr, x1, [x2]
+0xf86383ff	swpl	x3, xzr, [sp]
+0xf8639041	.long	0xf8639041
+0xf863905f	.long	0xf863905f
+0xf87f9041	.long	0xf87f9041
+0xf86393ff	.long	0xf86393ff
+0xf863a041	.long	0xf863a041
+0xf863a05f	.long	0xf863a05f
+0xf87fa041	.long	0xf87fa041
+0xf863a3ff	.long	0xf863a3ff
+0xf863b041	.long	0xf863b041
+0xf863b05f	.long	0xf863b05f
+0xf87fb041	.long	0xf87fb041
+0xf863b3ff	.long	0xf863b3ff
+0xf863c041	.long	0xf863c041
+0xf863c05f	.long	0xf863c05f
+0xf87fc041	.long	0xf87fc041
+0xf863c3ff	.long	0xf863c3ff
+0xf863d041	.long	0xf863d041
+0xf863d05f	.long	0xf863d05f
+0xf87fd041	.long	0xf87fd041
+0xf863d3ff	.long	0xf863d3ff
+0xf863e041	.long	0xf863e041
+0xf863e05f	.long	0xf863e05f
+0xf87fe041	.long	0xf87fe041
+0xf863e3ff	.long	0xf863e3ff
+0xf863f041	.long	0xf863f041
+0xf863f05f	.long	0xf863f05f
+0xf87ff041	.long	0xf87ff041
+0xf863f3ff	.long	0xf863f3ff
+0xf8a30041	ldadda	x3, x1, [x2]
+0xf8a3005f	ldadda	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf0041	ldadda	xzr, x1, [x2]
+0xf8a303ff	ldadda	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a31041	ldclra	x3, x1, [x2]
+0xf8a3105f	ldclra	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf1041	ldclra	xzr, x1, [x2]
+0xf8a313ff	ldclra	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a32041	ldeora	x3, x1, [x2]
+0xf8a3205f	ldeora	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf2041	ldeora	xzr, x1, [x2]
+0xf8a323ff	ldeora	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a33041	ldseta	x3, x1, [x2]
+0xf8a3305f	ldseta	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf3041	ldseta	xzr, x1, [x2]
+0xf8a333ff	ldseta	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a34041	ldsmaxa	x3, x1, [x2]
+0xf8a3405f	ldsmaxa	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf4041	ldsmaxa	xzr, x1, [x2]
+0xf8a343ff	ldsmaxa	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a35041	ldsmina	x3, x1, [x2]
+0xf8a3505f	ldsmina	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf5041	ldsmina	xzr, x1, [x2]
+0xf8a353ff	ldsmina	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a36041	ldumaxa	x3, x1, [x2]
+0xf8a3605f	ldumaxa	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf6041	ldumaxa	xzr, x1, [x2]
+0xf8a363ff	ldumaxa	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a37041	ldumina	x3, x1, [x2]
+0xf8a3705f	ldumina	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf7041	ldumina	xzr, x1, [x2]
+0xf8a373ff	ldumina	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a38041	swpa	x3, x1, [x2]
+0xf8a3805f	swpa	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8bf8041	swpa	xzr, x1, [x2]
+0xf8a383ff	swpa	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8a39041	.long	0xf8a39041
+0xf8a3905f	.long	0xf8a3905f
+0xf8bf9041	.long	0xf8bf9041
+0xf8a393ff	.long	0xf8a393ff
+0xf8a3a041	.long	0xf8a3a041
+0xf8a3a05f	.long	0xf8a3a05f
+0xf8bfa041	.long	0xf8bfa041
+0xf8a3a3ff	.long	0xf8a3a3ff
+0xf8a3b041	.long	0xf8a3b041
+0xf8a3b05f	.long	0xf8a3b05f
+0xf8bfb041	.long	0xf8bfb041
+0xf8a3b3ff	.long	0xf8a3b3ff
+0xf8a3c041	.long	0xf8a3c041
+0xf8a3c05f	.long	0xf8a3c05f
+0xf8bfc041	ldapr	x1, [x2]
+0xf8a3c3ff	.long	0xf8a3c3ff
+0xf8a3d041	.long	0xf8a3d041
+0xf8a3d05f	.long	0xf8a3d05f
+0xf8bfd041	.long	0xf8bfd041
+0xf8a3d3ff	.long	0xf8a3d3ff
+0xf8a3e041	.long	0xf8a3e041
+0xf8a3e05f	.long	0xf8a3e05f
+0xf8bfe041	.long	0xf8bfe041
+0xf8a3e3ff	.long	0xf8a3e3ff
+0xf8a3f041	.long	0xf8a3f041
+0xf8a3f05f	.long	0xf8a3f05f
+0xf8bff041	.long	0xf8bff041
+0xf8a3f3ff	.long	0xf8a3f3ff
+0xf8e30041	ldaddal	x3, x1, [x2]
+0xf8e3005f	ldaddal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff0041	ldaddal	xzr, x1, [x2]
+0xf8e303ff	ldaddal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e31041	ldclral	x3, x1, [x2]
+0xf8e3105f	ldclral	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff1041	ldclral	xzr, x1, [x2]
+0xf8e313ff	ldclral	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e32041	ldeoral	x3, x1, [x2]
+0xf8e3205f	ldeoral	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff2041	ldeoral	xzr, x1, [x2]
+0xf8e323ff	ldeoral	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e33041	ldsetal	x3, x1, [x2]
+0xf8e3305f	ldsetal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff3041	ldsetal	xzr, x1, [x2]
+0xf8e333ff	ldsetal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e34041	ldsmaxal	x3, x1, [x2]
+0xf8e3405f	ldsmaxal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff4041	ldsmaxal	xzr, x1, [x2]
+0xf8e343ff	ldsmaxal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e35041	ldsminal	x3, x1, [x2]
+0xf8e3505f	ldsminal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff5041	ldsminal	xzr, x1, [x2]
+0xf8e353ff	ldsminal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e36041	ldumaxal	x3, x1, [x2]
+0xf8e3605f	ldumaxal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff6041	ldumaxal	xzr, x1, [x2]
+0xf8e363ff	ldumaxal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e37041	lduminal	x3, x1, [x2]
+0xf8e3705f	lduminal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff7041	lduminal	xzr, x1, [x2]
+0xf8e373ff	lduminal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e38041	swpal	x3, x1, [x2]
+0xf8e3805f	swpal	x3, xzr, [x2] ; acquire semantics dropped since destination is zero
+0xf8ff8041	swpal	xzr, x1, [x2]
+0xf8e383ff	swpal	x3, xzr, [sp] ; acquire semantics dropped since destination is zero
+0xf8e39041	.long	0xf8e39041
+0xf8e3905f	.long	0xf8e3905f
+0xf8ff9041	.long	0xf8ff9041
+0xf8e393ff	.long	0xf8e393ff
+0xf8e3a041	.long	0xf8e3a041
+0xf8e3a05f	.long	0xf8e3a05f
+0xf8ffa041	.long	0xf8ffa041
+0xf8e3a3ff	.long	0xf8e3a3ff
+0xf8e3b041	.long	0xf8e3b041
+0xf8e3b05f	.long	0xf8e3b05f
+0xf8ffb041	.long	0xf8ffb041
+0xf8e3b3ff	.long	0xf8e3b3ff
+0xf8e3c041	.long	0xf8e3c041
+0xf8e3c05f	.long	0xf8e3c05f
+0xf8ffc041	.long	0xf8ffc041
+0xf8e3c3ff	.long	0xf8e3c3ff
+0xf8e3d041	.long	0xf8e3d041
+0xf8e3d05f	.long	0xf8e3d05f
+0xf8ffd041	.long	0xf8ffd041
+0xf8e3d3ff	.long	0xf8e3d3ff
+0xf8e3e041	.long	0xf8e3e041
+0xf8e3e05f	.long	0xf8e3e05f
+0xf8ffe041	.long	0xf8ffe041
+0xf8e3e3ff	.long	0xf8e3e3ff
+0xf8e3f041	.long	0xf8e3f041
+0xf8e3f05f	.long	0xf8e3f05f
+0xf8fff041	.long	0xf8fff041
+0xf8e3f3ff	.long	0xf8e3f3ff

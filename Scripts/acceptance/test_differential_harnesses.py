@@ -1583,6 +1583,33 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             for expected_mnem in (".long", "mov", "movz", "movn", "movk"):
                 self.assertIn(expected_mnem, seen_mnemonics)
 
+    def test_stage4_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        expected_counts = {
+            "cond_branch_imm": 256,
+            "advsimd_copy": 4096,
+            "bitfield": 3072,
+            "lse_atomic": 1024,
+        }
+        for grp_name, expected_len in expected_counts.items():
+            self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[grp_name].generate_words()
+            self.assertEqual(len(words), expected_len)
+            self.assertLessEqual(len(words), 4096)
+            self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table, ["generate", "cond_branch_imm", "--out-dir", tmp]
+            )
+            self.assertEqual(rc, 0, f"generate cond_branch_imm failed: {stdout_txt}\n{stderr_txt}")
+            _, rows = enc_table.load_reference_table(os.path.join(tmp, "cond_branch_imm.tsv"))
+            self.assertEqual(len(rows), 256)
+            mnems = {m for _, m, _ in rows}
+            self.assertIn(".long", mnems)
+            self.assertIn("b.eq", mnems)
+            self.assertNotIn("bc.eq", mnems)
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

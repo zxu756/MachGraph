@@ -166,6 +166,105 @@ def _generate_load_store_reg_offset_words() -> List[int]:
     return words
 
 
+def _generate_cond_branch_imm_words() -> List[int]:
+    """ARM DDI 0487 C4.1.93.1 Conditional branch (immediate): (word & 0xfe000000) == 0x54000000."""
+    words: List[int] = []
+    imm19_samples = (0x00000, 0x00001, 0x40000, 0x7FFFF)
+    for o1 in (0, 1):
+        for imm19 in imm19_samples:
+            for o0 in (0, 1):
+                for cond in range(16):
+                    word = (
+                        0x54000000
+                        | (o1 << 24)
+                        | (imm19 << 5)
+                        | (o0 << 4)
+                        | cond
+                    )
+                    words.append(word)
+    return words
+
+
+def _generate_advsimd_copy_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.8 Advanced SIMD copy (and bit[15]=1 sibling space): (word & 0x9fe00400) == 0x0e000400."""
+    words: List[int] = []
+    rn = 2
+    rd = 1
+    for q_bit in (0, 1):
+        for op_bit in (0, 1):
+            for imm5 in range(32):
+                for bit15 in (0, 1):
+                    for imm4 in range(16):
+                        word = (
+                            (q_bit << 30)
+                            | (op_bit << 29)
+                            | (0b01110000 << 21)
+                            | (imm5 << 16)
+                            | (bit15 << 15)
+                            | (imm4 << 11)
+                            | (1 << 10)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+    return words
+
+
+def _generate_bitfield_words() -> List[int]:
+    """ARM DDI 0487 C4.1.92.6 Bitfield (SBFM / BFM / UBFM): fixed bits[28:23] = 0b100110."""
+    words: List[int] = []
+    imm_samples = (0, 1, 7, 15, 16, 31, 32, 63)
+    reg_pairs = ((1, 2), (1, 31), (31, 2))
+    for sf in (0, 1):
+        for opc in (0, 1, 2, 3):
+            for n_bit in (0, 1):
+                for immr in imm_samples:
+                    for imms in imm_samples:
+                        for rd, rn in reg_pairs:
+                            word = (
+                                (sf << 31)
+                                | (opc << 29)
+                                | (0b100110 << 23)
+                                | (n_bit << 22)
+                                | (immr << 16)
+                                | (imms << 10)
+                                | (rn << 5)
+                                | rd
+                            )
+                            words.append(word)
+    return words
+
+
+def _generate_lse_atomic_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.8 Atomic memory operations: (word & 0x3f200c00) == 0x38200000."""
+    words: List[int] = []
+    # Distinct (Rs, Rn, Rt) tuples covering general registers (3, 2, 1), Rt=ZR for A=1 acquire
+    # retention + A=0 ST* preferred aliases (3, 2, 31), Rs=ZR / Rs=11111 LDAPR discriminator (31, 2, 1),
+    # and Rn=SP with Rt=ZR (3, 31, 31).
+    reg_tuples = ((3, 2, 1), (3, 2, 31), (31, 2, 1), (3, 31, 31))
+    for size in (0, 1, 2, 3):
+        for a_bit in (0, 1):
+            for r_bit in (0, 1):
+                for o3 in (0, 1):
+                    for opc in range(8):
+                        for rs, rn, rt in reg_tuples:
+                            word = (
+                                (size << 30)
+                                | (0b111000 << 24)
+                                | (a_bit << 23)
+                                | (r_bit << 22)
+                                | (1 << 21)
+                                | (rs << 16)
+                                | (o3 << 15)
+                                | (opc << 12)
+                                | (0b00 << 10)
+                                | (rn << 5)
+                                | rt
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -198,6 +297,48 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "PRFM/RPRFM space (1 x 8 x 2 x 32 = 512 rows), totaling 1,008 rows.",
         ),
         generate_words=_generate_load_store_reg_offset_words,
+    ),
+    "cond_branch_imm": EncodingGroupSpec(
+        name="cond_branch_imm",
+        title="Conditional branch (immediate) — B.<cond> and unallocated o1/o0 (BC.<cond>) space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.93.1 Conditional branch (immediate): (word & 0xfe000000) == 0x54000000.",
+            "Enumerates all 2 x 4 x 2 x 16 = 256 combinations of o1=0..1, imm19 in {0x00000, 0x00001, 0x40000, 0x7ffff},",
+            "o0=0..1 (B.<cond> vs FEAT_HBC BC.<cond>, unallocated on apple-m1), and cond=0..15.",
+        ),
+        generate_words=_generate_cond_branch_imm_words,
+    ),
+    "advsimd_copy": EncodingGroupSpec(
+        name="advsimd_copy",
+        title="Advanced SIMD copy — DUP, INS/MOV, UMOV/MOV, SMOV, and bit[15]=1 unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.8 Advanced SIMD copy: (word & 0x9fe00400) == 0x0e000400.",
+            "Enumerates all 2 x 2 x 32 x 2 x 16 = 4,096 combinations of Q=0..1, op=0..1, imm5=0..31,",
+            "bit[15]=0..1, and imm4=0..15 with fixed distinct registers Rn=2, Rd=1.",
+        ),
+        generate_words=_generate_advsimd_copy_words,
+    ),
+    "bitfield": EncodingGroupSpec(
+        name="bitfield",
+        title="Bitfield — SBFM / BFM / UBFM and ASR, LSL, LSR, SXT*, UXT*, SBFIZ, SBFX, BFI, BFC, BFXIL, UBFIZ, UBFX aliases",
+        header_notes=(
+            "ARM DDI 0487 C4.1.92.6 Bitfield: fixed bits[28:23] = 0b100110.",
+            "Enumerates all 2 x 4 x 2 x 8 x 8 x 3 = 3,072 combinations of sf=0..1, opc=0..3, N=0..1,",
+            "immr in {0, 1, 7, 15, 16, 31, 32, 63}, imms in {0, 1, 7, 15, 16, 31, 32, 63},",
+            "and distinct (Rd, Rn) in {(1,2), (1,31), (31,2)} (covering BFM Rn=ZR -> BFC and BFXIL counterexamples).",
+        ),
+        generate_words=_generate_bitfield_words,
+    ),
+    "lse_atomic": EncodingGroupSpec(
+        name="lse_atomic",
+        title="LSE atomic memory operations — LD* / ST* preferred aliases, SWP*, and RCpc LDAPR* space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.8 Atomic memory operations: (word & 0x3f200c00) == 0x38200000.",
+            "Enumerates all 4 x 2 x 2 x 2 x 8 x 4 = 1,024 combinations of size=0..3, A=0..1, R=0..1,",
+            "o3=0..1, opc=0..7, and (Rs, Rn, Rt) in {(3,2,1), (3,2,31), (31,2,1), (3,31,31)}",
+            "(covering Rt=ZR acquire retention, A=0 ST* two-operand aliases, Rs=11111 LDAPR*, and Rn=SP).",
+        ),
+        generate_words=_generate_lse_atomic_words,
     ),
 }
 
