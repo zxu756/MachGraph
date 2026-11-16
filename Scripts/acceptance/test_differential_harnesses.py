@@ -1074,5 +1074,190 @@ class TestItem10DropRule3AndGenericNeonSelfCheck(unittest.TestCase):
         self.assertIn("sub.2d", err_ma.getvalue())
 
 
+class TestItem11ReferenceLongMachGraphInstBucket(unittest.TestCase):
+    """M2 Stage 1 (G55): reference `.long` + MachGraph `.inst` goes to `reference_long_machgraph_inst`, not `unknown`."""
+
+    def test_classify_mnemonic_pair_buckets_ref_long_with_mg_inst_and_marks_non_inst_wrong(self):
+        self.assertEqual(
+            mnemonic_normalization.classify_mnemonic_pair(".long", ".inst"),
+            ("reference_long_machgraph_inst", ".long", ".inst"),
+        )
+        self.assertEqual(
+            mnemonic_normalization.classify_mnemonic_pair(".long", "smov"),
+            ("wrong", ".long", "smov"),
+        )
+        self.assertEqual(
+            mnemonic_normalization.classify_mnemonic_pair(".long", ".long"),
+            ("wrong", ".long", ".long"),
+        )
+
+    def test_differential_buckets_reference_long_separately_and_keeps_total_unchanged(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin1 = os.path.join(tmp, "has_long.bin")
+            fake_bin2 = os.path.join(tmp, "no_long.bin")
+            for p in (fake_bin1, fake_bin2):
+                with open(p, "wb") as fh:
+                    fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+
+            ref_b1 = (
+                b"\nhas_long.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"1000:\tnop\n"
+                b"1004:\t.long\t0xffffff64\n"
+                b"1008:\t.long\t0xffffff70\n"
+                b"100c:\tadd\tv0.2d, v1.2d, v0.2d\n"
+                b"1010:\tret\n"
+            )
+            ref_b2 = (
+                b"\nno_long.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"1000:\tnop\n"
+                b"1004:\tret\n"
+            )
+            mg_script = os.path.join(tmp, "fake-mg.py")
+            with open(mg_script, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "#!/usr/bin/env python3\n"
+                    "import sys\n"
+                    "target = sys.argv[2]\n"
+                    "print('; Section __TEXT,__text @ 0x1000')\n"
+                    "if target.endswith('has_long.bin'):\n"
+                    "    print('0x0000000000001000\\td503201f\\tnop\\t')\n"
+                    "    print('0x0000000000001004\\tffffff64\\t.inst\\t0xffffff64')\n"
+                    "    print('0x0000000000001008\\tffffff70\\t.inst\\t0xffffff70')\n"
+                    "    print('0x000000000000100c\\t4ee08420\\t.inst\\t0x4ee08420')\n"
+                    "    print('0x0000000000001010\\td65f03c0\\tret\\t')\n"
+                    "else:\n"
+                    "    print('0x0000000000001000\\td503201f\\tnop\\t')\n"
+                    "    print('0x0000000000001004\\td65f03c0\\tret\\t')\n"
+                )
+            os.chmod(mg_script, os.stat(mg_script).st_mode | stat.S_IXUSR)
+            report_json = os.path.join(tmp, "report.json")
+            real_run = subprocess.run
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd and cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if len(cmd) >= 2 and cmd[0] == "xcrun" and cmd[1] == "llvm-objdump":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"Apple LLVM version 21.0.0\n", stderr=b"")
+                    if "/bin/ls" in cmd:
+                        return real_run(cmd, *args, **kwargs)
+                    if cmd[-1].endswith("has_long.bin"):
+                        return subprocess.CompletedProcess(cmd, 0, stdout=ref_b1, stderr=b"")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=ref_b2, stderr=b"")
+                return real_run(cmd, *args, **kwargs)
+
+            out_buf = io.StringIO()
+            with mock.patch.object(differential.subprocess, "run", side_effect=fake_run), mock.patch.object(
+                sys,
+                "argv",
+                ["differential.py", fake_bin1, fake_bin2, "--workers", "1", "--machgraph", mg_script, "--json-out", report_json],
+            ), redirect_stdout(out_buf), redirect_stderr(io.StringIO()):
+                rc = differential.main()
+
+            self.assertEqual(rc, 0, out_buf.getvalue())
+            self.assertIn("reference_long_machgraph_inst=2 (files=1)", out_buf.getvalue())
+            with open(report_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            summary = payload["summary"]
+            self.assertEqual(summary["total_instructions"], 7)
+            self.assertEqual(summary["agreed_instructions"], 4)
+            self.assertEqual(summary["unknown_instructions"], 1)
+            self.assertEqual(summary["reference_long_machgraph_inst"], 2)
+            self.assertEqual(summary["reference_long_machgraph_inst_files"], 1)
+            self.assertEqual(summary["wrong_instructions"], 0)
+            self.assertEqual(
+                payload["unknown_by_reference_mnemonic"],
+                [{"llvm_mnemonic": "add", "count": 1, "file_count": 1}],
+            )
+            by_path = {f["path"]: f for f in payload["files"]}
+            self.assertEqual(by_path[fake_bin1]["instructions"], 5)
+            self.assertEqual(by_path[fake_bin1]["agree"], 2)
+            self.assertEqual(by_path[fake_bin1]["unknown"], 1)
+            self.assertEqual(by_path[fake_bin1]["reference_long_machgraph_inst"], 2)
+            self.assertEqual(by_path[fake_bin2]["reference_long_machgraph_inst"], 0)
+
+    def test_differential_and_mnemonic_agreement_fail_when_ref_long_decoded_as_instruction(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = os.path.join(tmp, "bad_long.bin")
+            with open(fake_bin, "wb") as fh:
+                fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+            ref_stdout = (
+                b"\nbad_long.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"1000:\tnop\n"
+                b"1004:\t.long\t0x54000050\n"
+            )
+            mg_out = (
+                "; Section __TEXT,__text @ 0x1000\n"
+                "0x0000000000001000\td503201f\tnop\t\n"
+                "0x0000000000001004\t54000050\tbc.eq\t0x100c\n"
+            )
+            fake_mg = _make_fake_machgraph_script(tmp, mg_out)
+            report_json = os.path.join(tmp, "report.json")
+            real_run = subprocess.run
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd and cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if len(cmd) >= 2 and cmd[0] == "xcrun" and cmd[1] == "llvm-objdump":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"Apple LLVM version 21.0.0\n", stderr=b"")
+                    if "/bin/ls" in cmd:
+                        return real_run(cmd, *args, **kwargs)
+                    return subprocess.CompletedProcess(cmd, 0, stdout=ref_stdout, stderr=b"")
+                return real_run(cmd, *args, **kwargs)
+
+            with mock.patch.object(differential.subprocess, "run", side_effect=fake_run), mock.patch.object(
+                sys, "argv", ["differential.py", fake_bin, "--machgraph", fake_mg, "--json-out", report_json]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc = differential.main()
+
+            self.assertEqual(rc, 1)
+            with open(report_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            self.assertEqual(payload["verdict"], "FAIL")
+            self.assertEqual(payload["summary"]["wrong_instructions"], 1)
+            self.assertEqual(payload["wrong_by_mnemonic_pair"][0]["llvm_mnemonic"], ".long")
+            self.assertEqual(payload["wrong_by_mnemonic_pair"][0]["machgraph_mnemonic"], "bc.eq")
+
+        # mnemonic-agreement.py: .long + .inst separated from unknown/agree, .long + non-.inst is wrong
+        ref_102 = {0x1000 + 4 * i: "nop" for i in range(100)}
+        ref_102[0x1190] = ".long"
+        ref_102[0x1194] = ".long"
+        mg_ok = {0x1000 + 4 * i: "nop" for i in range(100)}
+        mg_ok[0x1190] = ".inst"
+        mg_ok[0x1194] = ".inst"
+        out_ok = io.StringIO()
+        with mock.patch.object(mnemonic_agreement, "reference_listing", return_value=ref_102), mock.patch.object(
+            mnemonic_agreement, "machgraph_listing", return_value=mg_ok
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--max-wrong", "0"]
+        ), redirect_stdout(
+            out_ok
+        ), redirect_stderr(
+            io.StringIO()
+        ):
+            self.assertEqual(mnemonic_agreement.main(), 0)
+        self.assertIn("total=102 agree=100 (98.04%) unknown=0 ref_long_mg_inst=2 wrong=0", out_ok.getvalue())
+
+        mg_bad = dict(mg_ok)
+        mg_bad[0x1194] = "bc.eq"
+        with mock.patch.object(mnemonic_agreement, "reference_listing", return_value=ref_102), mock.patch.object(
+            mnemonic_agreement, "machgraph_listing", return_value=mg_bad
+        ), mock.patch.object(
+            sys, "argv", ["mnemonic-agreement.py", "/bin/ls", "--max-wrong", "0"]
+        ), redirect_stdout(
+            io.StringIO()
+        ), redirect_stderr(
+            io.StringIO()
+        ):
+            self.assertEqual(mnemonic_agreement.main(), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

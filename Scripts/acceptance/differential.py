@@ -325,6 +325,7 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         }
 
     agree = 0
+    ref_long_mg_inst = 0
     missing = 0
     missing_examples: List[Dict[str, str]] = []
     unknown_counter: collections.Counter = collections.Counter()
@@ -350,6 +351,8 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         kind, norm_ref, norm_mg = classify_mnemonic_pair(raw_ref_mnem, mg_mnem)
         if kind == "agree":
             agree += 1
+        elif kind == "reference_long_machgraph_inst":
+            ref_long_mg_inst += 1
         elif kind == "unknown":
             unknown_counter[norm_ref] += 1
         else:
@@ -398,6 +401,7 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         "total": len(ref_map),
         "agree": agree,
         "unknown_total": sum(unknown_counter.values()),
+        "reference_long_machgraph_inst": ref_long_mg_inst,
         "wrong_total": sum(wrong_pair_counter.values()),
         "missing": missing,
         "machgraph_only_inst": machgraph_only_inst,
@@ -538,6 +542,8 @@ def main() -> int:
     total_insns = 0
     total_agree = 0
     total_unknown = 0
+    total_ref_long_mg_inst = 0
+    ref_long_mg_inst_files = 0
     total_wrong = 0
     total_missing = 0
     total_mg_only_inst = 0
@@ -608,6 +614,10 @@ def main() -> int:
         total_insns += r["total"]
         total_agree += r["agree"]
         total_unknown += r["unknown_total"]
+        row_ref_long_mg_inst = r.get("reference_long_machgraph_inst", 0)
+        total_ref_long_mg_inst += row_ref_long_mg_inst
+        if row_ref_long_mg_inst > 0:
+            ref_long_mg_inst_files += 1
         total_wrong += r["wrong_total"]
         total_missing += r["missing"]
         total_mg_only_inst += r["machgraph_only_inst"]
@@ -647,7 +657,8 @@ def main() -> int:
             tag = "PASS" if (r["wrong_total"] == 0 and r["missing"] == 0) else "FAIL"
             print(
                 f"[{tag}] {path} ({r['arch']}): total={r['total']} agree={r['agree']} "
-                f"({file_pct:.2f}%) unknown={r['unknown_total']} wrong={r['wrong_total']} "
+                f"({file_pct:.2f}%) unknown={r['unknown_total']} "
+                f"ref_long_mg_inst={row_ref_long_mg_inst} wrong={r['wrong_total']} "
                 f"missing={r['missing']} mg_only_inst={r['machgraph_only_inst']} ({r['seconds']:.2f}s)"
             )
 
@@ -658,6 +669,7 @@ def main() -> int:
                 "instructions": r["total"],
                 "agree": r["agree"],
                 "unknown": r["unknown_total"],
+                "reference_long_machgraph_inst": row_ref_long_mg_inst,
                 "wrong": r["wrong_total"],
                 "missing": r["missing"],
                 "machgraph_only_inst": r["machgraph_only_inst"],
@@ -723,7 +735,9 @@ def main() -> int:
     print(
         f"       instructions={total_insns} agree={total_agree} ({overall_pct:.4f}% overall | "
         f"{recognized_pct:.4f}% of {recognized_insns} recognized) "
-        f"unknown={total_unknown} ({unknown_pct:.4f}%) wrong={total_wrong} "
+        f"unknown={total_unknown} ({unknown_pct:.4f}%) "
+        f"reference_long_machgraph_inst={total_ref_long_mg_inst} (files={ref_long_mg_inst_files}) "
+        f"wrong={total_wrong} "
         f"machgraph_only_inst={total_mg_only_inst} (files={mg_only_inst_files})"
     )
 
@@ -768,6 +782,8 @@ def main() -> int:
             "recognized_instructions": recognized_insns,
             "agreed_instructions": total_agree,
             "unknown_instructions": total_unknown,
+            "reference_long_machgraph_inst": total_ref_long_mg_inst,
+            "reference_long_machgraph_inst_files": ref_long_mg_inst_files,
             "wrong_instructions": total_wrong,
             "machgraph_only_inst_instructions": total_mg_only_inst,
             "machgraph_only_inst_files": mg_only_inst_files,

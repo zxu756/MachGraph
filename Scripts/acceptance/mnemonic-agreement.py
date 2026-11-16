@@ -160,7 +160,7 @@ def main() -> int:
         )
         return 1
 
-    total = agree = 0
+    total = agree = ref_long_mg_inst = 0
     unknown = collections.Counter()
     wrong = collections.Counter()
     missing = 0
@@ -173,6 +173,8 @@ def main() -> int:
         kind, norm_ref, norm_mg = classify_mnemonic_pair(raw_ref, got)
         if kind == "agree":
             agree += 1
+        elif kind == "reference_long_machgraph_inst":
+            ref_long_mg_inst += 1
         elif kind == "unknown":
             unknown[norm_ref] += 1
         else:
@@ -204,7 +206,8 @@ def main() -> int:
     status = "FAIL" if failures else ("PASS" if has_threshold else "INFO")
     print(
         f"[{status}] {label} (after mnemonic normalization: {NORMALIZATION_SUMMARY}): "
-        f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} wrong={n_wrong} "
+        f"total={total} agree={agree} ({pct:.2f}%) unknown={n_unknown} "
+        f"ref_long_mg_inst={ref_long_mg_inst} wrong={n_wrong} "
         f"mg_only_inst={mg_only_inst}"
     )
     if unknown:

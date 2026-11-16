@@ -162,6 +162,8 @@ def normalize_reference_mnemonic(mnemonic: str) -> str:
 
 def mnemonics_agree(normalized_reference: str, machgraph_mnemonic: str) -> bool:
     """Compare a reference mnemonic against a MachGraph mnemonic under Rules 1 and 2."""
+    if normalized_reference == ".long":
+        return False
     mg = machgraph_mnemonic.strip().lower()
     if mg == normalized_reference:
         return True
@@ -173,11 +175,15 @@ def mnemonics_agree(normalized_reference: str, machgraph_mnemonic: str) -> bool:
 
 
 def classify_mnemonic_pair(raw_reference: str, raw_machgraph: str) -> Tuple[str, str, str]:
-    """Classify one instruction's mnemonics as ('agree' | 'unknown' | 'wrong', norm_ref, norm_mg)."""
+    """Classify one instruction's mnemonics as
+    ('agree' | 'reference_long_machgraph_inst' | 'unknown' | 'wrong', norm_ref, norm_mg).
+    """
     norm_ref = normalize_reference_mnemonic(raw_reference)
     norm_mg = raw_machgraph.strip().lower()
     if mnemonics_agree(norm_ref, norm_mg):
         return ("agree", norm_ref, norm_mg)
+    if norm_ref == ".long" and norm_mg == ".inst":
+        return ("reference_long_machgraph_inst", norm_ref, norm_mg)
     if norm_mg == ".inst":
         return ("unknown", norm_ref, norm_mg)
     return ("wrong", norm_ref, norm_mg)
