@@ -1298,11 +1298,13 @@ class TestItem12OperandNormalizationRules(unittest.TestCase):
         self.assertTrue(op_norm.operands_equal("fmov", "d1, #1.00000000", "d1, #1"))
         self.assertTrue(op_norm.operands_equal("fcmp", "d8, #0.0", "d8, #0"))
         self.assertTrue(op_norm.operands_equal("fmov", "s0, #-0.12500000", "s0, #-0.125"))
-        self.assertTrue(op_norm.operands_equal("udf", "#0xc", "0x0000000c"))
+        self.assertTrue(op_norm.operands_equal("hint", "#16", "#0x10"))
 
     def test_o2_numeric_value_different(self):
         op_norm = self._mod()
         self.assertFalse(op_norm.operands_equal("ldr", "x8, [x1, #0x10]", "x8, [x1, #10]"))
+        self.assertFalse(op_norm.operands_equal("udf", "#0xc", "0xc"))
+        self.assertFalse(op_norm.operands_equal("udf", "#0xc", "0x0000000c"))
         # G48(a): signed negative immediate vs unsigned 64-bit bit-pattern must NOT compare equal
         self.assertFalse(op_norm.operands_equal("mov", "x8, #-0x3333333333333334", "x8, #0xcccccccccccccccc"))
         # G47: %.6g precision loss (0.132812 != 0.13281250) must NOT compare equal
@@ -1310,6 +1312,16 @@ class TestItem12OperandNormalizationRules(unittest.TestCase):
         # Register indices and vector arrangements are identifiers, not standalone numeric literals
         self.assertFalse(op_norm.operands_equal("mov", "v0.16b, v1.16b", "v0.0x10b, v1.16b"))
         self.assertFalse(op_norm.operands_equal("mov", "x1, x2", "x01, x2"))
+
+    def test_o2_hash_prefix_must_match(self):
+        op_norm = self._mod()
+        self.assertFalse(op_norm.operands_equal("udf", "#0xc", "0xc"))
+        self.assertFalse(op_norm.operands_equal("mov", "x0, #16", "x0, 0x10"))
+        self.assertTrue(op_norm.operands_equal("hint", "#16", "#0x10"))
+        self.assertTrue(op_norm.operands_equal("b", "16", "0x10"))
+        o2_rule = next(r for r in op_norm.OPERAND_NORMALIZATION_RULES if r["id"] == "O2")
+        self.assertIn("#", o2_rule["reason"])
+        self.assertIn("match", o2_rule["reason"].lower())
 
     def test_o3_adrp_comment_address_same(self):
         op_norm = self._mod()

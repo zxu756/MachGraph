@@ -30,7 +30,8 @@ OPERAND_NORMALIZATION_RULES = (
             "immediates, decimal for shifts/bitfields, both in hints, 16-zero '#0000000000000000' "
             "for movi.2d #0, 8-decimal-place floats like '#1.00000000'), whereas MachGraph uses "
             "decimal below 16, hex at 16+, and '%.6g' for floats. Signed integers (hex or decimal) "
-            "and floating-point literals are compared by exact mathematical value."
+            "and floating-point literals are compared by exact mathematical value; the '#' immediate "
+            "prefix is not part of the numeric value and must match on both sides."
         ),
     },
     {
@@ -140,7 +141,7 @@ def normalize_reference_operands(
 
 @functools.lru_cache(maxsize=65536)
 def canonicalize_operands(operands: str) -> Tuple[Tuple[str, Any], ...]:
-    """Canonicalize an operand string under O1 (whitespace/case) and O2 (exact numeric value)."""
+    """Canonicalize an operand string under O1 (whitespace/case) and O2 (exact numeric value, '#' must match)."""
     tokens = []
     for m in _TOKEN_RE.finditer(operands):
         kind = m.lastgroup
@@ -148,6 +149,8 @@ def canonicalize_operands(operands: str) -> Tuple[Tuple[str, Any], ...]:
         if kind == "ws":
             continue
         if kind == "num":
+            if val.startswith("#"):
+                tokens.append(("P", "#"))
             tokens.append(("NUM", _parse_numeric_token(val)))
         elif kind in ("ident", "alnum"):
             tokens.append(("ID", val.lower()))
