@@ -1516,5 +1516,409 @@ class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
             self.assertEqual(by_path[fake_bin2]["operand_mismatch"], 1)
 
 
+class TestItem14EncodingTableHarness(unittest.TestCase):
+    """M2 Stage 3: `encoding-table.py` table generation format, check exit codes (0/1/2), and mismatch reporting."""
+
+    def _mod(self):
+        return _load_script_module("encoding_table_mod", "encoding-table.py")
+
+    def _invoke(self, mod, argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        try:
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                rc = mod.main(argv)
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 1
+        return rc, out_buf.getvalue(), err_buf.getvalue()
+
+    def test_encoding_table_generate_format_and_shared_reference_command(self):
+        enc_table = self._mod()
+        self.assertIs(enc_table.build_reference_command, mnemonic_normalization.build_reference_command)
+
+        for required_group in ("move_wide_imm", "logical_imm", "load_store_reg_offset"):
+            self.assertIn(required_group, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[required_group].generate_words()
+            self.assertGreater(len(words), 0)
+            self.assertLessEqual(len(words), 4096)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table, ["generate", "move_wide_imm", "--out-dir", tmp]
+            )
+            self.assertEqual(rc, 0, f"generate failed: stdout={stdout_txt}\nstderr={stderr_txt}")
+
+            tsv_path = os.path.join(tmp, "move_wide_imm.tsv")
+            self.assertTrue(os.path.isfile(tsv_path))
+            with open(tsv_path, "r", encoding="utf-8") as fh:
+                raw_lines = fh.read().splitlines()
+
+            comment_lines = [ln for ln in raw_lines if ln.startswith("#")]
+            data_lines = [ln for ln in raw_lines if ln and not ln.startswith("#")]
+            joined_comments = "\n".join(comment_lines)
+
+            self.assertIn("Apple LLVM version", joined_comments)
+            self.assertIn("xcrun clang", joined_comments)
+            self.assertIn("--no-symbolic-operands", joined_comments)
+            self.assertIn("-mllvm=-aarch64-neon-syntax=generic", joined_comments)
+            self.assertIn("Scripts/acceptance/encoding-table.py generate move_wide_imm", joined_comments)
+
+            home_dir = os.path.expanduser("~")
+            self.assertNotIn(home_dir, "\n".join(raw_lines))
+            self.assertNotIn(tmp, "\n".join(raw_lines))
+
+            self.assertEqual(len(data_lines), 128)
+            seen_mnemonics = set()
+            for ln in data_lines:
+                parts = ln.split("\t", 2)
+                self.assertIn(len(parts), (2, 3), f"Malformed TSV row: {ln!r}")
+                self.assertRegex(parts[0], r"^0x[0-9a-f]{8}$")
+                self.assertTrue(parts[1].strip())
+                self.assertFalse(mnemonic_normalization.has_neon_arrangement_suffix(parts[1]))
+                seen_mnemonics.add(parts[1])
+
+            for expected_mnem in (".long", "mov", "movz", "movn", "movk"):
+                self.assertIn(expected_mnem, seen_mnemonics)
+
+    def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
+        enc_table = self._mod()
+
+        # Usage errors must return exit code 2
+        for bad_argv in (
+            [],
+            ["bogus_cmd", "move_wide_imm"],
+            ["generate"],
+            ["check"],
+            ["check", "nonexistent_group_name"],
+            ["check", "move_wide_imm", "--all"],
+            ["check", "--unknown-flag"],
+        ):
+            rc, _, _ = self._invoke(enc_table, bad_argv)
+            self.assertEqual(rc, 2, f"Expected exit code 2 for usage error argv={bad_argv}, got {rc}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Build a real 4-word table via clang + llvm-objdump (zero dependency on system binaries):
+            #   0xd503201f -> nop
+            #   0x32800001 -> .long 0x32800001 (unallocated Move Wide opc=01)
+            #   0xd2800201 -> mov x1, #0x10
+            #   0x91004041 -> add x1, x2, #0x10
+            sample_words = [0xD503201F, 0x32800001, 0xD2800201, 0x91004041]
+            tsv_path = os.path.join(tmp, "mini_group.tsv")
+            enc_table.write_reference_table(
+                words=sample_words,
+                output_path=tsv_path,
+                group_name="mini_group",
+                header_notes=["Test mini group generated via clang Mach-O"],
+            )
+
+            def make_disasm_stub(filename: str, rows_by_word: dict) -> str:
+                # Reads the compiled Mach-O via llvm-objdump or parses section to emit exact addresses,
+                # or simpler: uses otool/llvm-objdump -d --section=__TEXT,__text to find _main base address!
+                stub_path = os.path.join(tmp, filename)
+                with open(stub_path, "w", encoding="utf-8") as fh:
+                    fh.write(
+                        "#!/usr/bin/env python3\n"
+                        "import subprocess, sys\n"
+                        "bin_path = sys.argv[2]\n"
+                        "proc = subprocess.run(['xcrun', 'llvm-objdump', '--macho', '-d', '--arch=arm64e', '--section=__TEXT,__text', bin_path], capture_output=True, text=True, check=True)\n"
+                        "addrs = []\n"
+                        "for ln in proc.stdout.splitlines():\n"
+                        "    parts = ln.split('\\t')\n"
+                        "    if len(parts) >= 2 and parts[0].strip().endswith(':'):\n"
+                        "        try:\n"
+                        "            addrs.append(int(parts[0].strip()[:-1], 16))\n"
+                        "        except ValueError:\n"
+                        "            pass\n"
+                        f"rows = {rows_by_word!r}\n"
+                        "print(f'; Section __TEXT,__text @ 0x{addrs[0]:x}')\n"
+                        "for addr, (w_hex, mnem, ops) in zip(addrs, rows):\n"
+                        "    print(f'0x{addr:016x}\\t{w_hex}\\t{mnem}\\t{ops}')\n"
+                    )
+                os.chmod(stub_path, os.stat(stub_path).st_mode | stat.S_IXUSR)
+                return stub_path
+
+            # 1. All 4 rows match (including Rule 1 movz->mov and O2 #16 == #0x10 and .long -> .inst) -> exit 0
+            mg_ok = make_disasm_stub(
+                "mg_ok.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", ".inst", "0x32800001"),
+                    ("d2800201", "movz", "x1, #16"),
+                    ("91004041", "add", "x1, x2, #16"),
+                ],
+            )
+            rc_ok, out_ok, err_ok = self._invoke(
+                enc_table, ["check", "--table", tsv_path, "--machgraph", mg_ok]
+            )
+            self.assertEqual(rc_ok, 0, f"Expected exit 0 when all rows match:\n{out_ok}\n{err_ok}")
+
+            # 2. Reference `.long` decoded as non-`.inst` -> exit 1 and lists word + both sides
+            mg_bad_long = make_disasm_stub(
+                "mg_bad_long.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", "movn", "w1, #0"),
+                    ("d2800201", "movz", "x1, #16"),
+                    ("91004041", "add", "x1, x2, #16"),
+                ],
+            )
+            rc_long, out_long, err_long = self._invoke(
+                enc_table, ["check", "--table", tsv_path, "--machgraph", mg_bad_long]
+            )
+            self.assertEqual(rc_long, 1)
+            combined_long = out_long + "\n" + err_long
+            self.assertIn("0x32800001", combined_long)
+            self.assertIn(".long", combined_long)
+            self.assertIn("movn", combined_long)
+
+            # 3. Operand mismatch (missing '#' under tightened O2) -> exit 1 and lists word + both sides
+            mg_bad_op = make_disasm_stub(
+                "mg_bad_op.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", ".inst", "0x32800001"),
+                    ("d2800201", "movz", "x1, #16"),
+                    ("91004041", "add", "x1, x2, 16"),
+                ],
+            )
+            rc_op, out_op, err_op = self._invoke(
+                enc_table, ["check", "--table", tsv_path, "--machgraph", mg_bad_op]
+            )
+            self.assertEqual(rc_op, 1)
+            combined_op = out_op + "\n" + err_op
+            self.assertIn("0x91004041", combined_op)
+            self.assertIn("add x1, x2, #0x10", combined_op)
+            self.assertIn("add x1, x2, 16", combined_op)
+
+            # 4. Reference instruction decoded as `.inst` by MachGraph (`unknown`) -> exit 1
+            mg_unknown = make_disasm_stub(
+                "mg_unknown.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", ".inst", "0x32800001"),
+                    ("d2800201", "movz", "x1, #16"),
+                    ("91004041", ".inst", "0x91004041"),
+                ],
+            )
+            rc_unk, out_unk, err_unk = self._invoke(
+                enc_table, ["check", "--table", tsv_path, "--machgraph", mg_unknown]
+            )
+            self.assertEqual(rc_unk, 1)
+            self.assertIn("0x91004041", out_unk + "\n" + err_unk)
+
+            # 5. Oversized table (> 4096 rows) and headerless table -> exit 1
+            no_hdr_tsv = os.path.join(tmp, "no_header.tsv")
+            with open(no_hdr_tsv, "w", encoding="utf-8") as fh:
+                fh.write("0xd503201f\tnop\n")
+            rc_no_hdr, _, _ = self._invoke(
+                enc_table, ["check", "--table", no_hdr_tsv, "--machgraph", mg_ok]
+            )
+            self.assertEqual(rc_no_hdr, 1)
+
+            oversized_tsv = os.path.join(tmp, "oversized.tsv")
+            with open(oversized_tsv, "w", encoding="utf-8") as fh:
+                fh.write("# Reference tool version: Apple LLVM version 21.0.0\n")
+                fh.write("# Assembly command: xcrun clang -arch arm64e a.s -o a.macho\n")
+                fh.write("# Reference command: xcrun llvm-objdump --macho -d a.macho\n")
+                for _ in range(4097):
+                    fh.write("0xd503201f\tnop\n")
+            rc_over, _, _ = self._invoke(
+                enc_table, ["check", "--table", oversized_tsv, "--machgraph", mg_ok]
+            )
+            self.assertEqual(rc_over, 1)
+
+
+class TestItem15EncodingFuzzHarness(unittest.TestCase):
+    """M2 Stage 3: `encoding-fuzz.py` RNG determinism, 5-way bucket classification on clang Mach-O, and exit codes."""
+
+    def _mod(self):
+        return _load_script_module("encoding_fuzz_mod", "encoding-fuzz.py")
+
+    def _invoke(self, mod, argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        try:
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                rc = mod.main(argv)
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 1
+        return rc, out_buf.getvalue(), err_buf.getvalue()
+
+    def test_encoding_fuzz_seed_rng_and_five_way_classification_with_clang_macho(self):
+        import random as py_random
+
+        enc_fuzz = self._mod()
+        self.assertIs(enc_fuzz.build_reference_command, mnemonic_normalization.build_reference_command)
+
+        rng = py_random.Random()
+        rng.seed(17)
+        expected_words = [rng.getrandbits(32) for _ in range(10)]
+        self.assertEqual(enc_fuzz.generate_random_words(17, 10), expected_words)
+
+        # Controlled 6 words compiled into a real clang Mach-O (no dependency on system binaries):
+        #  0: 0xd503201f -> nop (agree, operand equal)
+        #  1: 0x91004041 -> add x1, x2, #0x10 (agree, operand equal with #16)
+        #  2: 0x32800001 -> .long 0x32800001 (both unrecognized: .long + .inst)
+        #  3: 0x4ee08420 -> add v0.2d, v1.2d, v0.2d (unknown: MG emits .inst, AdvSIMD vector three-register same)
+        #  4: 0x54000050 -> .long 0x54000050 (wrong: MG emits bc.eq)
+        #  5: 0xd2a00021 -> mov x1, #0x10000 (agree via Rule 1, operand mismatch: MG emits movz x1, #1, lsl #16)
+        controlled_words = [
+            0xD503201F,
+            0x91004041,
+            0x32800001,
+            0x4EE08420,
+            0x54000050,
+            0xD2A00021,
+        ]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            mg_rows = [
+                ("d503201f", "nop", ""),
+                ("91004041", "add", "x1, x2, #16"),
+                ("32800001", ".inst", "0x32800001"),
+                ("4ee08420", ".inst", "0x4ee08420"),
+                ("54000050", "bc.eq", "0x100000300"),
+                ("d2a00021", "movz", "x1, #1, lsl #16"),
+            ]
+            stub_mg = os.path.join(tmp, "fake_mg.py")
+            with open(stub_mg, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "#!/usr/bin/env python3\n"
+                    "import subprocess, sys\n"
+                    "bin_path = sys.argv[2]\n"
+                    "proc = subprocess.run(['xcrun', 'llvm-objdump', '--macho', '-d', '--arch=arm64e', '--section=__TEXT,__text', bin_path], capture_output=True, text=True, check=True)\n"
+                    "addrs = []\n"
+                    "for ln in proc.stdout.splitlines():\n"
+                    "    parts = ln.split('\\t')\n"
+                    "    if len(parts) >= 2 and parts[0].strip().endswith(':'):\n"
+                    "        try:\n"
+                    "            addrs.append(int(parts[0].strip()[:-1], 16))\n"
+                    "        except ValueError:\n"
+                    "            pass\n"
+                    f"rows = {mg_rows!r}\n"
+                    "print(f'; Section __TEXT,__text @ 0x{addrs[0]:x}')\n"
+                    "for addr, (w_hex, mnem, ops) in zip(addrs, rows):\n"
+                    "    print(f'0x{addr:016x}\\t{w_hex}\\t{mnem}\\t{ops}')\n"
+                )
+            os.chmod(stub_mg, os.stat(stub_mg).st_mode | stat.S_IXUSR)
+            json_out = os.path.join(tmp, "fuzz.json")
+
+            with mock.patch.object(enc_fuzz, "generate_random_words", return_value=controlled_words):
+                rc, out_txt, err_txt = self._invoke(
+                    enc_fuzz,
+                    ["--seed", "42", "--count", "6", "--machgraph", stub_mg, "--json-out", json_out],
+                )
+
+            self.assertEqual(rc, 1, f"Expected exit 1 when wrong>0 or operand_mismatch>0:\n{out_txt}\n{err_txt}")
+            with open(json_out, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+
+            summary = payload["summary"]
+            self.assertEqual(summary["seed"], 42)
+            self.assertEqual(summary["count"], 6)
+            self.assertEqual(summary["agreed_instructions"], 3)
+            self.assertEqual(summary["both_unrecognized"], 1)
+            self.assertEqual(summary["unknown_instructions"], 1)
+            self.assertEqual(summary["wrong_instructions"], 1)
+            self.assertEqual(summary["operand_compared"], 3)
+            self.assertEqual(summary["operand_equal"], 2)
+            self.assertEqual(summary["operand_mismatch"], 1)
+
+            unk_groups = {g["encoding_group"]: g["count"] for g in payload["unknown_by_encoding_group"]}
+            self.assertEqual(unk_groups, {"AdvSIMD vector three-register same": 1})
+
+            wrong_pairs = payload["wrong_by_mnemonic_pair"]
+            self.assertEqual(len(wrong_pairs), 1)
+            self.assertEqual(wrong_pairs[0]["llvm_mnemonic"], ".long")
+            self.assertEqual(wrong_pairs[0]["machgraph_mnemonic"], "bc.eq")
+            self.assertEqual(wrong_pairs[0]["count"], 1)
+
+            op_diffs = payload["operand_differences"]
+            self.assertEqual(len(op_diffs), 1)
+            self.assertEqual(op_diffs[0]["category"], "mov|movz: X, #N != X, #N, lsl #N")
+            self.assertEqual(op_diffs[0]["count"], 1)
+
+    def test_encoding_fuzz_exit_codes_0_1_2(self):
+        enc_fuzz = self._mod()
+
+        # Usage errors must exit 2
+        for bad_argv in (
+            [],
+            ["--seed", "17"],
+            ["--count", "10"],
+            ["--seed", "17", "--count", "0"],
+            ["--seed", "17", "--count", "-3"],
+            ["--seed", "notanint", "--count", "10"],
+            ["--seed", "17", "--count", "10", "--unknown-opt"],
+        ):
+            rc, _, _ = self._invoke(enc_fuzz, bad_argv)
+            self.assertEqual(rc, 2, f"Expected exit code 2 for usage error argv={bad_argv}, got {rc}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # 4 words where wrong==0 and operand_mismatch==0 (even with unknown==1 and both_unrecognized==1) -> exit 0!
+            words_clean = [0xD503201F, 0x32800001, 0x4EE08420, 0x91004041]
+
+            def make_mg(name, rows):
+                p = os.path.join(tmp, name)
+                with open(p, "w", encoding="utf-8") as fh:
+                    fh.write(
+                        "#!/usr/bin/env python3\n"
+                        "import subprocess, sys\n"
+                        "bin_path = sys.argv[2]\n"
+                        "proc = subprocess.run(['xcrun', 'llvm-objdump', '--macho', '-d', '--arch=arm64e', '--section=__TEXT,__text', bin_path], capture_output=True, text=True, check=True)\n"
+                        "addrs = []\n"
+                        "for ln in proc.stdout.splitlines():\n"
+                        "    parts = ln.split('\\t')\n"
+                        "    if len(parts) >= 2 and parts[0].strip().endswith(':'):\n"
+                        "        try:\n"
+                        "            addrs.append(int(parts[0].strip()[:-1], 16))\n"
+                        "        except ValueError:\n"
+                        "            pass\n"
+                        f"rows = {rows!r}\n"
+                        "print(f'; Section __TEXT,__text @ 0x{addrs[0]:x}')\n"
+                        "for addr, (w_hex, mnem, ops) in zip(addrs, rows):\n"
+                        "    print(f'0x{addr:016x}\\t{w_hex}\\t{mnem}\\t{ops}')\n"
+                    )
+                os.chmod(p, os.stat(p).st_mode | stat.S_IXUSR)
+                return p
+
+            mg_pass = make_mg(
+                "mg_pass.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", ".inst", "0x32800001"),
+                    ("4ee08420", ".inst", "0x4ee08420"),
+                    ("91004041", "add", "x1, x2, #16"),
+                ],
+            )
+            with mock.patch.object(enc_fuzz, "generate_random_words", return_value=words_clean):
+                rc_pass, out_pass, err_pass = self._invoke(
+                    enc_fuzz, ["--seed", "1", "--count", "4", "--machgraph", mg_pass]
+                )
+            self.assertEqual(rc_pass, 0, f"Expected exit 0 when wrong==0 and operand_mismatch==0:\n{out_pass}\n{err_pass}")
+
+            # Operand mismatch alone (wrong==0, operand_mismatch==1) -> exit 1
+            mg_op_fail = make_mg(
+                "mg_op_fail.py",
+                [
+                    ("d503201f", "nop", ""),
+                    ("32800001", ".inst", "0x32800001"),
+                    ("4ee08420", ".inst", "0x4ee08420"),
+                    ("91004041", "add", "x1, x2, #99"),
+                ],
+            )
+            with mock.patch.object(enc_fuzz, "generate_random_words", return_value=words_clean):
+                rc_op_fail, _, _ = self._invoke(
+                    enc_fuzz, ["--seed", "1", "--count", "4", "--machgraph", mg_op_fail]
+                )
+            self.assertEqual(rc_op_fail, 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
