@@ -1259,5 +1259,114 @@ class TestItem11ReferenceLongMachGraphInstBucket(unittest.TestCase):
             self.assertEqual(mnemonic_agreement.main(), 1)
 
 
+class TestItem12OperandNormalizationRules(unittest.TestCase):
+    """M2 Stage 2: `operand_normalization.py` implements only O1-O4, each with positive and negative tests."""
+
+    def _mod(self):
+        return _load_script_module("operand_normalization_mod", "operand_normalization.py")
+
+    def test_rule_table_has_only_o1_through_o4_and_cannot_grow(self):
+        op_norm = self._mod()
+        self.assertTrue(hasattr(op_norm, "OPERAND_NORMALIZATION_RULES"))
+        self.assertLessEqual(len(op_norm.OPERAND_NORMALIZATION_RULES), 4)
+        self.assertEqual(len(op_norm.OPERAND_NORMALIZATION_RULES), 4)
+        self.assertLessEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
+        ids = [r["id"] for r in op_norm.OPERAND_NORMALIZATION_RULES]
+        self.assertEqual(ids, ["O1", "O2", "O3", "O4"])
+        for rule in op_norm.OPERAND_NORMALIZATION_RULES:
+            self.assertTrue(rule.get("reason", "").strip(), f"Rule {rule['id']} must document its rationale")
+
+    def test_o1_whitespace_and_case_same(self):
+        op_norm = self._mod()
+        self.assertTrue(op_norm.operands_equal("st1", "{ v0.h }[1], [x8], #2", "{v0.h}[1],[X8],#2"))
+        self.assertTrue(op_norm.operands_equal("st2", "{ v1.16b, v2.16b }, [x11]", "{v1.16b,v2.16b}, [x11]"))
+        self.assertTrue(op_norm.operands_equal("mrs", "x0, TPIDRRO_EL0", "X0, tpidrro_el0"))
+
+    def test_o1_whitespace_and_case_different(self):
+        op_norm = self._mod()
+        self.assertFalse(op_norm.operands_equal("st1", "{ v0.h }[1], [x8]", "v0.h[1], [x8]"))
+        self.assertFalse(op_norm.operands_equal("add", "x0, x1, x2", "x0, x1, x3"))
+        self.assertFalse(op_norm.operands_equal("add", "x0, x1, x2, lsl #2", "x0, x1, x2, lsr #2"))
+        self.assertFalse(op_norm.operands_equal("add", "lsl x0", "lslx0"))
+
+    def test_o2_numeric_value_same(self):
+        op_norm = self._mod()
+        self.assertTrue(op_norm.operands_equal("ldr", "x8, [x1, #0x10]", "x8, [x1, #16]"))
+        self.assertTrue(op_norm.operands_equal("stp", "x29, x30, [sp, #-0x10]!", "x29, x30, [sp, #-16]!"))
+        self.assertTrue(op_norm.operands_equal("hint", "#0x9", "#9"))
+        self.assertTrue(op_norm.operands_equal("movi", "v0.2d, #0000000000000000", "v0.2d, #0"))
+        self.assertTrue(op_norm.operands_equal("fmov", "d1, #1.00000000", "d1, #1"))
+        self.assertTrue(op_norm.operands_equal("fcmp", "d8, #0.0", "d8, #0"))
+        self.assertTrue(op_norm.operands_equal("fmov", "s0, #-0.12500000", "s0, #-0.125"))
+        self.assertTrue(op_norm.operands_equal("udf", "#0xc", "0x0000000c"))
+
+    def test_o2_numeric_value_different(self):
+        op_norm = self._mod()
+        self.assertFalse(op_norm.operands_equal("ldr", "x8, [x1, #0x10]", "x8, [x1, #10]"))
+        # G48(a): signed negative immediate vs unsigned 64-bit bit-pattern must NOT compare equal
+        self.assertFalse(op_norm.operands_equal("mov", "x8, #-0x3333333333333334", "x8, #0xcccccccccccccccc"))
+        # G47: %.6g precision loss (0.132812 != 0.13281250) must NOT compare equal
+        self.assertFalse(op_norm.operands_equal("fmov", "d0, #0.13281250", "d0, #0.132812"))
+        # Register indices and vector arrangements are identifiers, not standalone numeric literals
+        self.assertFalse(op_norm.operands_equal("mov", "v0.16b, v1.16b", "v0.0x10b, v1.16b"))
+        self.assertFalse(op_norm.operands_equal("mov", "x1, x2", "x01, x2"))
+
+    def test_o3_adrp_comment_address_same(self):
+        op_norm = self._mod()
+        self.assertTrue(
+            op_norm.operands_equal("adrp", "x8, 12 ; 0x10000c000", "x8, 0x10000c000", address=0x10000075C)
+        )
+        self.assertTrue(
+            op_norm.operands_equal("adrp", "x16, -1 ; 0x100000000", "x16, 0x100000000", address=0x100001220)
+        )
+
+    def test_o3_adrp_comment_address_different(self):
+        op_norm = self._mod()
+        self.assertFalse(
+            op_norm.operands_equal("adrp", "x8, 12 ; 0x10000d000", "x8, 0x10000c000", address=0x10000075C)
+        )
+        self.assertFalse(
+            op_norm.operands_equal("adrp", "x9, 12 ; 0x10000c000", "x8, 0x10000c000", address=0x10000075C)
+        )
+        self.assertFalse(
+            op_norm.operands_equal("adrp", "x8, 12", "x8, 0x10000c000", address=0x10000075C)
+        )
+        self.assertFalse(
+            op_norm.operands_equal("adrp", "x8, _foo@PAGE ; 0x10000c000", "x8, 0x10000c000", address=0x10000075C)
+        )
+        self.assertFalse(
+            op_norm.operands_equal("add", "x8, #12 ; 0x10000c000", "x8, 0x10000c000", address=0x10000075C)
+        )
+
+    def test_o4_pc_relative_offset_same(self):
+        op_norm = self._mod()
+        self.assertTrue(op_norm.operands_equal("adr", "x17, #0", "x17, 0x100000b28", address=0x100000B28))
+        self.assertTrue(op_norm.operands_equal("adr", "x3, #-60", "x3, 0x00001720", address=0x175C))
+        self.assertTrue(op_norm.operands_equal("ldr", "x10, #-0x2ce08", "x10, 0x1000031f8", address=0x100030000))
+        self.assertTrue(op_norm.operands_equal("ldr", "q24, 0x11a0", "q24, 0x000011a0", address=0x11EC))
+        self.assertTrue(op_norm.operands_equal("ldrsw", "x8, #0x40", "x8, 0x100001040", address=0x100001000))
+        self.assertTrue(
+            op_norm.operands_equal("prfm", "pldl1keep, #-0x20", "pldl1keep, 0x100000fe0", address=0x100001000)
+        )
+
+    def test_o4_pc_relative_offset_different(self):
+        op_norm = self._mod()
+        self.assertFalse(op_norm.operands_equal("adr", "x17, #4", "x17, 0x100000b28", address=0x100000B28))
+        self.assertFalse(op_norm.operands_equal("ldr", "x10, #-0x2ce08", "x10, 0x1000031fc", address=0x100030000))
+        # Post-indexed bracketed ldr must NEVER add PC to the writeback immediate
+        self.assertFalse(op_norm.operands_equal("ldr", "x8, [x1], #8", "x8, [x1], 0x1008", address=0x1000))
+        # Non-PC-relative instructions must NEVER add PC to #imm
+        self.assertFalse(op_norm.operands_equal("add", "x0, #0x10", "x0, 0x1010", address=0x1000))
+
+    def test_outside_rules_remain_different(self):
+        op_norm = self._mod()
+        self.assertFalse(op_norm.operands_equal("mov", "w0, #-0x1", "w0, #0"))
+        self.assertFalse(op_norm.operands_equal("sub", "x19, sp, x23, lsl #4", "x19, sp, x23, uxtx #4"))
+        self.assertFalse(op_norm.operands_equal("ldrb", "w18, [x0, w1, sxtw #0]", "w18, [x0, w1, sxtw]"))
+        self.assertFalse(op_norm.operands_equal("sysl", "x21, #0x1, c15, c1, #0x3", "#1, c15, c1, #3, x21"))
+        self.assertFalse(op_norm.operands_equal("csel", "x0, x1, x2, cs", "x0, x1, x2, hs"))
+        self.assertFalse(op_norm.operands_equal("bl", "_malloc", "0x1000042ec"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
