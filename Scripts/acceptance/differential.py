@@ -8,9 +8,13 @@ Usage:
 Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32 / G42 / D-M2-1):
   xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
 
-Normalization rules: imported from `mnemonic_normalization.py` (only the two
-narrow rules remaining in M2 Stage 1: `movz`/`movn` == `mov`, `udf` == `.inst`;
-generic Neon syntax is enforced on reference output).
+Normalization rules:
+  - Mnemonics: imported from `mnemonic_normalization.py` (only the two narrow
+    rules remaining in M2 Stage 1: `movz`/`movn` == `mov`, `udf` == `.inst`;
+    generic Neon syntax is enforced on reference output).
+  - Operands: imported from `operand_normalization.py` (rules O1-O4 only,
+    evaluated on every mnemonic-agreed instruction without affecting mnemonic
+    counts or pass/fail exit status).
 
 Exit status:
   0 when crashes/failures == 0, missing_addresses == 0, and wrong_instructions == 0
@@ -45,6 +49,12 @@ from mnemonic_normalization import (  # noqa: E402
     find_non_generic_neon_mnemonic,
     verify_reference_generic_neon_syntax,
 )
+from operand_normalization import (  # noqa: E402
+    OPERAND_NORMALIZATION_RULES,
+    OPERAND_NORMALIZATION_SUMMARY,
+    operand_shape_for_category,
+    operands_equal,
+)
 
 QUICK_FILES = ["/bin/ls"]
 STANDARD_FILES = ["/bin/ls", "/usr/bin/ssh", "/usr/bin/vim"]
@@ -68,6 +78,8 @@ MACHO_MAGICS = {
 PER_FILE_TIMEOUT_SECONDS = 60
 PER_MIB_TIMEOUT_SECONDS = 5.0
 MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
+MAX_OPERAND_EXAMPLES_PER_CATEGORY = 5
+MAX_PRINTED_OPERAND_CATEGORIES = 10
 _REF_INSN_RE = re.compile(r"^\s*([0-9a-fA-F]+):\t(\S+)(?:\t(.*))?$")
 _NUMBER_SHAPE_RE = re.compile(r"(?:0x[0-9a-fA-F]+|\d+)")
 
@@ -213,7 +225,7 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
             "timed_out": False,
         }
 
-    ref_map: Dict[int, Tuple[str, str]] = {}
+    ref_map: Dict[int, Tuple[str, str, str]] = {}
     for line in ref_text.splitlines():
         if line.strip() == "Contents of (__TEXT,__text) section":
             break
@@ -221,10 +233,11 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         if m:
             addr = int(m.group(1), 16)
             raw_mnem = m.group(2).lower()
-            raw_ops = (m.group(3) or "").split(";")[0].strip()
-            ref_map[addr] = (raw_mnem, raw_ops)
+            raw_full_ops = (m.group(3) or "").strip()
+            raw_ops = raw_full_ops.split(";", 1)[0].strip()
+            ref_map[addr] = (raw_mnem, raw_ops, raw_full_ops)
 
-    bad_neon = find_non_generic_neon_mnemonic((addr, mnem) for addr, (mnem, _ops) in ref_map.items())
+    bad_neon = find_non_generic_neon_mnemonic((addr, mnem) for addr, (mnem, _ops, _full_ops) in ref_map.items())
     if bad_neon is not None:
         bad_addr, bad_mnem = bad_neon
         return {
@@ -325,6 +338,8 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         }
 
     agree = 0
+    operand_compared = 0
+    operand_equal = 0
     ref_long_mg_inst = 0
     missing = 0
     missing_examples: List[Dict[str, str]] = []
@@ -333,8 +348,10 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
     wrong_pair_examples: Dict[Tuple[str, str], Dict[str, str]] = {}
     wrong_shape_counter: collections.Counter = collections.Counter()
     wrong_shape_examples: Dict[str, Dict[str, str]] = {}
+    operand_diff_counter: collections.Counter = collections.Counter()
+    operand_diff_examples: Dict[str, List[Dict[str, str]]] = {}
 
-    for addr, (raw_ref_mnem, raw_ref_ops) in ref_map.items():
+    for addr, (raw_ref_mnem, raw_ref_ops, raw_ref_full_ops) in ref_map.items():
         got = mine_text.get(addr)
         if got is None:
             missing += 1
@@ -351,6 +368,30 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         kind, norm_ref, norm_mg = classify_mnemonic_pair(raw_ref_mnem, mg_mnem)
         if kind == "agree":
             agree += 1
+            operand_compared += 1
+            if operands_equal(norm_ref, raw_ref_full_ops, mg_ops, address=addr):
+                operand_equal += 1
+            else:
+                ref_sh = operand_shape_for_category(raw_ref_ops)
+                mg_sh = operand_shape_for_category(mg_ops)
+                cat_key = f"{norm_ref}|{norm_mg}|{ref_sh}|{mg_sh}"
+                operand_diff_counter[cat_key] += 1
+                ex_list = operand_diff_examples.setdefault(cat_key, [])
+                if len(ex_list) < MAX_OPERAND_EXAMPLES_PER_CATEGORY:
+                    ref_disp_ops = (
+                        raw_ref_full_ops
+                        if (norm_ref == "adrp" and ";" in raw_ref_full_ops)
+                        else raw_ref_ops
+                    )
+                    ex_list.append(
+                        {
+                            "file": path,
+                            "address": hex(addr),
+                            "word": raw_word_hex,
+                            "llvm": f"{raw_ref_mnem} {ref_disp_ops}".strip(),
+                            "machgraph": f"{mg_mnem} {mg_ops}".strip(),
+                        }
+                    )
         elif kind == "reference_long_machgraph_inst":
             ref_long_mg_inst += 1
         elif kind == "unknown":
@@ -400,6 +441,9 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         "arch": arch,
         "total": len(ref_map),
         "agree": agree,
+        "operand_compared": operand_compared,
+        "operand_equal": operand_equal,
+        "operand_mismatch": operand_compared - operand_equal,
         "unknown_total": sum(unknown_counter.values()),
         "reference_long_machgraph_inst": ref_long_mg_inst,
         "wrong_total": sum(wrong_pair_counter.values()),
@@ -412,6 +456,8 @@ def compare_one_binary(path: str, machgraph_bin: str, isolated_home: str) -> Dic
         "wrong_pair_examples": {f"{k[0]}|{k[1]}": v for k, v in wrong_pair_examples.items()},
         "wrong_shapes": dict(wrong_shape_counter),
         "wrong_shape_examples": wrong_shape_examples,
+        "operand_diffs": dict(operand_diff_counter),
+        "operand_diff_examples": operand_diff_examples,
         "non_utf8_reference": non_utf8_ref,
         "non_utf8_machgraph": non_utf8_mg,
         "exit_code": 0,
@@ -541,6 +587,10 @@ def main() -> int:
 
     total_insns = 0
     total_agree = 0
+    total_operand_compared = 0
+    total_operand_equal = 0
+    total_operand_mismatch = 0
+    operand_mismatch_files = 0
     total_unknown = 0
     total_ref_long_mg_inst = 0
     ref_long_mg_inst_files = 0
@@ -562,6 +612,10 @@ def main() -> int:
     wrong_shape_files: Dict[str, int] = collections.defaultdict(int)
     wrong_shape_example: Dict[str, Dict[str, str]] = {}
 
+    operand_diff_counts: collections.Counter = collections.Counter()
+    operand_diff_files: Dict[str, int] = collections.defaultdict(int)
+    operand_diff_examples: Dict[str, List[Dict[str, str]]] = {}
+
     unknown_counts: collections.Counter = collections.Counter()
     unknown_files: Dict[str, int] = collections.defaultdict(int)
 
@@ -580,6 +634,7 @@ def main() -> int:
         f"(worktree_clean={env_meta['worktree_clean']})"
     )
     print(f"Rules ({len(NORMALIZATION_RULES)}):    {NORMALIZATION_SUMMARY}")
+    print(f"Operand rules ({len(OPERAND_NORMALIZATION_RULES)}): {OPERAND_NORMALIZATION_SUMMARY}")
     print("")
 
     for r in rows:
@@ -613,6 +668,14 @@ def main() -> int:
 
         total_insns += r["total"]
         total_agree += r["agree"]
+        row_op_compared = r.get("operand_compared", r["agree"])
+        row_op_equal = r.get("operand_equal", row_op_compared)
+        row_op_mismatch = r.get("operand_mismatch", row_op_compared - row_op_equal)
+        total_operand_compared += row_op_compared
+        total_operand_equal += row_op_equal
+        total_operand_mismatch += row_op_mismatch
+        if row_op_mismatch > 0:
+            operand_mismatch_files += 1
         total_unknown += r["unknown_total"]
         row_ref_long_mg_inst = r.get("reference_long_machgraph_inst", 0)
         total_ref_long_mg_inst += row_ref_long_mg_inst
@@ -641,6 +704,15 @@ def main() -> int:
             wrong_shape_files[k] += 1
             wrong_shape_example.setdefault(k, r["wrong_shape_examples"][k])
 
+        for cat_key, cnt in r.get("operand_diffs", {}).items():
+            operand_diff_counts[cat_key] += cnt
+            operand_diff_files[cat_key] += 1
+            ex_dst = operand_diff_examples.setdefault(cat_key, [])
+            for ex_item in r.get("operand_diff_examples", {}).get(cat_key, ()):
+                if len(ex_dst) >= MAX_OPERAND_EXAMPLES_PER_CATEGORY:
+                    break
+                ex_dst.append(ex_item)
+
         for k, cnt in r["unknown"].items():
             unknown_counts[k] += cnt
             unknown_files[k] += 1
@@ -653,11 +725,13 @@ def main() -> int:
                 )
 
         file_pct = (100.0 * r["agree"] / r["total"]) if r["total"] else 100.0
+        op_file_pct = (100.0 * row_op_equal / row_op_compared) if row_op_compared else 100.0
         if print_each_file or r["wrong_total"] > 0 or r["missing"] > 0:
             tag = "PASS" if (r["wrong_total"] == 0 and r["missing"] == 0) else "FAIL"
             print(
                 f"[{tag}] {path} ({r['arch']}): total={r['total']} agree={r['agree']} "
-                f"({file_pct:.2f}%) unknown={r['unknown_total']} "
+                f"({file_pct:.2f}%) operand_equal={row_op_equal}/{row_op_compared} ({op_file_pct:.2f}%) "
+                f"unknown={r['unknown_total']} "
                 f"ref_long_mg_inst={row_ref_long_mg_inst} wrong={r['wrong_total']} "
                 f"missing={r['missing']} mg_only_inst={r['machgraph_only_inst']} ({r['seconds']:.2f}s)"
             )
@@ -668,6 +742,9 @@ def main() -> int:
                 "arch": r["arch"],
                 "instructions": r["total"],
                 "agree": r["agree"],
+                "operand_compared": row_op_compared,
+                "operand_equal": row_op_equal,
+                "operand_mismatch": row_op_mismatch,
                 "unknown": r["unknown_total"],
                 "reference_long_machgraph_inst": row_ref_long_mg_inst,
                 "wrong": r["wrong_total"],
@@ -683,6 +760,7 @@ def main() -> int:
     overall_pct = (100.0 * total_agree / total_insns) if total_insns else 0.0
     recognized_pct = (100.0 * total_agree / recognized_insns) if recognized_insns else 0.0
     unknown_pct = (100.0 * total_unknown / total_insns) if total_insns else 0.0
+    operand_pct = (100.0 * total_operand_equal / total_operand_compared) if total_operand_compared else 0.0
 
     wrong_pair_list = []
     for k, cnt in wrong_pair_counts.most_common():
@@ -705,6 +783,24 @@ def main() -> int:
                 "count": cnt,
                 "file_count": wrong_shape_files[s_key],
                 "example": wrong_shape_example[s_key],
+            }
+        )
+
+    operand_diff_list = []
+    for cat_key, cnt in sorted(operand_diff_counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        llvm_m, mg_m, llvm_sh, mg_sh = cat_key.split("|", 3)
+        examples = operand_diff_examples[cat_key]
+        operand_diff_list.append(
+            {
+                "category": f"{llvm_m}|{mg_m}: {llvm_sh} != {mg_sh}",
+                "llvm_mnemonic": llvm_m,
+                "machgraph_mnemonic": mg_m,
+                "llvm_shape": llvm_sh,
+                "machgraph_shape": mg_sh,
+                "count": cnt,
+                "file_count": operand_diff_files[cat_key],
+                "example": examples[0],
+                "examples": examples,
             }
         )
 
@@ -740,6 +836,27 @@ def main() -> int:
         f"wrong={total_wrong} "
         f"machgraph_only_inst={total_mg_only_inst} (files={mg_only_inst_files})"
     )
+    print(
+        f"       operands={total_operand_equal}/{total_operand_compared} "
+        f"({operand_pct:.4f}%) mismatch={total_operand_mismatch} (files={operand_mismatch_files})"
+    )
+    if operand_diff_list:
+        shown = operand_diff_list[:MAX_PRINTED_OPERAND_CATEGORIES]
+        hdr_suffix = (
+            f" (top {len(shown)} of {len(operand_diff_list)})"
+            if len(operand_diff_list) > len(shown)
+            else f" ({len(operand_diff_list)})"
+        )
+        print(f"       operand difference categories{hdr_suffix}:")
+        for item in shown:
+            print(
+                f"         - {item['category']}: count={item['count']} files={item['file_count']}"
+            )
+            for ex in item["examples"][:3]:
+                print(
+                    f"             {ex['file']} @ {ex['address']} [{ex['word']}] "
+                    f"machgraph='{ex['machgraph']}' vs llvm='{ex['llvm']}'"
+                )
 
     if wrong_pair_list:
         print("       wrong mnemonic categories (llvm != machgraph):", file=sys.stderr)
@@ -768,6 +885,7 @@ def main() -> int:
         "environment": env_meta,
         "reference_command": REFERENCE_COMMAND_TEMPLATE,
         "normalization_rules": list(NORMALIZATION_RULES),
+        "operand_normalization_rules": list(OPERAND_NORMALIZATION_RULES),
         "summary": {
             "candidate_macho_files": len(candidates),
             "compared_files": compared_files,
@@ -781,6 +899,11 @@ def main() -> int:
             "total_instructions": total_insns,
             "recognized_instructions": recognized_insns,
             "agreed_instructions": total_agree,
+            "operand_compared": total_operand_compared,
+            "operand_equal": total_operand_equal,
+            "operand_mismatch": total_operand_mismatch,
+            "operand_mismatch_files": operand_mismatch_files,
+            "operand_agreement_pct": round(operand_pct, 6),
             "unknown_instructions": total_unknown,
             "reference_long_machgraph_inst": total_ref_long_mg_inst,
             "reference_long_machgraph_inst_files": ref_long_mg_inst_files,
@@ -799,6 +922,7 @@ def main() -> int:
         "ceiling_violations": ceiling_violations,
         "wrong_by_mnemonic_pair": wrong_pair_list,
         "wrong_by_shape": wrong_shape_list,
+        "operand_differences": operand_diff_list,
         "unknown_by_reference_mnemonic": unknown_list,
         "files": compact_files,
     }

@@ -1368,5 +1368,141 @@ class TestItem12OperandNormalizationRules(unittest.TestCase):
         self.assertFalse(op_norm.operands_equal("bl", "_malloc", "0x1000042ec"))
 
 
+class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
+    """M2 Stage 2: `differential.py` compares operands on agreed mnemonics and reports counts, categories, and examples."""
+
+    def test_differential_compares_agreed_operands_records_categories_and_examples_without_changing_verdict(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin1 = os.path.join(tmp, "op1.bin")
+            fake_bin2 = os.path.join(tmp, "op2.bin")
+            for p in (fake_bin1, fake_bin2):
+                with open(p, "wb") as fh:
+                    fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+
+            ref_b1 = (
+                b"\nop1.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"1000:\tadrp\tx8, 12 ; 0x10000c000\n"
+                b"1004:\tadr\tx17, #-4\n"
+                b"1008:\tldr\tx10, #0x20\n"
+                b"100c:\tst1\t{ v0.h }[1], [x8], #0x2\n"
+                b"1010:\tfmov\td1, #1.00000000\n"
+                b"1014:\tmov\tw0, #-0x1\n"
+                b"1018:\tmov\tw2, #-0x2\n"
+                b"101c:\tmov\tx8, #-0x3333333333333334\n"
+                b"1020:\t.long\t0xffffff64\n"
+                b"1024:\tadd\tv0.2d, v1.2d, v0.2d\n"
+            )
+            ref_b2 = (
+                b"\nop2.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n"
+                b"2000:\tnop\n"
+                b"2004:\tmov\tw5, #-0x1\n"
+            )
+            mg_script = os.path.join(tmp, "fake-mg.py")
+            with open(mg_script, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "#!/usr/bin/env python3\n"
+                    "import sys\n"
+                    "target = sys.argv[2]\n"
+                    "print('; Section __TEXT,__text @ 0x1000')\n"
+                    "if target.endswith('op1.bin'):\n"
+                    "    print('0x0000000000001000\\t90000068\\tadrp\\tx8, 0x10000c000')\n"
+                    "    print('0x0000000000001004\\t10fffff1\\tadr\\tx17, 0x00001000')\n"
+                    "    print('0x0000000000001008\\t5800010a\\tldr\\tx10, 0x00001028')\n"
+                    "    print('0x000000000000100c\\t0d9f4100\\tst1\\t{v0.h}[1], [X8], #2')\n"
+                    "    print('0x0000000000001010\\t1e6e1001\\tfmov\\td1, #1')\n"
+                    "    print('0x0000000000001014\\t12800000\\tmovn\\tw0, #0')\n"
+                    "    print('0x0000000000001018\\t12800022\\tmovn\\tw2, #1')\n"
+                    "    print('0x000000000000101c\\tb202e7e8\\tmov\\tx8, #0xcccccccccccccccc')\n"
+                    "    print('0x0000000000001020\\tffffff64\\t.inst\\t0xffffff64')\n"
+                    "    print('0x0000000000001024\\t4ee08420\\t.inst\\t0x4ee08420')\n"
+                    "else:\n"
+                    "    print('0x0000000000002000\\td503201f\\tnop\\t')\n"
+                    "    print('0x0000000000002004\\t12800005\\tmovn\\tw5, #0')\n"
+                )
+            os.chmod(mg_script, os.stat(mg_script).st_mode | stat.S_IXUSR)
+            report_json = os.path.join(tmp, "report.json")
+            real_run = subprocess.run
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd and cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if len(cmd) >= 2 and cmd[0] == "xcrun" and cmd[1] == "llvm-objdump":
+                    if "--version" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"Apple LLVM version 21.0.0\n", stderr=b"")
+                    if "/bin/ls" in cmd:
+                        return real_run(cmd, *args, **kwargs)
+                    if cmd[-1].endswith("op1.bin"):
+                        return subprocess.CompletedProcess(cmd, 0, stdout=ref_b1, stderr=b"")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=ref_b2, stderr=b"")
+                return real_run(cmd, *args, **kwargs)
+
+            out_buf = io.StringIO()
+            with mock.patch.object(differential.subprocess, "run", side_effect=fake_run), mock.patch.object(
+                sys,
+                "argv",
+                ["differential.py", fake_bin1, fake_bin2, "--workers", "1", "--machgraph", mg_script, "--json-out", report_json],
+            ), redirect_stdout(out_buf), redirect_stderr(io.StringIO()):
+                rc = differential.main()
+
+            stdout_txt = out_buf.getvalue()
+            self.assertEqual(rc, 0, f"Operand differences must not alter mnemonic pass verdict:\n{stdout_txt}")
+            self.assertIn("operands=6/10 (60.0000%) mismatch=4 (files=2)", stdout_txt)
+
+            with open(report_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+
+            self.assertEqual(payload["verdict"], "PASS")
+            self.assertEqual(len(payload["operand_normalization_rules"]), 4)
+
+            summary = payload["summary"]
+            self.assertEqual(summary["total_instructions"], 12)
+            self.assertEqual(summary["agreed_instructions"], 10)
+            self.assertEqual(summary["unknown_instructions"], 1)
+            self.assertEqual(summary["reference_long_machgraph_inst"], 1)
+            self.assertEqual(summary["wrong_instructions"], 0)
+            self.assertEqual(summary["operand_compared"], 10)
+            self.assertEqual(summary["operand_equal"], 6)
+            self.assertEqual(summary["operand_mismatch"], 4)
+            self.assertEqual(summary["operand_mismatch_files"], 2)
+            self.assertEqual(summary["operand_agreement_pct"], 60.0)
+
+            diffs = payload["operand_differences"]
+            self.assertEqual(len(diffs), 2)
+
+            d0 = diffs[0]
+            self.assertEqual(d0["llvm_mnemonic"], "mov")
+            self.assertEqual(d0["machgraph_mnemonic"], "movn")
+            self.assertEqual(d0["llvm_shape"], "W, #-N")
+            self.assertEqual(d0["machgraph_shape"], "W, #N")
+            self.assertEqual(d0["count"], 3)
+            self.assertEqual(d0["file_count"], 2)
+            self.assertEqual(len(d0["examples"]), 3)
+            self.assertEqual(d0["examples"][0]["address"], "0x1014")
+            self.assertEqual(d0["examples"][0]["llvm"], "mov w0, #-0x1")
+            self.assertEqual(d0["examples"][0]["machgraph"], "movn w0, #0")
+            self.assertEqual(d0["examples"][1]["address"], "0x1018")
+            self.assertEqual(d0["examples"][2]["address"], "0x2004")
+
+            d1 = diffs[1]
+            self.assertEqual(d1["llvm_mnemonic"], "mov")
+            self.assertEqual(d1["machgraph_mnemonic"], "mov")
+            self.assertEqual(d1["llvm_shape"], "X, #-N")
+            self.assertEqual(d1["machgraph_shape"], "X, #N")
+            self.assertEqual(d1["count"], 1)
+            self.assertEqual(d1["file_count"], 1)
+            self.assertEqual(d1["examples"][0]["address"], "0x101c")
+
+            by_path = {f["path"]: f for f in payload["files"]}
+            self.assertEqual(by_path[fake_bin1]["operand_compared"], 8)
+            self.assertEqual(by_path[fake_bin1]["operand_equal"], 5)
+            self.assertEqual(by_path[fake_bin1]["operand_mismatch"], 3)
+            self.assertEqual(by_path[fake_bin2]["operand_compared"], 2)
+            self.assertEqual(by_path[fake_bin2]["operand_equal"], 1)
+            self.assertEqual(by_path[fake_bin2]["operand_mismatch"], 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
