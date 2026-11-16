@@ -39,8 +39,9 @@ class TestItem1MachOReferenceCommand(unittest.TestCase):
 
     def test_shared_reference_command_has_macho_and_handles_thin_macho(self):
         expected_template = (
-            "xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> "
-            "--mcpu=apple-m1 --mattr=+bti --section=__TEXT,__text <file>"
+            "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
+            "--arch=<slice> --mcpu=apple-m1 --mattr=+bti "
+            "-mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>"
         )
         self.assertTrue(
             hasattr(mnemonic_normalization, "REFERENCE_COMMAND_TEMPLATE"),
@@ -838,6 +839,96 @@ class TestItem8MnemonicAgreementMinimumReferenceFloor(unittest.TestCase):
         ):
             self.assertEqual(mnemonic_agreement.main(), 0)
         self.assertIn("[PASS]", out_100.getvalue())
+
+
+class TestItem9M2ReferenceCommandFlags(unittest.TestCase):
+    """M2 Stage 1 (D-M2-1, G53, G54): reference command adds --no-symbolic-operands and generic Neon syntax."""
+
+    def test_reference_command_flags_and_json_report_field(self):
+        import io
+        from contextlib import redirect_stdout, redirect_stderr
+
+        expected_template = (
+            "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
+            "--arch=<slice> --mcpu=apple-m1 --mattr=+bti "
+            "-mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>"
+        )
+        cmd = mnemonic_normalization.build_reference_command("/bin/ls", "arm64e")
+        self.assertEqual(
+            cmd,
+            [
+                "xcrun",
+                "llvm-objdump",
+                "--macho",
+                "-d",
+                "--no-show-raw-insn",
+                "--no-symbolic-operands",
+                "--arch=arm64e",
+                "--mcpu=apple-m1",
+                "--mattr=+bti",
+                "-mllvm=-aarch64-neon-syntax=generic",
+                "--section=__TEXT,__text",
+                "/bin/ls",
+            ],
+        )
+
+        # Verify JSON report records the updated reference_command field verbatim
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_bin = os.path.join(tmp, "sample.bin")
+            with open(fake_bin, "wb") as fh:
+                fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+            mg_out = "; Section __TEXT,__text @ 0x1000\n0x0000000000001000\td503201f\tnop\t\n"
+            fake_mg = _make_fake_machgraph_script(tmp, mg_out)
+            report_json = os.path.join(tmp, "report.json")
+            ref_stdout = b"\nsample.bin:\tfile format mach-o arm64\n\nDisassembly of section __TEXT,__text:\n1000:\tnop\n"
+            real_run = subprocess.run
+
+            def fake_run(c, *args, **kwargs):
+                if c and c[0] == "lipo":
+                    return subprocess.CompletedProcess(c, 0, stdout=b"arm64\n", stderr=b"")
+                if len(c) >= 2 and c[0] == "xcrun" and c[1] == "llvm-objdump":
+                    if "--version" in c:
+                        return subprocess.CompletedProcess(c, 0, stdout=b"Apple LLVM version 21.0.0\n", stderr=b"")
+                    return subprocess.CompletedProcess(c, 0, stdout=ref_stdout, stderr=b"")
+                return real_run(c, *args, **kwargs)
+
+            with mock.patch.object(differential.subprocess, "run", side_effect=fake_run), mock.patch.object(
+                sys, "argv", ["differential.py", fake_bin, "--machgraph", fake_mg, "--json-out", report_json]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                self.assertEqual(differential.main(), 0)
+
+            with open(report_json, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            self.assertEqual(payload["reference_command"], expected_template)
+
+        # Verify on real unstripped /bin/csh that bl targets are numeric addresses and Neon uses generic syntax
+        if os.path.isfile("/bin/csh"):
+            proc = subprocess.run(
+                mnemonic_normalization.build_reference_command("/bin/csh", "arm64e"),
+                capture_output=True,
+                text=True,
+                errors="replace",
+                check=True,
+            )
+            bl_targets = []
+            saw_generic_neon = False
+            for line in proc.stdout.splitlines():
+                if line.strip() == "Contents of (__TEXT,__text) section":
+                    break
+                parts = line.split("\t")
+                if len(parts) >= 3 and parts[0].strip().endswith(":"):
+                    mnem = parts[1].strip().lower()
+                    ops = parts[2].split(";")[0].strip()
+                    if mnem == "bl":
+                        bl_targets.append(ops)
+                    if mnem == "movi" and "v0.2d" in ops:
+                        saw_generic_neon = True
+            self.assertGreater(len(bl_targets), 100)
+            self.assertTrue(
+                all(t.startswith("0x") for t in bl_targets),
+                f"Expected numeric bl targets under --no-symbolic-operands, got sample: {bl_targets[:5]}",
+            )
+            self.assertTrue(saw_generic_neon, "Expected generic Neon syntax 'movi v0.2d, ...' in /bin/csh")
 
 
 if __name__ == "__main__":

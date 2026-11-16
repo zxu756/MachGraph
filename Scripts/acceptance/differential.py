@@ -5,8 +5,8 @@ Usage:
   Scripts/acceptance/differential.py <quick|standard|full|file...>
       [--machgraph <path>] [--json-out <path>] [--record] [--workers <n>] [--verbose]
 
-Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32 / G42):
-  xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> --mcpu=apple-m1 --mattr=+bti --section=__TEXT,__text <file>
+Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32 / G42 / D-M2-1):
+  xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
 
 Normalization rules: imported from `mnemonic_normalization.py` (only the three
 narrow rules: `movz`/`movn` == `mov`, `udf` == `.inst`, drop reference vector

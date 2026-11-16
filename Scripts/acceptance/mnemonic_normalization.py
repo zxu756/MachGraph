@@ -14,8 +14,9 @@ import re
 from typing import List, Tuple
 
 REFERENCE_COMMAND_TEMPLATE = (
-    "xcrun llvm-objdump --macho -d --no-show-raw-insn --arch=<slice> "
-    "--mcpu=apple-m1 --mattr=+bti --section=__TEXT,__text <file>"
+    "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
+    "--arch=<slice> --mcpu=apple-m1 --mattr=+bti "
+    "-mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>"
 )
 
 
@@ -27,9 +28,11 @@ def build_reference_command(binary: str, arch: str) -> List[str]:
         "--macho",
         "-d",
         "--no-show-raw-insn",
+        "--no-symbolic-operands",
         f"--arch={arch}",
         "--mcpu=apple-m1",
         "--mattr=+bti",
+        "-mllvm=-aarch64-neon-syntax=generic",
         "--section=__TEXT,__text",
         binary,
     ]
