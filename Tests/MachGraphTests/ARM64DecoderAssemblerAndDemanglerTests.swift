@@ -2130,4 +2130,78 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 3776)
         #expect(mismatches.isEmpty, "Group 12 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 5: PAC data/instruction pointer 1-source operations (PACDZA/PACDZB/AUTDZA/AUTDZB, PACI*/AUTI*/XPAC*, two-operand PAC/AUT, and 1-source GP) match pac_data_ptr.tsv")
+    func pacDataPointer1SourceDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0xDAC1_3BF0, "autdza x16", [.x(16)], [.x(16)]),       // /usr/bin/IOAccelMemory baseline example
+            (0xDAC1_2BE1, "pacdza x1", [.x(1)], [.x(1)]),          // pac_data_ptr.tsv Rd=1
+            (0xDAC1_2FE1, "pacdzb x1", [.x(1)], [.x(1)]),          // pac_data_ptr.tsv Rd=1
+            (0xDAC1_3BE1, "autdza x1", [.x(1)], [.x(1)]),          // pac_data_ptr.tsv Rd=1
+            (0xDAC1_3FE1, "autdzb x1", [.x(1)], [.x(1)]),          // pac_data_ptr.tsv Rd=1
+            (0xDAC1_2BFF, "pacdza xzr", [], []),                   // Rd=31 is xzr
+            (0xDAC1_3BFF, "autdza xzr", [], []),                   // Rd=31 is xzr
+            (0xDAC1_23E1, "paciza x1", [.x(1)], [.x(1)]),          // existing PACIZA preserved
+            (0xDAC1_47E1, "xpacd x1", [.x(1)], [.x(1)]),           // existing XPACD preserved
+            (0xDAC1_0BE1, "pacda x1, sp", [.x(1), .sp], [.x(1)]),  // two-operand PACDA with SP modifier
+            (0xDAC1_1841, "autda x1, x2", [.x(1), .x(2)], [.x(1)]),// two-operand AUTDA with Xn modifier
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples from pac_data_ptr.tsv must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0xDAC1_2841, // PACDZA opcode with Rn=2 (!= 31) is unallocated
+            0xDAC1_3841, // AUTDZA opcode with Rn=2 (!= 31) is unallocated
+            0x5AC1_2BE1, // sf=0 (32-bit) PACDZA slot is unallocated
+            0xFAC1_2BE1, // S=1 (bit[29]==1) is unallocated
+            0xDAC1_4BE1, // opcode=010010 (>= 18) is unallocated on apple-m1
+            0xDAC2_2BE1, // opcode2=00010 is unallocated
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("pac_data_ptr"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 3200)
+        #expect(mismatches.isEmpty, "Group 5 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

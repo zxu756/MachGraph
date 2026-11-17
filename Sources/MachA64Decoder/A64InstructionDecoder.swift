@@ -2817,7 +2817,7 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
-        // ARMv8.3-A Pointer Authentication 1-Source (PACIZA, PACIZB, AUTIZA, AUTIZB, XPACI, XPACD, PACIA/B, AUTIA/B)
+        // ARMv8.3-A Pointer Authentication 1-Source (PACI*Z*, PACD*Z*, AUTI*Z*, AUTD*Z*, XPACI, XPACD, PACIA/B, PACDA/B, AUTIA/B, AUTDA/B)
         if opcode2 == 0b00001 && is64 {
             let rdReg = A64Register.x(rd, allowSP: false)
             switch opcode {
@@ -2833,6 +2833,18 @@ public struct A64InstructionDecoder: Sendable {
                     group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
                     autoComment: "Sign code pointer with IB key + zero modifier"
                 )
+            case 0b001010 where rn == 31:
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .paciza, mnemonicText: "pacdza", operands: [.register(rdReg)],
+                    group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
+                    autoComment: "Sign data pointer with DA key + zero modifier"
+                )
+            case 0b001011 where rn == 31:
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .pacizb, mnemonicText: "pacdzb", operands: [.register(rdReg)],
+                    group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
+                    autoComment: "Sign data pointer with DB key + zero modifier"
+                )
             case 0b001100 where rn == 31:
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .autiza, operands: [.register(rdReg)],
@@ -2844,6 +2856,18 @@ public struct A64InstructionDecoder: Sendable {
                     address: address, rawWord: word, mnemonic: .autizb, operands: [.register(rdReg)],
                     group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
                     autoComment: "Authenticate code pointer with IB key + zero modifier"
+                )
+            case 0b001110 where rn == 31:
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .autiza, mnemonicText: "autdza", operands: [.register(rdReg)],
+                    group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
+                    autoComment: "Authenticate data pointer with DA key + zero modifier"
+                )
+            case 0b001111 where rn == 31:
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .autizb, mnemonicText: "autdzb", operands: [.register(rdReg)],
+                    group: .pacPointerAuth, readsRegisters: activeRegs([rdReg]), writesRegisters: activeRegs([rdReg]),
+                    autoComment: "Authenticate data pointer with DB key + zero modifier"
                 )
             case 0b010000 where rn == 31:
                 return A64DecodedInstruction(

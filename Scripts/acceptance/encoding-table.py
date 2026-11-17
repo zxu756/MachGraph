@@ -698,6 +698,47 @@ def _generate_scalar_fp_fixed_point_words() -> List[int]:
     return words
 
 
+def _generate_pac_data_ptr_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.2 Data-processing (1 source) & Pointer Authentication 1-source:
+    sf(1)|1|S(1)|11010110|opcode2(5)|opcode(6)|Rn(5)|Rd(5), i.e. (word & 0x5fe00000) == 0x5ac00000.
+    1) Enumerates all sf=0..1, S=0..1, opcode2 in {0b00000, 0b00001, 0b00010, 0b11111}, opcode=0..63
+       across (Rd, Rn) in {(1, 2), (1, 31), (31, 31)} (covering standard 1-source RBIT/REV/CLZ/CLS,
+       all 8 two-operand PAC/AUT <Xd>, <Xn|SP>, all 10 one-operand PACI*/PACD*/AUTI*/AUTD*/XPAC* <Xd>
+       requiring Rn==31 + Rn!=31 unallocated counterexamples, and Rd=xzr): 2 x 2 x 4 x 64 x 3 = 3,072 rows.
+    2) Plus (Rd, Rn) = (31, 2) across sf=1, S=0, opcode2 in {0b00000, 0b00001}, opcode=0..63: 128 rows.
+    Total = 3,200 rows (<= 4,096).
+    """
+    words: List[int] = []
+    for sf in (0, 1):
+        for s_bit in (0, 1):
+            for opcode2 in (0b00000, 0b00001, 0b00010, 0b11111):
+                for opcode in range(64):
+                    for rd, rn in ((1, 2), (1, 31), (31, 31)):
+                        word = (
+                            (sf << 31)
+                            | (s_bit << 29)
+                            | 0x5AC00000
+                            | (opcode2 << 16)
+                            | (opcode << 10)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+
+    for opcode2 in (0b00000, 0b00001):
+        for opcode in range(64):
+            word = (
+                (1 << 31)
+                | 0x5AC00000
+                | (opcode2 << 16)
+                | (opcode << 10)
+                | (2 << 5)
+                | 31
+            )
+            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -943,6 +984,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "totaling 3,776 rows.",
         ),
         generate_words=_generate_scalar_fp_fixed_point_words,
+    ),
+    "pac_data_ptr": EncodingGroupSpec(
+        name="pac_data_ptr",
+        title="Pointer Authentication 1-source & Data-processing (1 source) — PACIA/B, PACDA/B, AUTIA/B, AUTDA/B, PACI*Z*, PACD*Z*, AUTI*Z*, AUTD*Z*, XPACI/D, and RBIT/REV/CLZ/CLS",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.2 Data-processing (1 source) & Pointer Authentication: (word & 0x5fe00000) == 0x5ac00000.",
+            "Enumerates sf=0..1, S=0..1, opcode2 in {0b00000, 0b00001, 0b00010, 0b11111}, opcode=0..63 across",
+            "(Rd, Rn) in {(1,2), (1,31), (31,31)} (3,072 rows), plus (Rd, Rn) = (31,2) across sf=1, S=0, opcode2 in {0,1},",
+            "opcode=0..63 (128 rows), totaling 3,200 rows.",
+        ),
+        generate_words=_generate_pac_data_ptr_words,
     ),
 }
 

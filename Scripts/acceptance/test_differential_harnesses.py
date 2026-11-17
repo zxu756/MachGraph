@@ -1951,6 +1951,54 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             fm = {m for _, m, _ in fr}
             self.assertEqual(fm, {"scvtf", "ucvtf", "fcvtzs", "fcvtzu", ".long"})
 
+    def test_stage10_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage10_check", "encoding-fuzz.py")
+
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0xDAC13BF0), "PAC data/instruction pointer")
+        self.assertIn("pac_data_ptr", enc_table.ENCODING_GROUPS)
+        g5_words = enc_table.ENCODING_GROUPS["pac_data_ptr"].generate_words()
+        self.assertEqual(len(g5_words), 3200)
+        self.assertLessEqual(len(g5_words), 4096)
+        self.assertEqual(len(set(g5_words)), len(g5_words), "duplicate words in pac_data_ptr")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "pac_data_ptr", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate pac_data_ptr failed: {stdout_txt}\n{stderr_txt}")
+            pc, pr = enc_table.load_reference_table(os.path.join(tmp, "pac_data_ptr.tsv"))
+            self.assertEqual(len(pr), 3200)
+            self.assertTrue(any("encoding-table.py generate pac_data_ptr" in c for c in pc))
+            pm = {m for _, m, _ in pr}
+            for expected_mnem in (
+                "pacia",
+                "pacib",
+                "pacda",
+                "pacdb",
+                "autia",
+                "autib",
+                "autda",
+                "autdb",
+                "paciza",
+                "pacizb",
+                "pacdza",
+                "pacdzb",
+                "autiza",
+                "autizb",
+                "autdza",
+                "autdzb",
+                "xpaci",
+                "xpacd",
+                "rbit",
+                "rev",
+                "clz",
+                "cls",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, pm)
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 
