@@ -1270,8 +1270,9 @@ public struct A64InstructionDecoder: Sendable {
         // MSR (register) / MRS: op0 in 2...3
         if op0 >= 2 {
             let sysEnc = UInt16((word >> 5) & 0xFFFF)
-            let sysName = A64SystemRegisterTable.name(forEncoding: sysEnc)
-            let sysSummary = A64SystemRegisterTable.lookup(encoding: sysEnc)?.summary
+            let sysName = A64SystemRegisterTable.name(forEncoding: sysEnc, isRead: isRead)
+            let rawSummary = A64SystemRegisterTable.lookup(encoding: sysEnc, isRead: isRead)?.summary
+            let sysSummary = (rawSummary?.isEmpty == false) ? rawSummary : nil
             let xtReg = A64Register.x(rt, allowSP: false)
             let touchesNZCV = (sysName == "NZCV")
 

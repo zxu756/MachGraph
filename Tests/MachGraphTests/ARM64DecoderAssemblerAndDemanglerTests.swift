@@ -1237,4 +1237,75 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(decoder.decode(word: 0xD508_0101, at: pc).formattedDisassembly == "sys #0, c0, c1, #0, x1")
         #expect(decoder.decode(word: 0xD508_011F, at: pc).formattedDisassembly == "sys #0, c0, c1, #0")
     }
+
+    @Test("G61: A64SystemRegisterTable matches Apple llvm-objdump across all 32,768 MRS encodings and MSR verification slices (RW, RO, WO, and DBGDTRRX/TX)")
+    func systemRegisterTableMatchesAll32768MrsAndMsrReferenceSlices() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // 1. Concrete G61 examples from random fuzz seeds 20261117 and 17:
+        let fuzzExamples: [(UInt32, String)] = [
+            (0xD530_EBC7, "mrs x7, PMEVCNTSVR30_EL1"), // seed 20261117 (RO register)
+            (0xD538_373A, "mrs x26, AFGDTP9_EL1"),     // seed 17
+            (0xD53C_CC53, "mrs x19, ICH_LR2_EL2"),     // seed 17
+            (0xD518_CCB6, "msr ICC_SRE_EL1, x22"),     // seed 17
+            (0xD511_04A0, "msr TRCCNTCTLR0, x0"),      // seed 17
+            (0xD511_1850, "msr TRCSSCSR0, x16"),       // seed 17
+        ]
+        for (word, expected) in fuzzExamples {
+            #expect(decoder.decode(word: word, at: pc).formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // 2. Read-only, write-only, shared read/write split (DBGDTRRX_EL0 vs DBGDTRTX_EL0), and apple-m1 unenabled MTE:
+        #expect(decoder.decode(word: 0xD538_0001, at: pc).formattedDisassembly == "mrs x1, MIDR_EL1")
+        #expect(decoder.decode(word: 0xD518_0001, at: pc).formattedDisassembly == "msr S3_0_C0_C0_0, x1")
+        #expect(decoder.decode(word: 0xD530_1081, at: pc).formattedDisassembly == "mrs x1, S2_0_C1_C0_4")
+        #expect(decoder.decode(word: 0xD510_1081, at: pc).formattedDisassembly == "msr OSLAR_EL1, x1")
+        #expect(decoder.decode(word: 0xD531_1081, at: pc).formattedDisassembly == "mrs x1, S2_1_C1_C0_4")
+        #expect(decoder.decode(word: 0xD511_1081, at: pc).formattedDisassembly == "msr TRCOSLAR, x1")
+        #expect(decoder.decode(word: 0xD53B_9C81, at: pc).formattedDisassembly == "mrs x1, S3_3_C9_C12_4")
+        #expect(decoder.decode(word: 0xD51B_9C81, at: pc).formattedDisassembly == "msr PMSWINC_EL0, x1")
+        #expect(decoder.decode(word: 0xD533_0501, at: pc).formattedDisassembly == "mrs x1, DBGDTRRX_EL0")
+        #expect(decoder.decode(word: 0xD513_0501, at: pc).formattedDisassembly == "msr DBGDTRTX_EL0, x1")
+        #expect(decoder.decode(word: 0xD53B_42E1, at: pc).formattedDisassembly == "mrs x1, S3_3_C4_C2_7")
+
+        // Name-to-encoding lookup supports RW, RO, WO, and split-direction names case-insensitively:
+        #expect(A64SystemRegisterTable.encoding(forName: "dbgdtrrx_el0") == A64SystemRegisterTable.encoding(forName: "DBGDTRTX_EL0"))
+        #expect(A64SystemRegisterTable.encoding(forName: "oslar_el1") == A64SystemRegisterTable.packEncoding(op0: 2, op1: 0, crn: 1, crm: 0, op2: 4))
+
+        // 3. Exhaustive check against all 8 MRS reference tables (32,768 encodings) and 3 MSR verification slices (12,288 encodings):
+        var tableGroups = (0..<8).map { "sysreg_mrs_op1_\($0)" }
+        tableGroups.append(contentsOf: ["sysreg_msr_op1_0", "sysreg_msr_op1_1", "sysreg_msr_op1_3"])
+
+        var totalChecked = 0
+        var mismatchSamples: [String] = []
+        var mismatchCount = 0
+
+        for grp in tableGroups {
+            let rawText = try String(contentsOf: RepoFixtures.a64TableURL(grp), encoding: .utf8)
+            for line in rawText.split(whereSeparator: \.isNewline) {
+                if line.hasPrefix("#") { continue }
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { continue }
+                let parts = line.split(separator: "\t", maxSplits: 2)
+                guard parts.count == 3 else {
+                    Issue.record("Malformed row in \(grp): \(line)")
+                    continue
+                }
+                let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+                let word = try #require(UInt32(wordHex, radix: 16))
+                let expectedText = "\(parts[1]) \(parts[2])"
+                let decoded = decoder.decode(word: word, at: pc)
+                totalChecked += 1
+                if decoded.formattedDisassembly != expectedText {
+                    mismatchCount += 1
+                    if mismatchSamples.count < 12 {
+                        mismatchSamples.append(String(format: "%@ 0x%08x expected '%@' got '%@'", grp, word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+
+        #expect(totalChecked == 32768 + 12288)
+        #expect(mismatchCount == 0, "G61 mismatches (\(mismatchCount)): \(mismatchSamples.joined(separator: "; "))")
+    }
 }
