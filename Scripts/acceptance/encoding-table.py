@@ -615,6 +615,38 @@ def _make_advsimd_vec_shift_imm_words_generator(q_bit: int, u_bit: int) -> Calla
     return _gen
 
 
+def _make_advsimd_scalar_shift_imm_words_generator(u_bit: int) -> Callable[[], List[int]]:
+    """ARM DDI 0487 C4.1.95.8 / C4.1.95.9 Advanced SIMD scalar shift by immediate slice for fixed U:
+    0|1|U|11111|0|immh(4)|immb(3)|opcode(5)|1|Rn(5)|Rd(5), with immh in 0..15.
+    (Includes immh == 0 unallocated counterexamples; bit[10] == 0 is Group 26 AdvSIMD scalar indexed element.)
+    Enumerates all 16 x 8 x 32 = 4,096 non-register combinations of immh=0..15, immb=0..7, opcode=0..31
+    with distinct scalar registers Rd=1, Rn=2.
+    """
+
+    def _gen() -> List[int]:
+        words: List[int] = []
+        rd = 1
+        rn = 2
+        for immh in range(16):
+            for immb in range(8):
+                for opcode in range(32):
+                    word = (
+                        (1 << 30)
+                        | (u_bit << 29)
+                        | (0b111110 << 23)
+                        | (immh << 19)
+                        | (immb << 16)
+                        | (opcode << 11)
+                        | (1 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+        return words
+
+    return _gen
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -829,6 +861,24 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             generate_words=_make_advsimd_vec_shift_imm_words_generator(q_bit=q_bit, u_bit=u_bit),
         )
         for q_bit in (0, 1)
+        for u_bit in (0, 1)
+    },
+    **{
+        f"advsimd_scalar_shift_imm_u{u_bit}": EncodingGroupSpec(
+            name=f"advsimd_scalar_shift_imm_u{u_bit}",
+            title=(
+                f"Advanced SIMD scalar shift by immediate — slice U={u_bit} "
+                "(immh=0..15, immb=0..7, opcode=0..31)"
+            ),
+            header_notes=(
+                "ARM DDI 0487 C4.1.95.8 / C4.1.95.9 Advanced SIMD scalar shift by immediate: (word & 0xdf800400) == 0x5f000400.",
+                f"Slice U={u_bit} ({u_bit + 1}/2): enumerates all 16 x 8 x 32 = 4,096 non-register combinations",
+                "of immh=0..15 (including immh=0 unallocated counterexamples), immb=0..7, opcode=0..31 (bit[23]=0, bit[10]=1)",
+                "with fixed distinct scalar registers Rd=1, Rn=2 (excludes bit[10]=0 Group 26 AdvSIMD scalar indexed element).",
+                "Across advsimd_scalar_shift_imm_u0 and u1 (2 x 4,096 = 8,192 rows), every Group 30 non-register encoding is covered.",
+            ),
+            generate_words=_make_advsimd_scalar_shift_imm_words_generator(u_bit=u_bit),
+        )
         for u_bit in (0, 1)
     },
 }

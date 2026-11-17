@@ -3067,7 +3067,13 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDScalarTwoRegMisc(word: word, at: address)
         }
 
-        // 5. Common Advanced SIMD / NEON Vector Operations
+        // 5. AdvSIMD Scalar Shift by Immediate (C4.1.95.8 / C4.1.95.9):
+        //    (word & 0xDF80_0400) == 0x5F00_0400
+        if (word & 0xDF80_0400) == 0x5F00_0400 {
+            return decodeAdvSIMDScalarShiftByImmediate(word: word, at: address)
+        }
+
+        // 6. Common Advanced SIMD / NEON Vector Operations
         return decodeNEONVectorBlock(word: word, at: address)
     }
 
@@ -4457,6 +4463,111 @@ public struct A64InstructionDecoder: Sendable {
                 srcArr: arr,
                 immVal: rightAmt
             )
+
+        default:
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDScalarShiftByImmediate(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let u = A64BitUtils.flag(word, 29)
+        let immh = A64BitUtils.extract(word, 22, 19)
+        guard immh != 0 else { return nil }
+        let immb = A64BitUtils.extract(word, 18, 16)
+        let opcode = A64BitUtils.extract(word, 15, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let imm7 = (immh << 3) | immb
+        let esize: UInt32
+        let sizeIdx: Int
+        if immh == 1 {
+            esize = 8
+            sizeIdx = 0
+        } else if immh <= 3 {
+            esize = 16
+            sizeIdx = 1
+        } else if immh <= 7 {
+            esize = 32
+            sizeIdx = 2
+        } else {
+            esize = 64
+            sizeIdx = 3
+        }
+
+        let rightAmt = 2 * esize - imm7
+        let leftAmt = imm7 - esize
+
+        func scalarSIMDReg(_ index: UInt8, idx: Int) -> A64Register {
+            switch idx {
+            case 0: return .b(index)
+            case 1: return .h(index)
+            case 2: return .s(index)
+            default: return .d(index)
+            }
+        }
+
+        func emitScalarShift(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dstIdx: Int,
+            srcIdx: Int,
+            immVal: UInt32,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let sd = scalarSIMDReg(rd, idx: dstIdx)
+            let sn = scalarSIMDReg(rn, idx: srcIdx)
+            let reads = accumulatesRd ? activeRegs([sd, sn]) : activeRegs([sn])
+            let immHex = String(format: "#0x%x", immVal)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(sd), .register(sn), .unsignedImmediate(UInt64(immVal))],
+                operandText: "\(sd.canonicalName), \(sn.canonicalName), \(immHex)",
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [sd]
+            )
+        }
+
+        switch opcode {
+        // 1. 64-bit D-register-only shifts & bit inserts (immh in 8..15 -> sizeIdx == 3)
+        case 0b00000 where sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "ushr" : "sshr", dstIdx: 3, srcIdx: 3, immVal: rightAmt)
+        case 0b00010 where sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "usra" : "ssra", dstIdx: 3, srcIdx: 3, immVal: rightAmt, accumulatesRd: true)
+        case 0b00100 where sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "urshr" : "srshr", dstIdx: 3, srcIdx: 3, immVal: rightAmt)
+        case 0b00110 where sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "ursra" : "srsra", dstIdx: 3, srcIdx: 3, immVal: rightAmt, accumulatesRd: true)
+        case 0b01000 where u && sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: "sri", dstIdx: 3, srcIdx: 3, immVal: rightAmt, accumulatesRd: true)
+        case 0b01010 where sizeIdx == 3:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "sli" : "shl", dstIdx: 3, srcIdx: 3, immVal: leftAmt, accumulatesRd: u)
+
+        // 2. All-width B / H / S / D saturating left shifts (immh in 1..15 -> sizeIdx in 0..3)
+        case 0b01100 where u:
+            return emitScalarShift(mnemonic: .andVec, text: "sqshlu", dstIdx: sizeIdx, srcIdx: sizeIdx, immVal: leftAmt)
+        case 0b01110:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "uqshl" : "sqshl", dstIdx: sizeIdx, srcIdx: sizeIdx, immVal: leftAmt)
+
+        // 3. Scalar saturating shift right narrow (immh in 1..7 -> sizeIdx in 0..2: B<-H, H<-S, S<-D)
+        case 0b10000 where u && sizeIdx <= 2:
+            return emitScalarShift(mnemonic: .andVec, text: "sqshrun", dstIdx: sizeIdx, srcIdx: sizeIdx + 1, immVal: rightAmt)
+        case 0b10001 where u && sizeIdx <= 2:
+            return emitScalarShift(mnemonic: .andVec, text: "sqrshrun", dstIdx: sizeIdx, srcIdx: sizeIdx + 1, immVal: rightAmt)
+        case 0b10010 where sizeIdx <= 2:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "uqshrn" : "sqshrn", dstIdx: sizeIdx, srcIdx: sizeIdx + 1, immVal: rightAmt)
+        case 0b10011 where sizeIdx <= 2:
+            return emitScalarShift(mnemonic: .andVec, text: u ? "uqrshrn" : "sqrshrn", dstIdx: sizeIdx, srcIdx: sizeIdx + 1, immVal: rightAmt)
+
+        // 4. Scalar fixed-point <-> FP conversions (immh in 2..15 -> sizeIdx in 1..3: H / S / D)
+        case 0b11100 where sizeIdx >= 1:
+            return emitScalarShift(mnemonic: u ? .ucvtf : .scvtf, text: u ? "ucvtf" : "scvtf", dstIdx: sizeIdx, srcIdx: sizeIdx, immVal: rightAmt)
+        case 0b11111 where sizeIdx >= 1:
+            return emitScalarShift(mnemonic: u ? .fcvtzu : .fcvtzs, text: u ? "fcvtzu" : "fcvtzs", dstIdx: sizeIdx, srcIdx: sizeIdx, immVal: rightAmt)
 
         default:
             return nil

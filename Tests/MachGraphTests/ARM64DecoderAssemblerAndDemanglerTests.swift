@@ -1969,4 +1969,92 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(totalRows == 15360)
         #expect(mismatches.isEmpty, "Group 3 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 9 Group 30: AdvSIMD scalar shift by immediate (64-bit D shifts/inserts, B/H/S/D saturating shifts, narrowing, and fixed-point H/S/D) matches both advsimd_scalar_shift_imm slices")
+    func advsimdScalarShiftByImmediateDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, Int)] = [
+            (0x5F64_54A6, "shl d6, d5, #0x24", 1),          // /usr/bin/afscexpand baseline example
+            (0x5F48_07BC, "sshr d28, d29, #0x38", 1),       // seed 17 example
+            (0x7F7F_0441, "ushr d1, d2, #0x1", 1),          // 64-bit scalar USHR
+            (0x5F7E_1438, "ssra d24, d1, #0x2", 2),         // seed 20261117 example (accumulating reads [sd, sn])
+            (0x7F40_3441, "ursra d1, d2, #0x40", 2),        // 64-bit scalar URSRA reads [sd, sn]
+            (0x7F40_4441, "sri d1, d2, #0x40", 2),          // 64-bit scalar SRI reads [sd, sn]
+            (0x7F7F_5441, "sli d1, d2, #0x3f", 2),          // 64-bit scalar SLI reads [sd, sn]
+            (0x7F08_6441, "sqshlu b1, b2, #0x0", 1),        // 8-bit scalar SQSHLU
+            (0x5F11_7441, "sqshl h1, h2, #0x1", 1),         // 16-bit scalar SQSHL
+            (0x7F3F_7441, "uqshl s1, s2, #0x1f", 1),        // 32-bit scalar UQSHL
+            (0x7F08_8441, "sqshrun b1, h2, #0x8", 1),       // scalar narrowing H -> B
+            (0x7F10_8C41, "sqrshrun h1, s2, #0x10", 1),     // scalar narrowing S -> H
+            (0x5F3F_9441, "sqshrn s1, d2, #0x1", 1),        // scalar narrowing D -> S
+            (0x7F3F_9C41, "uqrshrn s1, d2, #0x1", 1),       // scalar narrowing D -> S
+            (0x5F10_E441, "scvtf h1, h2, #0x10", 1),        // FP16 scalar fixed-point SCVTF
+            (0x7F20_E441, "ucvtf s1, s2, #0x20", 1),        // FP32 scalar fixed-point UCVTF
+            (0x5F40_FC41, "fcvtzs d1, d2, #0x40", 1),       // FP64 scalar fixed-point FCVTZS
+            (0x7F7F_FC41, "fcvtzu d1, d2, #0x1", 1),        // FP64 scalar fixed-point FCVTZU
+        ]
+        for (word, expected, expectedReadCount) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters.count == expectedReadCount, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.count == 1, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated & sibling-group boundary counterexamples must remain .inst:
+        let unallocatedOrOtherGroupCases: [UInt32] = [
+            0x5F00_0441, // immh == 0 is unallocated in AdvSIMD scalar shift space
+            0x5F20_5441, // scalar SHL only valid for 64-bit D (immh >= 8), not 32-bit S
+            0x5F08_8441, // no non-saturating scalar SHRN (opcode=10000, U=0)
+            0x5F08_8C41, // no non-saturating scalar RSHRN (opcode=10001, U=0)
+            0x5F08_A441, // no scalar SSHLL / USHLL widening in Group 30
+            0x5F08_E441, // scalar fixed-point SCVTF with immh=1 (8-bit) is unallocated
+            0x5F49_D380, // bit[23]==0, bit[10]==0 is Group 26 scalar indexed element
+        ]
+        for word in unallocatedOrOtherGroupCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let slices = ["advsimd_scalar_shift_imm_u0", "advsimd_scalar_shift_imm_u1"]
+        var totalRows = 0
+        var mismatches: [String] = []
+        for slice in slices {
+            let rawText = try String(contentsOf: RepoFixtures.a64TableURL(slice), encoding: .utf8)
+            var sliceRows = 0
+            for line in rawText.split(whereSeparator: \.isNewline) {
+                if line.hasPrefix("#") { continue }
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { continue }
+                let parts = line.split(separator: "\t", maxSplits: 2)
+                let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+                let word = try #require(UInt32(wordHex, radix: 16))
+                let expectedMnem = String(parts[1])
+                let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+                let decoded = decoder.decode(word: word, at: pc)
+                sliceRows += 1
+                totalRows += 1
+
+                if expectedMnem == ".long" {
+                    if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected .inst got '%@'", slice, word, decoded.formattedDisassembly))
+                        }
+                    }
+                } else {
+                    let expectedText = "\(expectedMnem) \(expectedOps)"
+                    if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected '%@' got '%@'", slice, word, expectedText, decoded.formattedDisassembly))
+                        }
+                    }
+                }
+            }
+            #expect(sliceRows == 4096)
+        }
+        #expect(totalRows == 8192)
+        #expect(mismatches.isEmpty, "Group 30 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
