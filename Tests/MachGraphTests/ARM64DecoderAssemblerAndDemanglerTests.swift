@@ -914,4 +914,105 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         // Boundary prfop=23 (< 24) stays PRFM:
         #expect(decoder.decode(word: 0xF8A3_4857, at: pc).formattedDisassembly == "prfm #0x17, [x2, w3, uxtw]")
     }
+
+    @Test("G48b: Logical-immediate ORR with Rn=ZR emits orr when MoveWidePreferred holds and mov otherwise")
+    func logicalImmediateOrrMoveWidePreferredCondition() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // MoveWidePreferred == true counterexamples from Fixtures/a64/logical_imm.tsv and fuzz seeds (17, 20261117):
+        let orrCounterexamples: [(UInt32, String)] = [
+            (0x3200_03E1, "orr w1, wzr, #1"),
+            (0x3210_07E1, "orr w1, wzr, #0x30000"),
+            (0x3201_63E1, "orr w1, wzr, #0x80ffffff"),
+            (0x3201_63E4, "orr w4, wzr, #0x80ffffff"), // seed 17
+            (0x3210_63E1, "orr w1, wzr, #0xffff01ff"),
+            (0xB240_03E1, "orr x1, xzr, #1"),
+            (0xB250_07E1, "orr x1, xzr, #0x3000000000000"),
+            (0xB27F_03E1, "orr x1, xzr, #2"),
+            (0xB269_E7F4, "orr x20, xzr, #0xffffffffff81ffff"), // seed 20261117
+        ]
+        for (word, expected) in orrCounterexamples {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .orr, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == "orr", "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // MoveWidePreferred == false bitmasks from Fixtures/a64/logical_imm.tsv keep emitting `mov`:
+        let movBitmaskCases: [UInt32] = [
+            0x323F_63E1, // mov w1, #0x3fffffe
+            0xB200_03E1, // mov x1, #0x100000001
+            0xB240_63E1, // mov x1, #0x1ffffff
+            0xB27F_63E1, // mov x1, #0x3fffffe
+        ]
+        for word in movBitmaskCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .mov, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == "mov", "word=0x\(String(word, radix: 16))")
+        }
+    }
+
+    @Test("G52f: BFM with Rn=ZR emits bfc across lsb==0 and lsb>0 while preserving bfxil and non-ZR bfi")
+    func bfmZeroSourceEmitsBfcPreferredAlias() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // BFC cases from Fixtures/a64/bitfield.tsv (both immr==0 and immr>imms) and fuzz seed 20261117:
+        let bfcCases: [(UInt32, String)] = [
+            (0x3300_03E1, "bfc w1, #0, #1"),
+            (0x3300_1FE1, "bfc w1, #0, #8"),
+            (0x331F_1FE1, "bfc w1, #1, #8"),
+            (0xB340_1FE1, "bfc x1, #0, #8"),
+            (0xB34F_13E9, "bfc x9, #0x31, #5"), // seed 20261117
+        ]
+        for (word, expected) in bfcCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonicText == "bfc", "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples: Rn=ZR with immr>0 && imms>=immr stays bfxil; Rn!=ZR with imms<immr stays bfi:
+        #expect(decoder.decode(word: 0x3307_3FE1, at: pc).formattedDisassembly == "bfxil w1, wzr, #7, #9")
+        #expect(decoder.decode(word: 0xB34F_7FE1, at: pc).formattedDisassembly == "bfxil x1, xzr, #15, #0x11")
+        #expect(decoder.decode(word: 0x331F_1C41, at: pc).formattedDisassembly == "bfi w1, w2, #1, #8")
+    }
+
+    @Test("G52g: LSE atomic operations with Rt=ZR preserve acquire suffix when A=1 and emit two-operand st* aliases when A=0")
+    func lseAtomicZeroDestinationAcquireAndStPreferredAliases() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Rt=ZR with A=1 retains `a`/`al` and 3 operands (seeds 17, 20261117, and Fixtures/a64/lse_atomic.tsv):
+        let acquireZeroRtCases: [(UInt32, String)] = [
+            (0x38EE_33BF, "ldsetalb w14, wzr, [x29]"), // seed 17
+            (0x78F5_20BF, "ldeoralh w21, wzr, [x5]"),  // seed 20261117
+            (0xF8A3_005F, "ldadda x3, xzr, [x2]"),
+            (0xF8E3_13FF, "ldclral x3, xzr, [sp]"),
+            (0xB8A3_605F, "ldumaxa w3, wzr, [x2]"),
+        ]
+        for (word, expected) in acquireZeroRtCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Rt=ZR with A=0 emits two-operand st* aliases across all 8 stems and l/b/h suffixes:
+        let stAliasCases: [(UInt32, String)] = [
+            (0xF83A_025F, "stadd x26, [x18]"),   // seed 20261117
+            (0xB875_119F, "stclrl w21, [x12]"),  // seed 20261117
+            (0x3837_317F, "stsetb w23, [x11]"),  // seed 20261117
+            (0x7863_205F, "steorlh w3, [x2]"),
+            (0xF823_405F, "stsmax x3, [x2]"),
+            (0x3863_505F, "stsminlb w3, [x2]"),
+            (0x7823_605F, "stumaxh w3, [x2]"),
+            (0xB863_73FF, "stuminl w3, [sp]"),
+        ]
+        for (word, expected) in stAliasCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples: Rt != ZR stays 3-operand ld*, and SWP with Rt=ZR, A=0 stays 3-operand swp:
+        #expect(decoder.decode(word: 0xF823_0041, at: pc).formattedDisassembly == "ldadd x3, x1, [x2]")
+        #expect(decoder.decode(word: 0xF823_4041, at: pc).formattedDisassembly == "ldsmax x3, x1, [x2]")
+        #expect(decoder.decode(word: 0xF823_805F, at: pc).formattedDisassembly == "swp x3, xzr, [x2]")
+    }
 }

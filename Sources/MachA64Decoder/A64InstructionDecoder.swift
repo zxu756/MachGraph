@@ -302,8 +302,8 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
-        // Alias: MOV <Xd|SP>, #<imm> when ORR with Rn == XZR/WZR
-        if opc == 0b01 && rn == 31 {
+        // Alias: MOV <Xd|SP>, #<imm> when ORR with Rn == XZR/WZR and !MoveWidePreferred(sf, immN, imms, immr)
+        if opc == 0b01 && rn == 31 && !moveWidePreferred(is64: is64, immN: immN, imms: imms, immr: immr) {
             return A64DecodedInstruction(
                 address: address,
                 rawWord: word,
@@ -337,6 +337,28 @@ public struct A64InstructionDecoder: Sendable {
             readsFlags: false,
             writesFlags: setsFlags
         )
+    }
+
+    /// ARM DDI 0487 `MoveWidePreferred(sf, immN, imms, immr)`: `true` when the bitmask immediate
+    /// can be synthesized by a single `MOVZ` or `MOVN` instruction, suppressing `ORR` -> `MOV`.
+    private func moveWidePreferred(is64: Bool, immN: UInt32, imms: UInt32, immr: UInt32) -> Bool {
+        let s = Int(imms & 0x3F)
+        let r = Int(immr & 0x3F)
+        let width = is64 ? 64 : 32
+
+        if is64 && (immN & 1) != 1 {
+            return false
+        }
+        if !is64 && ((immN & 1) != 0 || (s & 0x20) != 0) {
+            return false
+        }
+        if s < 16 {
+            return ((16 - (r & 0xF)) & 0xF) <= (15 - s)
+        }
+        if s >= width - 17 {
+            return (r & 0xF) <= (s - (width - 17))
+        }
+        return false
     }
 
     private func decodeMoveWideImmediate(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
@@ -511,7 +533,21 @@ public struct A64InstructionDecoder: Sendable {
                 )
             }
 
-        case 0b01: // BFM -> BFI, BFXIL (reads both Rd and Rn)
+        case 0b01: // BFM -> BFC, BFI, BFXIL
+            if rn == 31 && (immr == 0 || imms < immr) {
+                let lsb = UInt64((regBits - immr) & maxBit)
+                let width = UInt64(imms + 1)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .bfi,
+                    mnemonicText: "bfc",
+                    operands: [.register(rdReg), .unsignedImmediate(lsb), .unsignedImmediate(width)],
+                    group: .dataProcessingImm,
+                    readsRegisters: activeRegs([rdReg]),
+                    writesRegisters: activeRegs([rdReg])
+                )
+            }
             if imms < immr {
                 let lsb = UInt64((regBits - immr) & maxBit)
                 let width = UInt64(imms + 1)
@@ -1878,7 +1914,7 @@ public struct A64InstructionDecoder: Sendable {
         let memOp = A64Operand.memory(.baseOffset(base: baseReg, offset: 0))
 
         let orderSuffix: String
-        switch (isAcquire && rt != 31, isRelease) {
+        switch (isAcquire, isRelease) {
         case (true, true):   orderSuffix = "al"
         case (true, false):  orderSuffix = "a"
         case (false, true):  orderSuffix = "l"
@@ -1900,8 +1936,7 @@ public struct A64InstructionDecoder: Sendable {
             case (false, true):  swpMnemonic = .swpl
             case (false, false): swpMnemonic = .swp
             }
-            let rawOrder = (isAcquire && isRelease) ? "al" : (isAcquire ? "a" : (isRelease ? "l" : ""))
-            let text = "swp\(rawOrder)\(widthSuffix)"
+            let text = "swp\(orderSuffix)\(widthSuffix)"
             return A64DecodedInstruction(
                 address: address,
                 rawWord: word,
@@ -1916,31 +1951,59 @@ public struct A64InstructionDecoder: Sendable {
         }
 
         if !o3 {
-            let baseOpText: String
+            let opStem: String
             let enumVal: A64Mnemonic
             switch opc {
             case 0b000:
-                baseOpText = "ldadd"
-                switch (isAcquire && rt != 31, isRelease) {
+                opStem = "add"
+                switch (isAcquire, isRelease) {
                 case (true, true):   enumVal = .ldaddal
                 case (true, false):  enumVal = .ldadda
                 case (false, true):  enumVal = .ldaddl
                 case (false, false): enumVal = .ldadd
                 }
             case 0b001:
-                baseOpText = "ldclr"
+                opStem = "clr"
                 enumVal = .ldclr
             case 0b010:
-                baseOpText = "ldeor"
+                opStem = "eor"
                 enumVal = .ldadd
             case 0b011:
-                baseOpText = "ldset"
+                opStem = "set"
                 enumVal = .ldset
+            case 0b100:
+                opStem = "smax"
+                enumVal = .ldadd
+            case 0b101:
+                opStem = "smin"
+                enumVal = .ldadd
+            case 0b110:
+                opStem = "umax"
+                enumVal = .ldadd
+            case 0b111:
+                opStem = "umin"
+                enumVal = .ldadd
             default:
                 return nil
             }
 
-            let text = "\(baseOpText)\(orderSuffix)\(widthSuffix)"
+            if rt == 31 && !isAcquire {
+                let stOrder = isRelease ? "l" : ""
+                let stText = "st\(opStem)\(stOrder)\(widthSuffix)"
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: enumVal,
+                    mnemonicText: stText,
+                    operands: [.register(rsReg), memOp],
+                    group: .atomicLSE,
+                    readsRegisters: activeRegs([baseReg, rsReg]),
+                    writesRegisters: [],
+                    autoComment: "LSE atomic store read-modify-write"
+                )
+            }
+
+            let text = "ld\(opStem)\(orderSuffix)\(widthSuffix)"
             return A64DecodedInstruction(
                 address: address,
                 rawWord: word,
