@@ -583,6 +583,38 @@ def _generate_advsimd_vec_two_reg_misc_words() -> List[int]:
     return words
 
 
+def _make_advsimd_vec_shift_imm_words_generator(q_bit: int, u_bit: int) -> Callable[[], List[int]]:
+    """ARM DDI 0487 C4.1.95.19 Advanced SIMD vector shift by immediate slice for fixed (Q, U):
+    0|Q|U|01111|0|immh(4)|immb(3)|opcode(5)|1|Rn(5)|Rd(5), with immh in 1..15.
+    (immh == 0 is Group 11 AdvSIMD modified immediate; bit[10] == 0 is Group 13 AdvSIMD vector indexed element.)
+    Enumerates all 15 x 8 x 32 = 3,840 non-register combinations of immh=1..15, immb=0..7, opcode=0..31
+    with distinct vector registers Rd=1, Rn=2.
+    """
+
+    def _gen() -> List[int]:
+        words: List[int] = []
+        rd = 1
+        rn = 2
+        for immh in range(1, 16):
+            for immb in range(8):
+                for opcode in range(32):
+                    word = (
+                        (q_bit << 30)
+                        | (u_bit << 29)
+                        | (0b011110 << 23)
+                        | (immh << 19)
+                        | (immb << 16)
+                        | (opcode << 11)
+                        | (1 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+        return words
+
+    return _gen
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -780,6 +812,25 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
         ),
         generate_words=_generate_advsimd_vec_two_reg_misc_words,
     ),
+    **{
+        f"advsimd_vec_shift_imm_q{q_bit}_u{u_bit}": EncodingGroupSpec(
+            name=f"advsimd_vec_shift_imm_q{q_bit}_u{u_bit}",
+            title=(
+                f"Advanced SIMD vector shift by immediate — slice Q={q_bit}, U={u_bit} "
+                "(immh=1..15, immb=0..7, opcode=0..31)"
+            ),
+            header_notes=(
+                "ARM DDI 0487 C4.1.95.19 Advanced SIMD shift by immediate: (word & 0x9f800400) == 0x0f000400 with immh != 0.",
+                f"Slice Q={q_bit}, U={u_bit} ({2 * q_bit + u_bit + 1}/4): enumerates all 15 x 8 x 32 = 3,840 non-register combinations",
+                "of immh=1..15, immb=0..7, opcode=0..31 (bit[23]=0, bit[10]=1) with fixed distinct vector registers Rd=1, Rn=2.",
+                "Excludes immh=0 (Group 11 AdvSIMD modified immediate) and bit[10]=0 (Group 13 AdvSIMD vector indexed element).",
+                "Across advsimd_vec_shift_imm_q0_u0..q1_u1 (4 x 3,840 = 15,360 rows), every Group 3 non-register encoding is covered.",
+            ),
+            generate_words=_make_advsimd_vec_shift_imm_words_generator(q_bit=q_bit, u_bit=u_bit),
+        )
+        for q_bit in (0, 1)
+        for u_bit in (0, 1)
+    },
 }
 
 

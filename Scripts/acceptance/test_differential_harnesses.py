@@ -1839,6 +1839,59 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             ):
                 self.assertIn(expected_mnem, v_mnems)
 
+    def test_stage9_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage9_check", "encoding-fuzz.py")
+
+        # Verify bit[23] / bit[10] / immh boundaries in encoding-fuzz.py:
+        #   - bit[23]==0, bit[10]==1, immh!=0 (vec) -> AdvSIMD vector shift by immediate (Group 3)
+        #   - bit[23]==0, bit[10]==1, immh==0 (vec) -> AdvSIMD vector modified immediate (Group 11)
+        #   - bit[23]==0, bit[10]==0 (vec) -> AdvSIMD vector indexed element (Group 13)
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x2F20A442), "AdvSIMD vector shift by immediate")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0F01C7E1), "AdvSIMD vector modified immediate")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0F401041), "AdvSIMD vector indexed element")
+
+        g3_slices = (
+            "advsimd_vec_shift_imm_q0_u0",
+            "advsimd_vec_shift_imm_q0_u1",
+            "advsimd_vec_shift_imm_q1_u0",
+            "advsimd_vec_shift_imm_q1_u1",
+        )
+        all_g3_words = []
+        for grp_name in g3_slices:
+            self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[grp_name].generate_words()
+            self.assertEqual(len(words), 3840)
+            self.assertLessEqual(len(words), 4096)
+            self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
+            all_g3_words.extend(words)
+
+        # All 4 slices are disjoint and partition all 2 x 2 x 15 x 8 x 32 = 15,360 non-register combinations:
+        self.assertEqual(len(all_g3_words), 15360)
+        self.assertEqual(len(set(all_g3_words)), 15360)
+        for w in all_g3_words[::128]:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector shift by immediate")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_vec_shift_imm_q0_u0", "advsimd_vec_shift_imm_q1_u1", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate stage 9 group 3 slices failed: {stdout_txt}\n{stderr_txt}")
+            c00, r00 = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vec_shift_imm_q0_u0.tsv"))
+            self.assertEqual(len(r00), 3840)
+            self.assertTrue(any("encoding-table.py generate advsimd_vec_shift_imm_q0_u0" in c for c in c00))
+            m00 = {m for _, m, _ in r00}
+            for expected_mnem in ("sshr", "ssra", "srshr", "srsra", "shl", "sqshl", "shrn", "rshrn", "sqshrn", "sqrshrn", "sshll", "scvtf", "fcvtzs", ".long"):
+                self.assertIn(expected_mnem, m00)
+
+            c11, r11 = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vec_shift_imm_q1_u1.tsv"))
+            self.assertEqual(len(r11), 3840)
+            self.assertTrue(any("encoding-table.py generate advsimd_vec_shift_imm_q1_u1" in c for c in c11))
+            m11 = {m for _, m, _ in r11}
+            for expected_mnem in ("ushr", "usra", "urshr", "ursra", "sri", "sli", "sqshlu", "uqshl", "sqshrun2", "sqrshrun2", "uqshrn2", "uqrshrn2", "ushll2", "ucvtf", "fcvtzu", ".long"):
+                self.assertIn(expected_mnem, m11)
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

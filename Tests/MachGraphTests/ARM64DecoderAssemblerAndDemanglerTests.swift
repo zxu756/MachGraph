@@ -1871,4 +1871,102 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 1024)
         #expect(mismatches.isEmpty, "Group 4 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 9 Group 3: AdvSIMD vector shift by immediate (same-width shifts/inserts, narrowing, widening sshll/ushll, and fixed-point FP32/FP64/FP16) matches all 4 advsimd_vec_shift_imm slices")
+    func advsimdVectorShiftByImmediateDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, Int)] = [
+            (0x2F20_A442, "ushll v2.2d, v2.2s, #0x0", 1),          // /bin/csh baseline example (kept as ushll #0x0, not uxtl)
+            (0x0F08_A441, "sshll v1.8h, v2.8b, #0x0", 1),          // sshll #0x0 kept as sshll
+            (0x6F3F_A441, "ushll2 v1.2d, v2.4s, #0x1f", 1),        // ushll2 Q=1
+            (0x4F08_A441, "sshll2 v1.8h, v2.16b, #0x0", 1),        // sshll2 Q=1
+            (0x0F08_0441, "sshr v1.8b, v2.8b, #0x8", 1),           // right shift max for 8-bit
+            (0x6F7F_0441, "ushr v1.2d, v2.2d, #0x1", 1),           // right shift min for 64-bit
+            (0x0F08_1441, "ssra v1.8b, v2.8b, #0x8", 2),           // accumulating right shift reads [vd, vn]
+            (0x6F7F_3441, "ursra v1.2d, v2.2d, #0x1", 2),          // rounding accumulating right shift reads [vd, vn]
+            (0x4F0B_25E6, "srshr v6.16b, v15.16b, #0x5", 1),       // seed 20261117 example
+            (0x2F08_4441, "sri v1.8b, v2.8b, #0x8", 2),            // shift right and insert reads [vd, vn]
+            (0x0F08_5441, "shl v1.8b, v2.8b, #0x0", 1),            // left shift #0x0
+            (0x6F7F_5441, "sli v1.2d, v2.2d, #0x3f", 2),           // shift left and insert reads [vd, vn]
+            (0x6F7F_6441, "sqshlu v1.2d, v2.2d, #0x3f", 1),        // saturating shift left unsigned
+            (0x4F7F_7441, "sqshl v1.2d, v2.2d, #0x3f", 1),         // saturating shift left signed
+            (0x0F08_8441, "shrn v1.8b, v2.8h, #0x8", 1),           // narrowing Q=0 reads [vn]
+            (0x4F3F_8441, "shrn2 v1.4s, v2.2d, #0x1", 2),          // upper-half narrowing Q=1 reads [vd, vn]
+            (0x6F0E_9E6A, "uqrshrn2 v10.16b, v19.8h, #0x2", 2),    // seed 17 example
+            (0x2F08_8C41, "sqrshrun v1.8b, v2.8h, #0x8", 1),       // saturating rounding shift right unsigned narrow
+            (0x0F10_E441, "scvtf v1.4h, v2.4h, #0x10", 1),         // FP16 vector fixed-point SCVTF
+            (0x6F7F_E441, "ucvtf v1.2d, v2.2d, #0x1", 1),          // FP64 vector fixed-point UCVTF
+            (0x0F20_FC41, "fcvtzs v1.2s, v2.2s, #0x20", 1),        // FP32 vector fixed-point FCVTZS
+            (0x6F7F_FC41, "fcvtzu v1.2d, v2.2d, #0x1", 1),         // FP64 vector fixed-point FCVTZU
+        ]
+        for (word, expected, expectedReadCount) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters.count == expectedReadCount, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.count == 1, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated & sibling-group boundary counterexamples must remain .inst:
+        let unallocatedOrOtherGroupCases: [UInt32] = [
+            0x0F40_0441, // Q=0 with immh>=8 (no .1d vector SSHR)
+            0x4F40_8441, // SHRN2 with immh>=8 (no 128->64 narrowing)
+            0x4F40_A441, // SSHLL2 with immh>=8 (no 64->128 widening)
+            0x0F08_4441, // U=0 slot of SRI (opcode=01000) is unallocated
+            0x0F08_6441, // U=0 slot of SQSHLU (opcode=01100) is unallocated
+            0x0F08_E441, // vector fixed-point SCVTF with immh=1 (8-bit) is unallocated
+            0x0F40_1041, // bit[23]==0, bit[10]==0 is Group 13 indexed element (not shift by immediate)
+            0x0F01_C7E1, // immh==0 is Group 11 modified immediate (not Group 3)
+        ]
+        for word in unallocatedOrOtherGroupCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let slices = [
+            "advsimd_vec_shift_imm_q0_u0",
+            "advsimd_vec_shift_imm_q0_u1",
+            "advsimd_vec_shift_imm_q1_u0",
+            "advsimd_vec_shift_imm_q1_u1",
+        ]
+        var totalRows = 0
+        var mismatches: [String] = []
+        for slice in slices {
+            let rawText = try String(contentsOf: RepoFixtures.a64TableURL(slice), encoding: .utf8)
+            var sliceRows = 0
+            for line in rawText.split(whereSeparator: \.isNewline) {
+                if line.hasPrefix("#") { continue }
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { continue }
+                let parts = line.split(separator: "\t", maxSplits: 2)
+                let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+                let word = try #require(UInt32(wordHex, radix: 16))
+                let expectedMnem = String(parts[1])
+                let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+                let decoded = decoder.decode(word: word, at: pc)
+                sliceRows += 1
+                totalRows += 1
+
+                if expectedMnem == ".long" {
+                    if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected .inst got '%@'", slice, word, decoded.formattedDisassembly))
+                        }
+                    }
+                } else {
+                    let expectedText = "\(expectedMnem) \(expectedOps)"
+                    if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected '%@' got '%@'", slice, word, expectedText, decoded.formattedDisassembly))
+                        }
+                    }
+                }
+            }
+            #expect(sliceRows == 3840)
+        }
+        #expect(totalRows == 15360)
+        #expect(mismatches.isEmpty, "Group 3 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

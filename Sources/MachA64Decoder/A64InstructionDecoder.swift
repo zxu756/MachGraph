@@ -3353,6 +3353,13 @@ public struct A64InstructionDecoder: Sendable {
                     writesRegisters: [dst]
                 )
             }
+            return nil
+        }
+
+        // 1b. AdvSIMD Vector Shift by Immediate (C4.1.95.19):
+        //     (word & 0x9F80_0400) == 0x0F00_0400 with immh (bits[22:19]) != 0
+        if (word & 0x9F80_0400) == 0x0F00_0400 {
+            return decodeAdvSIMDVectorShiftByImmediate(word: word, at: address)
         }
 
         // 2. AdvSIMD Copy (DUP, INS, UMOV, SMOV): (word & 0x9FE0_8400) == 0x0E00_0400 (bit[15] == 0)
@@ -4296,5 +4303,163 @@ public struct A64InstructionDecoder: Sendable {
         }
 
         return resolveCommonVectorFPMisc(arr: fpArr, szHi: szHi, allowFrintts: true)
+    }
+
+    private func decodeAdvSIMDVectorShiftByImmediate(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let immh = A64BitUtils.extract(word, 22, 19)
+        guard immh != 0 else { return nil }
+        let immb = A64BitUtils.extract(word, 18, 16)
+        let opcode = A64BitUtils.extract(word, 15, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let imm7 = (immh << 3) | immb
+        let esize: UInt32
+        let sizeIdx: Int
+        if immh == 1 {
+            esize = 8
+            sizeIdx = 0
+        } else if immh <= 3 {
+            esize = 16
+            sizeIdx = 1
+        } else if immh <= 7 {
+            esize = 32
+            sizeIdx = 2
+        } else {
+            esize = 64
+            sizeIdx = 3
+        }
+
+        let rightAmt = 2 * esize - imm7
+        let leftAmt = imm7 - esize
+
+        func emitVecShift(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dstArr: String,
+            srcArr: String,
+            immVal: UInt32,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: dstArr)
+            let vn = A64Register.v(rn, arrangement: srcArr)
+            let reads = accumulatesRd ? activeRegs([vd, vn]) : activeRegs([vn])
+            let immHex = String(format: "#0x%x", immVal)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn), .unsignedImmediate(UInt64(immVal))],
+                operandText: "\(vd.canonicalName), \(vn.canonicalName), \(immHex)",
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [vd]
+            )
+        }
+
+        let sameArr: String?
+        switch (sizeIdx, q) {
+        case (0, false): sameArr = "8b"
+        case (0, true):  sameArr = "16b"
+        case (1, false): sameArr = "4h"
+        case (1, true):  sameArr = "8h"
+        case (2, false): sameArr = "2s"
+        case (2, true):  sameArr = "4s"
+        case (3, true):  sameArr = "2d"
+        default:         sameArr = nil
+        }
+
+        switch opcode {
+        // 1. Same-width integer shifts & bit inserts
+        case 0b00000:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "ushr" : "sshr", dstArr: arr, srcArr: arr, immVal: rightAmt)
+        case 0b00010:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "usra" : "ssra", dstArr: arr, srcArr: arr, immVal: rightAmt, accumulatesRd: true)
+        case 0b00100:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "urshr" : "srshr", dstArr: arr, srcArr: arr, immVal: rightAmt)
+        case 0b00110:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "ursra" : "srsra", dstArr: arr, srcArr: arr, immVal: rightAmt, accumulatesRd: true)
+        case 0b01000 where u:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: "sri", dstArr: arr, srcArr: arr, immVal: rightAmt, accumulatesRd: true)
+        case 0b01010:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "sli" : "shl", dstArr: arr, srcArr: arr, immVal: leftAmt, accumulatesRd: u)
+        case 0b01100 where u:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: "sqshlu", dstArr: arr, srcArr: arr, immVal: leftAmt)
+        case 0b01110:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(mnemonic: .andVec, text: u ? "uqshl" : "sqshl", dstArr: arr, srcArr: arr, immVal: leftAmt)
+
+        // 2. Narrowing right shifts (immh in 1..7 -> sizeIdx in 0..2)
+        case 0b10000, 0b10001, 0b10010, 0b10011:
+            guard sizeIdx <= 2 else { return nil }
+            let dstArr = (q ? ["16b", "8h", "4s"] : ["8b", "4h", "2s"])[sizeIdx]
+            let srcArr = ["8h", "4s", "2d"][sizeIdx]
+            let baseText: String
+            switch (opcode, u) {
+            case (0b10000, false): baseText = "shrn"
+            case (0b10000, true):  baseText = "sqshrun"
+            case (0b10001, false): baseText = "rshrn"
+            case (0b10001, true):  baseText = "sqrshrun"
+            case (0b10010, false): baseText = "sqshrn"
+            case (0b10010, true):  baseText = "uqshrn"
+            case (0b10011, false): baseText = "sqrshrn"
+            default:               baseText = "uqrshrn"
+            }
+            return emitVecShift(
+                mnemonic: .andVec,
+                text: q ? "\(baseText)2" : baseText,
+                dstArr: dstArr,
+                srcArr: srcArr,
+                immVal: rightAmt,
+                accumulatesRd: q
+            )
+
+        // 3. Widening left shifts SSHLL / USHLL (immh in 1..7 -> sizeIdx in 0..2; reference keeps sshll/ushll #0x0)
+        case 0b10100:
+            guard sizeIdx <= 2 else { return nil }
+            let dstArr = ["8h", "4s", "2d"][sizeIdx]
+            let srcArr = (q ? ["16b", "8h", "4s"] : ["8b", "4h", "2s"])[sizeIdx]
+            let baseText = u ? "ushll" : "sshll"
+            return emitVecShift(
+                mnemonic: .andVec,
+                text: q ? "\(baseText)2" : baseText,
+                dstArr: dstArr,
+                srcArr: srcArr,
+                immVal: leftAmt
+            )
+
+        // 4. Vector fixed-point <-> FP conversions (immh in 2..15 -> sizeIdx in 1..3; 4h/8h/2s/4s/2d)
+        case 0b11100 where sizeIdx >= 1:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(
+                mnemonic: u ? .ucvtf : .scvtf,
+                text: u ? "ucvtf" : "scvtf",
+                dstArr: arr,
+                srcArr: arr,
+                immVal: rightAmt
+            )
+        case 0b11111 where sizeIdx >= 1:
+            guard let arr = sameArr else { return nil }
+            return emitVecShift(
+                mnemonic: u ? .fcvtzu : .fcvtzs,
+                text: u ? "fcvtzu" : "fcvtzs",
+                dstArr: arr,
+                srcArr: arr,
+                immVal: rightAmt
+            )
+
+        default:
+            return nil
+        }
     }
 }
