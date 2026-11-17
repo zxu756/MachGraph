@@ -288,13 +288,6 @@ def classify_a64_encoding_group(word: int) -> str:
         return "AdvSIMD scalar copy" if is_advsimd_scalar else "AdvSIMD vector copy"
 
     if (w_vec & 0x9F3E0C00) == 0x0E200800 or (w_vec & 0x9F7E0C00) == 0x0E780800:
-        if is_advsimd_scalar:
-            opcode = (w_vec >> 12) & 0x1F
-            is_fp16_misc = (w_vec & 0x9F7E0C00) == 0x0E780800
-            if not is_fp16_misc and opcode in (0b11011, 0b01100, 0b01101, 0b01111):
-                return "AdvSIMD scalar pairwise"
-            if is_fp16_misc and opcode in (0b01100, 0b01101, 0b01111):
-                return "AdvSIMD scalar pairwise"
         return "AdvSIMD scalar two-register misc" if is_advsimd_scalar else "AdvSIMD vector two-register misc"
 
     if (w_vec & 0x9F3E0C00) == 0x0E300800:

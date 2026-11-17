@@ -3060,7 +3060,14 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // 4. Common Advanced SIMD / NEON Vector Operations
+        // 4. AdvSIMD Scalar Two-Register Miscellaneous (integer, zero-compare, narrowing, FP32/FP64 & FP16):
+        //    C4.1.95.10: (word & 0xDF3E_0C00) == 0x5E20_0800
+        //    C4.1.95.11: (word & 0xDF7E_0C00) == 0x5E78_0800
+        if (word & 0xDF3E_0C00) == 0x5E20_0800 || (word & 0xDF7E_0C00) == 0x5E78_0800 {
+            return decodeAdvSIMDScalarTwoRegMisc(word: word, at: address)
+        }
+
+        // 5. Common Advanced SIMD / NEON Vector Operations
         return decodeNEONVectorBlock(word: word, at: address)
     }
 
@@ -3849,5 +3856,169 @@ public struct A64InstructionDecoder: Sendable {
 
             return nil
         }
+    }
+
+    private func decodeAdvSIMDScalarTwoRegMisc(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let isFP16Subtable = (word & 0xDF7E_0C00) == 0x5E78_0800
+        let opcode = A64BitUtils.extract(word, 16, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func scalarSIMDReg(_ index: UInt8, sizeCode: UInt32) -> A64Register {
+            switch sizeCode {
+            case 0b00: return .b(index)
+            case 0b01: return .h(index)
+            case 0b10: return .s(index)
+            default:   return .d(index)
+            }
+        }
+
+        func emitScalar2(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dst: A64Register,
+            src: A64Register,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let reads = accumulatesRd ? activeRegs([dst, src]) : activeRegs([src])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(dst), .register(src)],
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [dst]
+            )
+        }
+
+        func resolveScalarFPMisc(fpSizeCode: UInt32, szHi: UInt32) -> A64DecodedInstruction? {
+            let sd = scalarSIMDReg(rd, sizeCode: fpSizeCode)
+            let sn = scalarSIMDReg(rn, sizeCode: fpSizeCode)
+
+            if szHi == 1 {
+                switch opcode {
+                case 0b01100:
+                    return A64DecodedInstruction(
+                        address: address, rawWord: word, mnemonic: .cmeq,
+                        mnemonicText: u ? "fcmge" : "fcmgt",
+                        operands: [.register(sd), .register(sn), .fpImmediate(0.0)],
+                        group: .simdAndFP, readsRegisters: [sn], writesRegisters: [sd]
+                    )
+                case 0b01101:
+                    return A64DecodedInstruction(
+                        address: address, rawWord: word, mnemonic: .cmeq,
+                        mnemonicText: u ? "fcmle" : "fcmeq",
+                        operands: [.register(sd), .register(sn), .fpImmediate(0.0)],
+                        group: .simdAndFP, readsRegisters: [sn], writesRegisters: [sd]
+                    )
+                case 0b01110 where !u:
+                    return A64DecodedInstruction(
+                        address: address, rawWord: word, mnemonic: .cmeq,
+                        mnemonicText: "fcmlt",
+                        operands: [.register(sd), .register(sn), .fpImmediate(0.0)],
+                        group: .simdAndFP, readsRegisters: [sn], writesRegisters: [sd]
+                    )
+                default:
+                    break
+                }
+            }
+
+            switch (u, szHi, opcode) {
+            case (false, 0, 0b11010): return emitScalar2(mnemonic: .fcvtas, text: "fcvtns", dst: sd, src: sn)
+            case (false, 1, 0b11010): return emitScalar2(mnemonic: .fcvtas, text: "fcvtps", dst: sd, src: sn)
+            case (true,  0, 0b11010): return emitScalar2(mnemonic: .fcvtau, text: "fcvtnu", dst: sd, src: sn)
+            case (true,  1, 0b11010): return emitScalar2(mnemonic: .fcvtau, text: "fcvtpu", dst: sd, src: sn)
+
+            case (false, 0, 0b11011): return emitScalar2(mnemonic: .fcvtzs, text: "fcvtms", dst: sd, src: sn)
+            case (false, 1, 0b11011): return emitScalar2(mnemonic: .fcvtzs, text: "fcvtzs", dst: sd, src: sn)
+            case (true,  0, 0b11011): return emitScalar2(mnemonic: .fcvtzu, text: "fcvtmu", dst: sd, src: sn)
+            case (true,  1, 0b11011): return emitScalar2(mnemonic: .fcvtzu, text: "fcvtzu", dst: sd, src: sn)
+
+            case (false, 0, 0b11100): return emitScalar2(mnemonic: .fcvtas, text: "fcvtas", dst: sd, src: sn)
+            case (true,  0, 0b11100): return emitScalar2(mnemonic: .fcvtau, text: "fcvtau", dst: sd, src: sn)
+
+            case (false, 0, 0b11101): return emitScalar2(mnemonic: .scvtf, text: "scvtf", dst: sd, src: sn)
+            case (true,  0, 0b11101): return emitScalar2(mnemonic: .ucvtf, text: "ucvtf", dst: sd, src: sn)
+            case (false, 1, 0b11101): return emitScalar2(mnemonic: .fabs, text: "frecpe", dst: sd, src: sn)
+            case (true,  1, 0b11101): return emitScalar2(mnemonic: .fabs, text: "frsqrte", dst: sd, src: sn)
+
+            case (false, 1, 0b11111): return emitScalar2(mnemonic: .fabs, text: "frecpx", dst: sd, src: sn)
+            default:                  return nil
+            }
+        }
+
+        if isFP16Subtable {
+            return resolveScalarFPMisc(fpSizeCode: 0b01, szHi: (size >> 1) & 1)
+        }
+
+        // C4.1.95.10: integer saturating / zero-compare / narrowing & FP32/FP64 conversions
+        switch opcode {
+        case 0b00011:
+            let regD = scalarSIMDReg(rd, sizeCode: size)
+            let regN = scalarSIMDReg(rn, sizeCode: size)
+            return emitScalar2(mnemonic: .andVec, text: u ? "usqadd" : "suqadd", dst: regD, src: regN, accumulatesRd: true)
+
+        case 0b00111:
+            let regD = scalarSIMDReg(rd, sizeCode: size)
+            let regN = scalarSIMDReg(rn, sizeCode: size)
+            return emitScalar2(mnemonic: .andVec, text: u ? "sqneg" : "sqabs", dst: regD, src: regN)
+
+        case 0b01000 where size == 0b11:
+            let regD = A64Register.d(rd)
+            let regN = A64Register.d(rn)
+            return A64DecodedInstruction(
+                address: address, rawWord: word, mnemonic: .cmeq,
+                mnemonicText: u ? "cmge" : "cmgt",
+                operands: [.register(regD), .register(regN), .unsignedImmediate(0)],
+                group: .simdAndFP, readsRegisters: [regN], writesRegisters: [regD]
+            )
+
+        case 0b01001 where size == 0b11:
+            let regD = A64Register.d(rd)
+            let regN = A64Register.d(rn)
+            return A64DecodedInstruction(
+                address: address, rawWord: word, mnemonic: .cmeq,
+                mnemonicText: u ? "cmle" : "cmeq",
+                operands: [.register(regD), .register(regN), .unsignedImmediate(0)],
+                group: .simdAndFP, readsRegisters: [regN], writesRegisters: [regD]
+            )
+
+        case 0b01010 where size == 0b11 && !u:
+            let regD = A64Register.d(rd)
+            let regN = A64Register.d(rn)
+            return A64DecodedInstruction(
+                address: address, rawWord: word, mnemonic: .cmeq,
+                mnemonicText: "cmlt",
+                operands: [.register(regD), .register(regN), .unsignedImmediate(0)],
+                group: .simdAndFP, readsRegisters: [regN], writesRegisters: [regD]
+            )
+
+        case 0b01011 where size == 0b11:
+            return emitScalar2(mnemonic: .andVec, text: u ? "neg" : "abs", dst: .d(rd), src: .d(rn))
+
+        case 0b10010 where u && size < 0b11:
+            let dst = scalarSIMDReg(rd, sizeCode: size)
+            let src = scalarSIMDReg(rn, sizeCode: size + 1)
+            return emitScalar2(mnemonic: .andVec, text: "sqxtun", dst: dst, src: src)
+
+        case 0b10100 where size < 0b11:
+            let dst = scalarSIMDReg(rd, sizeCode: size)
+            let src = scalarSIMDReg(rn, sizeCode: size + 1)
+            return emitScalar2(mnemonic: .andVec, text: u ? "uqxtn" : "sqxtn", dst: dst, src: src)
+
+        case 0b10110 where u && size == 0b01:
+            return emitScalar2(mnemonic: .fcvt, text: "fcvtxn", dst: .s(rd), src: .d(rn))
+
+        default:
+            break
+        }
+
+        let szHi = (size >> 1) & 1
+        let fpSizeCode: UInt32 = ((size & 1) == 0) ? 0b10 : 0b11
+        return resolveScalarFPMisc(fpSizeCode: fpSizeCode, szHi: szHi)
     }
 }

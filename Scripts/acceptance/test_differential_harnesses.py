@@ -1744,6 +1744,62 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             d_mnems = [m for _, m, _ in d_rows if m != ".long"]
             self.assertEqual(sorted(d_mnems), ["sdot", "sdot", "udot", "udot"])
 
+    def test_stage8_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage8_check", "encoding-fuzz.py")
+
+        # Verify Group 2 (AdvSIMD scalar two-register misc) classification in encoding-fuzz.py
+        # keeps C4.1.95.10/11 opcodes (including FCVTZS/FCVTMS/FCMEQ #0.0/FCMGT #0.0) in Group 2
+        # while keeping C4.1.95.9 ADDP/FADDP in Group 24 (AdvSIMD scalar pairwise):
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5EA1B841), "AdvSIMD scalar two-register misc")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5EA0C841), "AdvSIMD scalar two-register misc")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5EF8C841), "AdvSIMD scalar two-register misc")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5EF1B841), "AdvSIMD scalar pairwise")
+
+        expected_counts = {
+            "advsimd_scalar_two_reg_misc": 512,
+        }
+        for grp_name, expected_len in expected_counts.items():
+            self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[grp_name].generate_words()
+            self.assertEqual(len(words), expected_len)
+            self.assertLessEqual(len(words), 4096)
+            self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_scalar_two_reg_misc", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate stage 8 scalar table failed: {stdout_txt}\n{stderr_txt}")
+            s_comments, s_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_two_reg_misc.tsv"))
+            self.assertEqual(len(s_rows), 512)
+            self.assertTrue(any("encoding-table.py generate advsimd_scalar_two_reg_misc" in c for c in s_comments))
+            s_mnems = {m for _, m, _ in s_rows}
+            for expected_mnem in (
+                "scvtf",
+                "ucvtf",
+                "fcvtzs",
+                "fcvtzu",
+                "fcvtns",
+                "fcvtms",
+                "fcvtps",
+                "fcvtas",
+                "fcvtxn",
+                "sqxtn",
+                "sqxtun",
+                "uqxtn",
+                "abs",
+                "neg",
+                "cmeq",
+                "fcmeq",
+                "frecpe",
+                "frecpx",
+                "frsqrte",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, s_mnems)
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

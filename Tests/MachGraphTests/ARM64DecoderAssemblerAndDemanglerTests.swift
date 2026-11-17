@@ -1685,4 +1685,91 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 96)
         #expect(mismatches.isEmpty, "Group 29 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 8 Group 2: AdvSIMD scalar two-register misc (integer, zero-compare, narrowing, FP32/FP64/FP16 conversions & estimates) matches advsimd_scalar_two_reg_misc.tsv")
+    func advsimdScalarTwoRegMiscDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register])] = [
+            (0x5E61_D800, "scvtf d0, d0", [.d(0)]),             // /bin/cp baseline example
+            (0x7E21_D841, "ucvtf s1, s2", [.s(2)]),             // advsimd_scalar_two_reg_misc.tsv
+            (0x5EA1_B841, "fcvtzs s1, s2", [.s(2)]),            // advsimd_scalar_two_reg_misc.tsv
+            (0x7EE1_B841, "fcvtzu d1, d2", [.d(2)]),            // advsimd_scalar_two_reg_misc.tsv
+            (0x7EA1_A9ED, "fcvtpu s13, s15", [.s(15)]),         // seed 20261117 example
+            (0x5EF8_EAC7, "fcmlt h7, h22, #0.0", [.h(22)]),     // seed 17 FP16 zero-compare example
+            (0x5E20_3841, "suqadd b1, b2", [.b(1), .b(2)]),     // saturating accumulate reads Rd + Rn
+            (0x7EE0_3841, "usqadd d1, d2", [.d(1), .d(2)]),     // saturating accumulate reads Rd + Rn
+            (0x5E60_7841, "sqabs h1, h2", [.h(2)]),             // 16-bit scalar SQABS
+            (0x7EA0_7841, "sqneg s1, s2", [.s(2)]),             // 32-bit scalar SQNEG
+            (0x5EE0_8841, "cmgt d1, d2, #0", [.d(2)]),          // 64-bit integer zero-compare
+            (0x7EE0_9841, "cmle d1, d2, #0", [.d(2)]),          // 64-bit integer zero-compare
+            (0x5EE0_B841, "abs d1, d2", [.d(2)]),               // 64-bit scalar ABS
+            (0x7EE0_B841, "neg d1, d2", [.d(2)]),               // 64-bit scalar NEG
+            (0x5EE0_D841, "fcmeq d1, d2, #0.0", [.d(2)]),       // FP64 scalar zero-compare
+            (0x7E21_2841, "sqxtun b1, h2", [.h(2)]),            // narrowing H -> B
+            (0x5EA1_4841, "sqxtn s1, d2", [.d(2)]),             // narrowing D -> S
+            (0x7E61_4841, "uqxtn h1, s2", [.s(2)]),             // narrowing S -> H
+            (0x7E61_6841, "fcvtxn s1, d2", [.d(2)]),            // round-to-odd FP64 -> FP32
+            (0x5EA1_F841, "frecpx s1, s2", [.s(2)]),            // scalar-only FRECPX
+            (0x7EF9_D841, "frsqrte h1, h2", [.h(2)]),           // FP16 scalar FRSQRTE
+            (0x7E79_D841, "ucvtf h1, h2", [.h(2)]),             // FP16 scalar UCVTF
+        ]
+        for (word, expected, expectedReads) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.count == 1, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples from advsimd_scalar_two_reg_misc.tsv must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0x5E20_0841, // no scalar REV64
+            0x5EA0_8841, // scalar CMGT #0 only valid for size=11 (D)
+            0x7EE0_A841, // U=1 slot of CMLT #0 is unallocated
+            0x7EE0_E841, // U=1 slot of FCMLT #0.0 is unallocated
+            0x5EE0_F841, // scalar FABS uses Scalar FP space (0x1e20c000), not AdvSIMD scalar
+            0x5E21_2841, // no scalar XTN (U=0 opcode=10010)
+            0x7E21_6841, // scalar FCVTXN only valid for size=01 (D -> S)
+            0x5E39_D841, // FP16 subtable with bit[22]==0 (size=00) is unallocated
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_scalar_two_reg_misc"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 512)
+        #expect(mismatches.isEmpty, "Group 2 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
