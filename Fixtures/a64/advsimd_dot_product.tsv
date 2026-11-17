@@ -1,0 +1,107 @@
+# A64 encoding reference table: advsimd_dot_product
+# ARM DDI 0487 C4.1.95.17 Advanced SIMD three-register extension (dot-product / matrix slice):
+# (word & 0x9f200400) == 0x0e000400 with opcode in 18..23 (0b10010..0b10111).
+# Enumerates all 2 x 2 x 4 x 6 = 96 non-register combinations of Q=0..1, U=0..1, size=0..3,
+# opcode=18..23 with distinct vector registers Rd=1, Rn=2, Rm=3.
+# Rows: 96 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e advsimd_dot_product.s -o advsimd_dot_product.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text advsimd_dot_product.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate advsimd_dot_product
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x0e039441	.long	0x0e039441
+0x0e039c41	.long	0x0e039c41
+0x0e03a441	.long	0x0e03a441
+0x0e03ac41	.long	0x0e03ac41
+0x0e03b441	.long	0x0e03b441
+0x0e03bc41	.long	0x0e03bc41
+0x0e439441	.long	0x0e439441
+0x0e439c41	.long	0x0e439c41
+0x0e43a441	.long	0x0e43a441
+0x0e43ac41	.long	0x0e43ac41
+0x0e43b441	.long	0x0e43b441
+0x0e43bc41	.long	0x0e43bc41
+0x0e839441	sdot	v1.2s, v2.8b, v3.8b
+0x0e839c41	.long	0x0e839c41
+0x0e83a441	.long	0x0e83a441
+0x0e83ac41	.long	0x0e83ac41
+0x0e83b441	.long	0x0e83b441
+0x0e83bc41	.long	0x0e83bc41
+0x0ec39441	.long	0x0ec39441
+0x0ec39c41	.long	0x0ec39c41
+0x0ec3a441	.long	0x0ec3a441
+0x0ec3ac41	.long	0x0ec3ac41
+0x0ec3b441	.long	0x0ec3b441
+0x0ec3bc41	.long	0x0ec3bc41
+0x2e039441	.long	0x2e039441
+0x2e039c41	.long	0x2e039c41
+0x2e03a441	.long	0x2e03a441
+0x2e03ac41	.long	0x2e03ac41
+0x2e03b441	.long	0x2e03b441
+0x2e03bc41	.long	0x2e03bc41
+0x2e439441	.long	0x2e439441
+0x2e439c41	.long	0x2e439c41
+0x2e43a441	.long	0x2e43a441
+0x2e43ac41	.long	0x2e43ac41
+0x2e43b441	.long	0x2e43b441
+0x2e43bc41	.long	0x2e43bc41
+0x2e839441	udot	v1.2s, v2.8b, v3.8b
+0x2e839c41	.long	0x2e839c41
+0x2e83a441	.long	0x2e83a441
+0x2e83ac41	.long	0x2e83ac41
+0x2e83b441	.long	0x2e83b441
+0x2e83bc41	.long	0x2e83bc41
+0x2ec39441	.long	0x2ec39441
+0x2ec39c41	.long	0x2ec39c41
+0x2ec3a441	.long	0x2ec3a441
+0x2ec3ac41	.long	0x2ec3ac41
+0x2ec3b441	.long	0x2ec3b441
+0x2ec3bc41	.long	0x2ec3bc41
+0x4e039441	.long	0x4e039441
+0x4e039c41	.long	0x4e039c41
+0x4e03a441	.long	0x4e03a441
+0x4e03ac41	.long	0x4e03ac41
+0x4e03b441	.long	0x4e03b441
+0x4e03bc41	.long	0x4e03bc41
+0x4e439441	.long	0x4e439441
+0x4e439c41	.long	0x4e439c41
+0x4e43a441	.long	0x4e43a441
+0x4e43ac41	.long	0x4e43ac41
+0x4e43b441	.long	0x4e43b441
+0x4e43bc41	.long	0x4e43bc41
+0x4e839441	sdot	v1.4s, v2.16b, v3.16b
+0x4e839c41	.long	0x4e839c41
+0x4e83a441	.long	0x4e83a441
+0x4e83ac41	.long	0x4e83ac41
+0x4e83b441	.long	0x4e83b441
+0x4e83bc41	.long	0x4e83bc41
+0x4ec39441	.long	0x4ec39441
+0x4ec39c41	.long	0x4ec39c41
+0x4ec3a441	.long	0x4ec3a441
+0x4ec3ac41	.long	0x4ec3ac41
+0x4ec3b441	.long	0x4ec3b441
+0x4ec3bc41	.long	0x4ec3bc41
+0x6e039441	.long	0x6e039441
+0x6e039c41	.long	0x6e039c41
+0x6e03a441	.long	0x6e03a441
+0x6e03ac41	.long	0x6e03ac41
+0x6e03b441	.long	0x6e03b441
+0x6e03bc41	.long	0x6e03bc41
+0x6e439441	.long	0x6e439441
+0x6e439c41	.long	0x6e439c41
+0x6e43a441	.long	0x6e43a441
+0x6e43ac41	.long	0x6e43ac41
+0x6e43b441	.long	0x6e43b441
+0x6e43bc41	.long	0x6e43bc41
+0x6e839441	udot	v1.4s, v2.16b, v3.16b
+0x6e839c41	.long	0x6e839c41
+0x6e83a441	.long	0x6e83a441
+0x6e83ac41	.long	0x6e83ac41
+0x6e83b441	.long	0x6e83b441
+0x6e83bc41	.long	0x6e83bc41
+0x6ec39441	.long	0x6ec39441
+0x6ec39c41	.long	0x6ec39c41
+0x6ec3a441	.long	0x6ec3a441
+0x6ec3ac41	.long	0x6ec3ac41
+0x6ec3b441	.long	0x6ec3b441
+0x6ec3bc41	.long	0x6ec3bc41

@@ -1615,4 +1615,74 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 480)
         #expect(mismatches.isEmpty, "Group 14 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 7 Group 29: AdvSIMD dot product (SDOT / UDOT) matches advsimd_dot_product.tsv")
+    func advsimdDotProductDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x0E83_9441, "sdot v1.2s, v2.8b, v3.8b"),     // advsimd_dot_product.tsv Q=0 U=0
+            (0x2E83_9441, "udot v1.2s, v2.8b, v3.8b"),     // advsimd_dot_product.tsv Q=0 U=1
+            (0x4E83_9441, "sdot v1.4s, v2.16b, v3.16b"),   // advsimd_dot_product.tsv Q=1 U=0
+            (0x6E83_9441, "udot v1.4s, v2.16b, v3.16b"),   // advsimd_dot_product.tsv Q=1 U=1
+            (0x6E81_9440, "udot v0.4s, v2.16b, v1.16b"),   // /usr/bin/file baseline example
+            (0x0E84_942C, "sdot v12.2s, v1.8b, v4.8b"),    // seed 17 example
+            (0x6E94_978B, "udot v11.4s, v28.16b, v20.16b"), // seed 20261117 example
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters.count == 3, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.count == 1, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated sibling sizes/opcodes (FEAT_I8MM / FEAT_BF16 on apple-m1) must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0x0E03_9441, // opcode=18 with size=00
+            0x0E43_9441, // opcode=18 with size=01
+            0x0EC3_9441, // opcode=18 with size=11
+            0x4E83_9C41, // USDOT (FEAT_I8MM)
+            0x6E43_9C41, // BFDOT (FEAT_BF16)
+            0x4E83_A441, // SMMLA (FEAT_I8MM)
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_dot_product"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 96)
+        #expect(mismatches.isEmpty, "Group 29 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

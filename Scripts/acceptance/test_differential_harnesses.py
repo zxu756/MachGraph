@@ -1691,6 +1691,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         expected_counts = {
             "advsimd_vec_three_same": 880,
             "advsimd_scalar_three_same": 480,
+            "advsimd_dot_product": 96,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1699,9 +1700,28 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             self.assertLessEqual(len(words), 4096)
             self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
 
+        # Verify distinct-register Group 1 (864) + Group 29 (96) + Copy bit[15]=0 (64) partition all 1,024
+        # non-register combinations of (word & 0x9f000400) == 0x0e000400 with zero overlap:
+        reg_mask = ~((0x1F << 16) | (0x1F << 5) | 0x1F) & 0xFFFFFFFF
+        g1_nonreg = {w & reg_mask for w in enc_table.ENCODING_GROUPS["advsimd_vec_three_same"].generate_words()[:864]}
+        g29_nonreg = {w & reg_mask for w in enc_table.ENCODING_GROUPS["advsimd_dot_product"].generate_words()}
+        copy_nonreg = {
+            w & reg_mask
+            for w in enc_table.ENCODING_GROUPS["advsimd_copy"].generate_words()
+            if ((w >> 15) & 1) == 0
+        }
+        self.assertEqual(len(g1_nonreg), 864)
+        self.assertEqual(len(g29_nonreg), 96)
+        self.assertEqual(len(copy_nonreg), 64)
+        self.assertTrue(g1_nonreg.isdisjoint(g29_nonreg))
+        self.assertTrue(g1_nonreg.isdisjoint(copy_nonreg))
+        self.assertTrue(g29_nonreg.isdisjoint(copy_nonreg))
+        self.assertEqual(len(g1_nonreg | g29_nonreg | copy_nonreg), 1024)
+
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
-                enc_table, ["generate", "advsimd_vec_three_same", "advsimd_scalar_three_same", "--out-dir", tmp]
+                enc_table,
+                ["generate", "advsimd_vec_three_same", "advsimd_scalar_three_same", "advsimd_dot_product", "--out-dir", tmp],
             )
             self.assertEqual(rc, 0, f"generate stage 7 tables failed: {stdout_txt}\n{stderr_txt}")
             comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vec_three_same.tsv"))
@@ -1717,6 +1737,12 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             s_mnems = {m for _, m, _ in s_rows}
             for expected_mnem in ("sqadd", "uqshl", "add", "sub", "cmgt", "cmhi", "fabd", "fmulx", "sqrdmlah", ".long"):
                 self.assertIn(expected_mnem, s_mnems)
+
+            d_comments, d_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_dot_product.tsv"))
+            self.assertEqual(len(d_rows), 96)
+            self.assertTrue(any("encoding-table.py generate advsimd_dot_product" in c for c in d_comments))
+            d_mnems = [m for _, m, _ in d_rows if m != ".long"]
+            self.assertEqual(sorted(d_mnems), ["sdot", "sdot", "udot", "udot"])
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

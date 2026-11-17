@@ -491,6 +491,37 @@ def _generate_advsimd_scalar_three_same_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_dot_product_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.17 Advanced SIMD three-register extension (dot-product / matrix slice):
+    0|Q|U|01110|size(2)|0|Rm(5)|opcode(5)|1|Rn(5)|Rd(5), with opcode in 18..23 (0b10010..0b10111).
+    Enumerates all 2 x 2 x 4 x 6 = 96 combinations of Q=0..1, U=0..1, size=0..3, opcode=18..23
+    with distinct vector registers Rd=1, Rn=2, Rm=3.
+    On apple-m1, opcode=18 (0b10010) with size=0b10 decodes to SDOT (U=0) and UDOT (U=1);
+    other sizes and opcode=19..23 (USDOT / BFDOT / SMMLA / UMMLA / USMMLA) are unallocated (.long).
+    """
+    words: List[int] = []
+    rd = 1
+    rn = 2
+    rm = 3
+    for q_bit in (0, 1):
+        for u_bit in (0, 1):
+            for size in range(4):
+                for opcode in range(18, 24):
+                    word = (
+                        (q_bit << 30)
+                        | (u_bit << 29)
+                        | (0b01110 << 24)
+                        | (size << 22)
+                        | (rm << 16)
+                        | (opcode << 11)
+                        | (1 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -654,6 +685,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "with distinct scalar registers Rd=1, Rn=2, Rm=3.",
         ),
         generate_words=_generate_advsimd_scalar_three_same_words,
+    ),
+    "advsimd_dot_product": EncodingGroupSpec(
+        name="advsimd_dot_product",
+        title="Advanced SIMD dot product — SDOT / UDOT and unallocated USDOT / BFDOT / Int8-matrix sibling opcodes",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.17 Advanced SIMD three-register extension (dot-product / matrix slice):",
+            "(word & 0x9f200400) == 0x0e000400 with opcode in 18..23 (0b10010..0b10111).",
+            "Enumerates all 2 x 2 x 4 x 6 = 96 non-register combinations of Q=0..1, U=0..1, size=0..3,",
+            "opcode=18..23 with distinct vector registers Rd=1, Rn=2, Rm=3.",
+        ),
+        generate_words=_generate_advsimd_dot_product_words,
     ),
 }
 

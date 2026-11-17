@@ -3652,7 +3652,7 @@ public struct A64InstructionDecoder: Sendable {
             }
             return nil
         } else {
-            // bit[21] == 0: FP16 three-same (C4.1.95.15) and RDMA / FCMA three-register extension (C4.1.95.17)
+            // bit[21] == 0: FP16 three-same (C4.1.95.15) and RDMA / DotProd / FCMA three-register extension (C4.1.95.17)
             guard !(size == 0b00) else { return nil }
 
             // 1. FP16 three-same: size in {0b01, 0b11} and opcode < 0b01000
@@ -3671,7 +3671,24 @@ public struct A64InstructionDecoder: Sendable {
                 return emitVec3(mnemonic: .andVec, text: rdmText, arr: rdmArr, accumulatesRd: true)
             }
 
-            // 3. FEAT_FCMA: FCMLA / FCADD (U=1, opcode >= 0b11000)
+            // 3. FEAT_DotProd: SDOT / UDOT (size == 0b10, opcode == 0b10010)
+            if size == 0b10 && opcode == 0b10010 {
+                let vd = A64Register.v(rd, arrangement: q ? "4s" : "2s")
+                let vn = A64Register.v(rn, arrangement: q ? "16b" : "8b")
+                let vm = A64Register.v(rm, arrangement: q ? "16b" : "8b")
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .andVec,
+                    mnemonicText: u ? "udot" : "sdot",
+                    operands: [.register(vd), .register(vn), .register(vm)],
+                    group: .simdAndFP,
+                    readsRegisters: activeRegs([vd, vn, vm]),
+                    writesRegisters: [vd]
+                )
+            }
+
+            // 4. FEAT_FCMA: FCMLA / FCADD (U=1, opcode >= 0b11000)
             if u && opcode >= 0b11000 {
                 let fcArr: String
                 switch (size, q) {
