@@ -3060,8 +3060,9 @@ public struct A64InstructionDecoder: Sendable {
     }
 
     private func decodeSIMDAndFloatingPoint(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
-        // 1. Scalar FP 3-Source (FMADD / FMSUB): bits[31:24] == 0b00011111
-        if (word & 0xFF20_0000) == 0x1F00_0000 {
+        // 1. Scalar FP 3-Source (FMADD / FMSUB / FNMADD / FNMSUB): (word & 0x5F00_0000) == 0x1F00_0000
+        if (word & 0x5F00_0000) == 0x1F00_0000 {
+            guard (word & 0xA000_0000) == 0 else { return nil }
             let ftype = A64BitUtils.extract(word, 23, 22)
             let o1 = A64BitUtils.flag(word, 21)
             let rm = UInt8(A64BitUtils.extract(word, 20, 16))
@@ -3070,8 +3071,7 @@ public struct A64InstructionDecoder: Sendable {
             let rn = UInt8(A64BitUtils.extract(word, 9, 5))
             let rd = UInt8(A64BitUtils.extract(word, 4, 0))
 
-            guard !o1,
-                  let rdReg = scalarFPRegister(index: rd, ftype: ftype),
+            guard let rdReg = scalarFPRegister(index: rd, ftype: ftype),
                   let rnReg = scalarFPRegister(index: rn, ftype: ftype),
                   let rmReg = scalarFPRegister(index: rm, ftype: ftype),
                   let raReg = scalarFPRegister(index: ra, ftype: ftype)
@@ -3079,10 +3079,12 @@ public struct A64InstructionDecoder: Sendable {
                 return nil
             }
 
+            let mnemText: String? = o1 ? (o0 ? "fnmsub" : "fnmadd") : nil
             return A64DecodedInstruction(
                 address: address,
                 rawWord: word,
                 mnemonic: o0 ? .fmsub : .fmadd,
+                mnemonicText: mnemText,
                 operands: [.register(rdReg), .register(rnReg), .register(rmReg), .register(raReg)],
                 group: .simdAndFP,
                 readsRegisters: [rnReg, rmReg, raReg],

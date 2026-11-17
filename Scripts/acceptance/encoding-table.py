@@ -842,6 +842,36 @@ def _generate_scalar_fp_one_source_words() -> List[int]:
     return words
 
 
+def _generate_scalar_fp_three_source_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.20 Floating-point data-processing (3 source):
+    M(1)|0|S(1)|11111|ftype(2)|o1(1)|Rm(5)|o0(1)|Ra(5)|Rn(5)|Rd(5), i.e. (word & 0x5f000000) == 0x1f000000.
+    Enumerates all 2 x 2 x 4 x 2 x 2 x 2 = 128 combinations of M=0..1, S=0..1, ftype=0..3 (S/D/unallocated/H),
+    o1=0..1, o0=0..1 across (Rd, Rn, Rm, Ra) in {(1, 2, 3, 4), (31, 31, 31, 31)}
+    (verifying Rd, Rn, Rm, Ra operand order and M/S/ftype=10 unallocated counterexamples).
+    """
+    words: List[int] = []
+    for m_bit in (0, 1):
+        for s_bit in (0, 1):
+            for ftype in range(4):
+                for o1 in (0, 1):
+                    for o0 in (0, 1):
+                        for rd, rn, rm, ra in ((1, 2, 3, 4), (31, 31, 31, 31)):
+                            word = (
+                                (m_bit << 31)
+                                | (s_bit << 29)
+                                | (0b11111 << 24)
+                                | (ftype << 22)
+                                | (o1 << 21)
+                                | (rm << 16)
+                                | (o0 << 15)
+                                | (ra << 10)
+                                | (rn << 5)
+                                | rd
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1128,6 +1158,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "opcode=0..63 with (Rd, Rn) = (1, 2), plus 96 high-register rows (Rd, Rn) = (31, 31), totaling 1,120 rows.",
         ),
         generate_words=_generate_scalar_fp_one_source_words,
+    ),
+    "scalar_fp_three_source": EncodingGroupSpec(
+        name="scalar_fp_three_source",
+        title="Scalar floating-point data-processing (3 source) — FMADD, FMSUB, FNMADD, and FNMSUB",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.20 Floating-point data-processing (3 source): (word & 0x5f000000) == 0x1f000000.",
+            "Enumerates all 2 x 2 x 4 x 2 x 2 x 2 = 128 combinations of M=0..1, S=0..1, ftype=0..3 (S/D/unallocated/H),",
+            "o1=0..1, o0=0..1 across (Rd, Rn, Rm, Ra) in {(1,2,3,4), (31,31,31,31)}.",
+        ),
+        generate_words=_generate_scalar_fp_three_source_words,
     ),
 }
 

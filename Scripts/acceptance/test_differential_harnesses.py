@@ -1959,11 +1959,13 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x38BFC108), "LDAPR (RCpc) and LSE atomic")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x9E690009), "Scalar FP <-> integer conversions")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1E664000), "Scalar FP data-processing (1 source)")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1F608020), "Scalar FP data-processing (3 source)")
         expected_counts = {
             "pac_data_ptr": 3200,
             "rcpc_ldapr": 512,
             "scalar_fp_int_conv": 1536,
             "scalar_fp_one_source": 1120,
+            "scalar_fp_three_source": 128,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1975,7 +1977,16 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "pac_data_ptr", "rcpc_ldapr", "scalar_fp_int_conv", "scalar_fp_one_source", "--out-dir", tmp],
+                [
+                    "generate",
+                    "pac_data_ptr",
+                    "rcpc_ldapr",
+                    "scalar_fp_int_conv",
+                    "scalar_fp_one_source",
+                    "scalar_fp_three_source",
+                    "--out-dir",
+                    tmp,
+                ],
             )
             self.assertEqual(rc, 0, f"generate stage 10 tables failed: {stdout_txt}\n{stderr_txt}")
             pc, pr = enc_table.load_reference_table(os.path.join(tmp, "pac_data_ptr.tsv"))
@@ -2063,6 +2074,13 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 ".long",
             ):
                 self.assertIn(expected_mnem, om)
+
+            tc, trows = enc_table.load_reference_table(os.path.join(tmp, "scalar_fp_three_source.tsv"))
+            self.assertEqual(len(trows), 128)
+            self.assertTrue(any("encoding-table.py generate scalar_fp_three_source" in c for c in tc))
+            tm = {m for _, m, _ in trows}
+            for expected_mnem in ("fmadd", "fmsub", "fnmadd", "fnmsub", ".long"):
+                self.assertIn(expected_mnem, tm)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

@@ -2409,4 +2409,57 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 1120)
         #expect(mismatches.isEmpty, "Group 19 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 27: Scalar FP 3-source operations (FMADD, FMSUB, FNMADD, FNMSUB across S/D/H) match scalar_fp_three_source.tsv")
+    func scalarFPThreeSourceDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x1F60_8020, "fnmsub d0, d1, d0, d0"),   // /usr/bin/afinfo baseline example
+            (0x1F6A_4DBF, "fnmadd d31, d13, d10, d19"), // seed 20261117 fuzz example
+            (0x1F6B_D5A4, "fnmsub d4, d13, d11, d21"),  // seed 17 fuzz example
+            (0x1F23_1041, "fnmadd s1, s2, s3, s4"),
+            (0x1F23_9041, "fnmsub s1, s2, s3, s4"),
+            (0x1FE3_1041, "fnmadd h1, h2, h3, h4"),
+            (0x1FE3_9041, "fnmsub h1, h2, h3, h4"),
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("scalar_fp_three_source"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 128)
+        #expect(mismatches.isEmpty, "Group 27 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

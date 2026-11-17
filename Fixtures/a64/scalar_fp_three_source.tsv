@@ -1,0 +1,138 @@
+# A64 encoding reference table: scalar_fp_three_source
+# ARM DDI 0487 C4.1.95.20 Floating-point data-processing (3 source): (word & 0x5f000000) == 0x1f000000.
+# Enumerates all 2 x 2 x 4 x 2 x 2 x 2 = 128 combinations of M=0..1, S=0..1, ftype=0..3 (S/D/unallocated/H),
+# o1=0..1, o0=0..1 across (Rd, Rn, Rm, Ra) in {(1,2,3,4), (31,31,31,31)}.
+# Rows: 128 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e scalar_fp_three_source.s -o scalar_fp_three_source.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text scalar_fp_three_source.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate scalar_fp_three_source
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x1f031041	fmadd	s1, s2, s3, s4
+0x1f1f7fff	fmadd	s31, s31, s31, s31
+0x1f039041	fmsub	s1, s2, s3, s4
+0x1f1fffff	fmsub	s31, s31, s31, s31
+0x1f231041	fnmadd	s1, s2, s3, s4
+0x1f3f7fff	fnmadd	s31, s31, s31, s31
+0x1f239041	fnmsub	s1, s2, s3, s4
+0x1f3fffff	fnmsub	s31, s31, s31, s31
+0x1f431041	fmadd	d1, d2, d3, d4
+0x1f5f7fff	fmadd	d31, d31, d31, d31
+0x1f439041	fmsub	d1, d2, d3, d4
+0x1f5fffff	fmsub	d31, d31, d31, d31
+0x1f631041	fnmadd	d1, d2, d3, d4
+0x1f7f7fff	fnmadd	d31, d31, d31, d31
+0x1f639041	fnmsub	d1, d2, d3, d4
+0x1f7fffff	fnmsub	d31, d31, d31, d31
+0x1f831041	.long	0x1f831041
+0x1f9f7fff	.long	0x1f9f7fff
+0x1f839041	.long	0x1f839041
+0x1f9fffff	.long	0x1f9fffff
+0x1fa31041	.long	0x1fa31041
+0x1fbf7fff	.long	0x1fbf7fff
+0x1fa39041	.long	0x1fa39041
+0x1fbfffff	.long	0x1fbfffff
+0x1fc31041	fmadd	h1, h2, h3, h4
+0x1fdf7fff	fmadd	h31, h31, h31, h31
+0x1fc39041	fmsub	h1, h2, h3, h4
+0x1fdfffff	fmsub	h31, h31, h31, h31
+0x1fe31041	fnmadd	h1, h2, h3, h4
+0x1fff7fff	fnmadd	h31, h31, h31, h31
+0x1fe39041	fnmsub	h1, h2, h3, h4
+0x1fffffff	fnmsub	h31, h31, h31, h31
+0x3f031041	.long	0x3f031041
+0x3f1f7fff	.long	0x3f1f7fff
+0x3f039041	.long	0x3f039041
+0x3f1fffff	.long	0x3f1fffff
+0x3f231041	.long	0x3f231041
+0x3f3f7fff	.long	0x3f3f7fff
+0x3f239041	.long	0x3f239041
+0x3f3fffff	.long	0x3f3fffff
+0x3f431041	.long	0x3f431041
+0x3f5f7fff	.long	0x3f5f7fff
+0x3f439041	.long	0x3f439041
+0x3f5fffff	.long	0x3f5fffff
+0x3f631041	.long	0x3f631041
+0x3f7f7fff	.long	0x3f7f7fff
+0x3f639041	.long	0x3f639041
+0x3f7fffff	.long	0x3f7fffff
+0x3f831041	.long	0x3f831041
+0x3f9f7fff	.long	0x3f9f7fff
+0x3f839041	.long	0x3f839041
+0x3f9fffff	.long	0x3f9fffff
+0x3fa31041	.long	0x3fa31041
+0x3fbf7fff	.long	0x3fbf7fff
+0x3fa39041	.long	0x3fa39041
+0x3fbfffff	.long	0x3fbfffff
+0x3fc31041	.long	0x3fc31041
+0x3fdf7fff	.long	0x3fdf7fff
+0x3fc39041	.long	0x3fc39041
+0x3fdfffff	.long	0x3fdfffff
+0x3fe31041	.long	0x3fe31041
+0x3fff7fff	.long	0x3fff7fff
+0x3fe39041	.long	0x3fe39041
+0x3fffffff	.long	0x3fffffff
+0x9f031041	.long	0x9f031041
+0x9f1f7fff	.long	0x9f1f7fff
+0x9f039041	.long	0x9f039041
+0x9f1fffff	.long	0x9f1fffff
+0x9f231041	.long	0x9f231041
+0x9f3f7fff	.long	0x9f3f7fff
+0x9f239041	.long	0x9f239041
+0x9f3fffff	.long	0x9f3fffff
+0x9f431041	.long	0x9f431041
+0x9f5f7fff	.long	0x9f5f7fff
+0x9f439041	.long	0x9f439041
+0x9f5fffff	.long	0x9f5fffff
+0x9f631041	.long	0x9f631041
+0x9f7f7fff	.long	0x9f7f7fff
+0x9f639041	.long	0x9f639041
+0x9f7fffff	.long	0x9f7fffff
+0x9f831041	.long	0x9f831041
+0x9f9f7fff	.long	0x9f9f7fff
+0x9f839041	.long	0x9f839041
+0x9f9fffff	.long	0x9f9fffff
+0x9fa31041	.long	0x9fa31041
+0x9fbf7fff	.long	0x9fbf7fff
+0x9fa39041	.long	0x9fa39041
+0x9fbfffff	.long	0x9fbfffff
+0x9fc31041	.long	0x9fc31041
+0x9fdf7fff	.long	0x9fdf7fff
+0x9fc39041	.long	0x9fc39041
+0x9fdfffff	.long	0x9fdfffff
+0x9fe31041	.long	0x9fe31041
+0x9fff7fff	.long	0x9fff7fff
+0x9fe39041	.long	0x9fe39041
+0x9fffffff	.long	0x9fffffff
+0xbf031041	.long	0xbf031041
+0xbf1f7fff	.long	0xbf1f7fff
+0xbf039041	.long	0xbf039041
+0xbf1fffff	.long	0xbf1fffff
+0xbf231041	.long	0xbf231041
+0xbf3f7fff	.long	0xbf3f7fff
+0xbf239041	.long	0xbf239041
+0xbf3fffff	.long	0xbf3fffff
+0xbf431041	.long	0xbf431041
+0xbf5f7fff	.long	0xbf5f7fff
+0xbf439041	.long	0xbf439041
+0xbf5fffff	.long	0xbf5fffff
+0xbf631041	.long	0xbf631041
+0xbf7f7fff	.long	0xbf7f7fff
+0xbf639041	.long	0xbf639041
+0xbf7fffff	.long	0xbf7fffff
+0xbf831041	.long	0xbf831041
+0xbf9f7fff	.long	0xbf9f7fff
+0xbf839041	.long	0xbf839041
+0xbf9fffff	.long	0xbf9fffff
+0xbfa31041	.long	0xbfa31041
+0xbfbf7fff	.long	0xbfbf7fff
+0xbfa39041	.long	0xbfa39041
+0xbfbfffff	.long	0xbfbfffff
+0xbfc31041	.long	0xbfc31041
+0xbfdf7fff	.long	0xbfdf7fff
+0xbfc39041	.long	0xbfc39041
+0xbfdfffff	.long	0xbfdfffff
+0xbfe31041	.long	0xbfe31041
+0xbfff7fff	.long	0xbfff7fff
+0xbfe39041	.long	0xbfe39041
+0xbfffffff	.long	0xbfffffff
