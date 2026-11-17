@@ -374,6 +374,42 @@ def _make_sysreg_words_generator(is_read: bool, op1_val: int) -> Callable[[], Li
     return _gen
 
 
+def _generate_udf_words() -> List[int]:
+    """ARM DDI 0487 C4.1.91 Reserved — UDF #imm16 ((word & 0xffff0000) == 0) plus high-16-bit != 0 counterexamples."""
+    udf_imms = set(range(0x0000, 0x0100))
+    udf_imms.update(range(0xFF00, 0x10000))
+    for hi in range(1, 255):
+        udf_imms.add(hi << 8)
+        udf_imms.add((hi << 8) | hi)
+    for bit in range(16):
+        udf_imms.add(1 << bit)
+        udf_imms.add(0xFFFF ^ (1 << bit))
+    udf_imms.update((0x0FFF, 0x1000, 0x1234, 0x5555, 0x7FFF, 0x8001, 0xAAAA, 0xABCD, 0xBEEF, 0xBFFB, 0xDEAD))
+    words: List[int] = sorted(udf_imms)
+
+    reserved_hi16_samples = (
+        0x0001,
+        0x0002,
+        0x0004,
+        0x0008,
+        0x0010,
+        0x0020,
+        0x0040,
+        0x0080,
+        0x0100,
+        0x0200,
+        0x03FF,
+        0x8000,
+        0x8001,
+        0x81FF,
+    )
+    for hi16 in reserved_hi16_samples:
+        for lo16 in (0x0000, 0x0001, 0xFFFF):
+            words.append((hi16 << 16) | lo16)
+    words.extend((0x32800000, 0x32800001, 0x3280FFFF, 0x54000010, 0x54000050, 0xFFFFFFFF))
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -505,6 +541,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
         )
         for op1 in (0, 1, 3)
     },
+    "udf": EncodingGroupSpec(
+        name="udf",
+        title="Reserved / permanently undefined — UDF #imm16 (0x0000xxxx) and non-zero high-16-bit counterexamples",
+        header_notes=(
+            "ARM DDI 0487 C4.1.91 Reserved & C6.2.439 UDF: (word & 0xffff0000) == 0x00000000.",
+            "Enumerates 1,035 unique 0x0000xxxx encodings (all 0x0000..0x00ff, all 0xff00..0xffff, page bases/diagonals,",
+            "single-bit set/clear, and signed/hex boundaries) plus 48 high-16-bit != 0 counterexamples (.long), totaling 1,083 rows.",
+        ),
+        generate_words=_generate_udf_words,
+    ),
 }
 
 

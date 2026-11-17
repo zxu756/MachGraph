@@ -1653,6 +1653,34 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             self.assertTrue(fcmp_zero_ops)
             self.assertTrue(all(ops.endswith("#0.0") for ops in fcmp_zero_ops))
 
+    def test_stage6_udf_encoding_group_registered_and_generates_udf_and_counterexamples(self):
+        enc_table = self._mod()
+        self.assertIn("udf", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["udf"].generate_words()
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in udf")
+        udf_words = [w for w in words if (w >> 16) == 0]
+        counter_words = [w for w in words if (w >> 16) != 0]
+        self.assertGreaterEqual(len(udf_words), 512)
+        self.assertGreaterEqual(len(counter_words), 16)
+        for boundary in (0x00000000, 0x00000001, 0x0000000F, 0x00000010, 0x00007FFF, 0x00008000, 0x0000FFFF):
+            self.assertIn(boundary, udf_words)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table, ["generate", "udf", "--out-dir", tmp]
+            )
+            self.assertEqual(rc, 0, f"generate udf failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "udf.tsv"))
+            self.assertEqual(len(rows), len(words))
+            self.assertTrue(any("encoding-table.py generate udf" in c for c in comments))
+            for w, mnem, ops in rows:
+                if (w >> 16) == 0:
+                    self.assertEqual(mnem, "udf")
+                    self.assertEqual(ops, f"#0x{w & 0xFFFF:x}")
+                else:
+                    self.assertEqual(mnem, ".long")
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 
