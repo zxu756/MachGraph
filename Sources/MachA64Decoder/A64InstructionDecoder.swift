@@ -3289,7 +3289,6 @@ public struct A64InstructionDecoder: Sendable {
         let q = A64BitUtils.flag(word, 30)
         let u = A64BitUtils.flag(word, 29)
         let size = A64BitUtils.extract(word, 23, 22)
-        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
         let rn = UInt8(A64BitUtils.extract(word, 9, 5))
         let rd = UInt8(A64BitUtils.extract(word, 4, 0))
 
@@ -3411,66 +3410,14 @@ public struct A64InstructionDecoder: Sendable {
                     group: .simdAndFP, readsRegisters: activeRegs([vRd, gpRn]), writesRegisters: [vRd]
                 )
             }
+            return nil
         }
 
-        // 3. AdvSIMD Three-Same Logical & CMEQ: (word & 0x9F20_0400) == 0x0E20_0400
-        if (word & 0x9F20_0400) == 0x0E20_0400 {
-            let opcode = A64BitUtils.extract(word, 15, 11)
-            let byteArr = q ? "16b" : "8b"
-
-            if opcode == 0b00011 {
-                if !u && size == 0b00 { // AND.16B / AND.8B
-                    let vd = A64Register.v(rd, arrangement: byteArr)
-                    let vn = A64Register.v(rn, arrangement: byteArr)
-                    let vm = A64Register.v(rm, arrangement: byteArr)
-                    return A64DecodedInstruction(
-                        address: address, rawWord: word, mnemonic: .andVec, mnemonicText: "and",
-                        operands: [.register(vd), .register(vn), .register(vm)],
-                        group: .simdAndFP, readsRegisters: [vn, vm], writesRegisters: [vd]
-                    )
-                }
-                if !u && size == 0b10 { // ORR.16B / ORR.8B (preferred alias MOV when Rm == Rn)
-                    let vd = A64Register.v(rd, arrangement: byteArr)
-                    let vn = A64Register.v(rn, arrangement: byteArr)
-                    if rm == rn {
-                        return A64DecodedInstruction(
-                            address: address, rawWord: word, mnemonic: .mov,
-                            operands: [.register(vd), .register(vn)],
-                            group: .simdAndFP, readsRegisters: [vn], writesRegisters: [vd]
-                        )
-                    }
-                    let vm = A64Register.v(rm, arrangement: byteArr)
-                    return A64DecodedInstruction(
-                        address: address, rawWord: word, mnemonic: .orrVec, mnemonicText: "orr",
-                        operands: [.register(vd), .register(vn), .register(vm)],
-                        group: .simdAndFP, readsRegisters: [vn, vm], writesRegisters: [vd]
-                    )
-                }
-                if u && size == 0b00 { // EOR.16B / EOR.8B
-                    let vd = A64Register.v(rd, arrangement: byteArr)
-                    let vn = A64Register.v(rn, arrangement: byteArr)
-                    let vm = A64Register.v(rm, arrangement: byteArr)
-                    return A64DecodedInstruction(
-                        address: address, rawWord: word, mnemonic: .eorVec, mnemonicText: "eor",
-                        operands: [.register(vd), .register(vn), .register(vm)],
-                        group: .simdAndFP, readsRegisters: [vn, vm], writesRegisters: [vd]
-                    )
-                }
-            }
-
-            if u && opcode == 0b10001 { // CMEQ <Vd>.<T>, <Vn>.<T>, <Vm>.<T>
-                guard !(size == 0b11 && !q) else { return nil }
-                let arrTableQ0 = ["8b", "4h", "2s", "1d"]
-                let arrTableQ1 = ["16b", "8h", "4s", "2d"]
-                let arr = q ? arrTableQ1[Int(size)] : arrTableQ0[Int(size)]
-                let vd = A64Register.v(rd, arrangement: arr)
-                let vn = A64Register.v(rn, arrangement: arr)
-                let vm = A64Register.v(rm, arrangement: arr)
-                return A64DecodedInstruction(
-                    address: address, rawWord: word, mnemonic: .cmeq,
-                    operands: [.register(vd), .register(vn), .register(vm)],
-                    group: .simdAndFP, readsRegisters: [vn, vm], writesRegisters: [vd]
-                )
+        // 3. AdvSIMD Vector Three-Register Same (integer, bitwise, FP32/FP64, FP16, FHM, RDMA, FCMA):
+        //    (word & 0x9F00_0400) == 0x0E00_0400 (excluding AdvSIMD Copy above and Group 29 dot-product)
+        if (word & 0x9F00_0400) == 0x0E00_0400 {
+            if let decoded = decodeAdvSIMDVectorThreeSame(word: word, at: address) {
+                return decoded
             }
         }
 
@@ -3510,5 +3457,261 @@ public struct A64InstructionDecoder: Sendable {
         }
 
         return nil
+    }
+
+    private func decodeAdvSIMDVectorThreeSame(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let bit21 = A64BitUtils.flag(word, 21)
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let opcode = A64BitUtils.extract(word, 15, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func emitVec3(
+            mnemonic: A64Mnemonic,
+            text: String,
+            arr: String,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: arr)
+            let vn = A64Register.v(rn, arrangement: arr)
+            let vm = A64Register.v(rm, arrangement: arr)
+            let reads = accumulatesRd ? activeRegs([vd, vn, vm]) : activeRegs([vn, vm])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn), .register(vm)],
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [vd]
+            )
+        }
+
+        func resolveFPThreeSame(uBit: Bool, szHi: UInt32, opIdx: UInt32) -> (A64Mnemonic, String, Bool)? {
+            switch (uBit, szHi, opIdx) {
+            case (false, 0, 0b000): return (.fmaxnm, "fmaxnm", false)
+            case (false, 0, 0b001): return (.fmul, "fmla", true)
+            case (false, 0, 0b010): return (.fadd, "fadd", false)
+            case (false, 0, 0b011): return (.fmul, "fmulx", false)
+            case (false, 0, 0b100): return (.cmeq, "fcmeq", false)
+            case (false, 0, 0b110): return (.fmax, "fmax", false)
+            case (false, 0, 0b111): return (.fmul, "frecps", false)
+
+            case (false, 1, 0b000): return (.fminnm, "fminnm", false)
+            case (false, 1, 0b001): return (.fmul, "fmls", true)
+            case (false, 1, 0b010): return (.fsub, "fsub", false)
+            case (false, 1, 0b110): return (.fmin, "fmin", false)
+            case (false, 1, 0b111): return (.fmul, "frsqrts", false)
+
+            case (true, 0, 0b000):  return (.fmaxnm, "fmaxnmp", false)
+            case (true, 0, 0b010):  return (.fadd, "faddp", false)
+            case (true, 0, 0b011):  return (.fmul, "fmul", false)
+            case (true, 0, 0b100):  return (.cmeq, "fcmge", false)
+            case (true, 0, 0b101):  return (.cmeq, "facge", false)
+            case (true, 0, 0b110):  return (.fmax, "fmaxp", false)
+            case (true, 0, 0b111):  return (.fdiv, "fdiv", false)
+
+            case (true, 1, 0b000):  return (.fminnm, "fminnmp", false)
+            case (true, 1, 0b010):  return (.fsub, "fabd", false)
+            case (true, 1, 0b100):  return (.cmeq, "fcmgt", false)
+            case (true, 1, 0b101):  return (.cmeq, "facgt", false)
+            case (true, 1, 0b110):  return (.fmin, "fminp", false)
+            default:                return nil
+            }
+        }
+
+        if bit21 {
+            // A. Bitwise operations (always .8b / .16b): opcode == 0b00011
+            if opcode == 0b00011 {
+                let byteArr = q ? "16b" : "8b"
+                switch (u, size) {
+                case (false, 0b00):
+                    return emitVec3(mnemonic: .andVec, text: "and", arr: byteArr)
+                case (false, 0b01):
+                    return emitVec3(mnemonic: .andVec, text: "bic", arr: byteArr)
+                case (false, 0b10):
+                    if rm == rn {
+                        let vd = A64Register.v(rd, arrangement: byteArr)
+                        let vn = A64Register.v(rn, arrangement: byteArr)
+                        return A64DecodedInstruction(
+                            address: address, rawWord: word, mnemonic: .mov,
+                            operands: [.register(vd), .register(vn)],
+                            group: .simdAndFP, readsRegisters: [vn], writesRegisters: [vd]
+                        )
+                    }
+                    return emitVec3(mnemonic: .orrVec, text: "orr", arr: byteArr)
+                case (false, 0b11):
+                    return emitVec3(mnemonic: .orrVec, text: "orn", arr: byteArr)
+                case (true, 0b00):
+                    return emitVec3(mnemonic: .eorVec, text: "eor", arr: byteArr)
+                case (true, 0b01):
+                    return emitVec3(mnemonic: .orrVec, text: "bsl", arr: byteArr, accumulatesRd: true)
+                case (true, 0b10):
+                    return emitVec3(mnemonic: .orrVec, text: "bit", arr: byteArr, accumulatesRd: true)
+                case (true, 0b11):
+                    return emitVec3(mnemonic: .orrVec, text: "bif", arr: byteArr, accumulatesRd: true)
+                default:
+                    return nil
+                }
+            }
+
+            // B. Integer three-same operations: opcode < 0b11000
+            if opcode < 0b11000 {
+                let intArr: String
+                switch size {
+                case 0b00: intArr = q ? "16b" : "8b"
+                case 0b01: intArr = q ? "8h" : "4h"
+                case 0b10: intArr = q ? "4s" : "2s"
+                case 0b11 where q: intArr = "2d"
+                default: return nil
+                }
+
+                switch opcode {
+                case 0b00000 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "uhadd" : "shadd", arr: intArr)
+                case 0b00001:                   return emitVec3(mnemonic: .andVec, text: u ? "uqadd" : "sqadd", arr: intArr)
+                case 0b00010 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "urhadd" : "srhadd", arr: intArr)
+                case 0b00100 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "uhsub" : "shsub", arr: intArr)
+                case 0b00101:                   return emitVec3(mnemonic: .andVec, text: u ? "uqsub" : "sqsub", arr: intArr)
+                case 0b00110:                   return emitVec3(mnemonic: .cmeq, text: u ? "cmhi" : "cmgt", arr: intArr)
+                case 0b00111:                   return emitVec3(mnemonic: .cmeq, text: u ? "cmhs" : "cmge", arr: intArr)
+                case 0b01000:                   return emitVec3(mnemonic: .andVec, text: u ? "ushl" : "sshl", arr: intArr)
+                case 0b01001:                   return emitVec3(mnemonic: .andVec, text: u ? "uqshl" : "sqshl", arr: intArr)
+                case 0b01010:                   return emitVec3(mnemonic: .andVec, text: u ? "urshl" : "srshl", arr: intArr)
+                case 0b01011:                   return emitVec3(mnemonic: .andVec, text: u ? "uqrshl" : "sqrshl", arr: intArr)
+                case 0b01100 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "umax" : "smax", arr: intArr)
+                case 0b01101 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "umin" : "smin", arr: intArr)
+                case 0b01110 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "uabd" : "sabd", arr: intArr)
+                case 0b01111 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "uaba" : "saba", arr: intArr, accumulatesRd: true)
+                case 0b10000:                   return emitVec3(mnemonic: .andVec, text: u ? "sub" : "add", arr: intArr)
+                case 0b10001:                   return emitVec3(mnemonic: .cmeq, text: u ? "cmeq" : "cmtst", arr: intArr)
+                case 0b10010 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "mls" : "mla", arr: intArr, accumulatesRd: true)
+                case 0b10011 where !u && size < 0b11:
+                    return emitVec3(mnemonic: .andVec, text: "mul", arr: intArr)
+                case 0b10011 where u && size == 0b00:
+                    return emitVec3(mnemonic: .andVec, text: "pmul", arr: intArr)
+                case 0b10100 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "umaxp" : "smaxp", arr: intArr)
+                case 0b10101 where size < 0b11: return emitVec3(mnemonic: .andVec, text: u ? "uminp" : "sminp", arr: intArr)
+                case 0b10110 where size == 0b01 || size == 0b10:
+                    return emitVec3(mnemonic: .andVec, text: u ? "sqrdmulh" : "sqdmulh", arr: intArr)
+                case 0b10111 where !u:
+                    return emitVec3(mnemonic: .andVec, text: "addp", arr: intArr)
+                default:
+                    return nil
+                }
+            }
+
+            // C. FP32/FP64 three-same + FEAT_FHM (FMLAL / FMLSL / FMLAL2 / FMLSL2): opcode >= 0b11000
+            let szHi = (size >> 1) & 1
+            let szLo = size & 1
+
+            if szLo == 0 && ((!u && opcode == 0b11101) || (u && opcode == 0b11001)) {
+                let fhmText: String
+                if !u {
+                    fhmText = (szHi == 0) ? "fmlal" : "fmlsl"
+                } else {
+                    fhmText = (szHi == 0) ? "fmlal2" : "fmlsl2"
+                }
+                let vd = A64Register.v(rd, arrangement: q ? "4s" : "2s")
+                let vn = A64Register.v(rn, arrangement: q ? "4h" : "2h")
+                let vm = A64Register.v(rm, arrangement: q ? "4h" : "2h")
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .fmul,
+                    mnemonicText: fhmText,
+                    operands: [.register(vd), .register(vn), .register(vm)],
+                    group: .simdAndFP,
+                    readsRegisters: activeRegs([vd, vn, vm]),
+                    writesRegisters: [vd]
+                )
+            }
+
+            let fpArr: String
+            if szLo == 0 {
+                fpArr = q ? "4s" : "2s"
+            } else if q {
+                fpArr = "2d"
+            } else {
+                return nil
+            }
+
+            if let (enumVal, text, accum) = resolveFPThreeSame(uBit: u, szHi: szHi, opIdx: opcode - 0b11000) {
+                return emitVec3(mnemonic: enumVal, text: text, arr: fpArr, accumulatesRd: accum)
+            }
+            return nil
+        } else {
+            // bit[21] == 0: FP16 three-same (C4.1.95.15) and RDMA / FCMA three-register extension (C4.1.95.17)
+            guard !(size == 0b00) else { return nil }
+
+            // 1. FP16 three-same: size in {0b01, 0b11} and opcode < 0b01000
+            if (size & 1) == 1 && opcode < 0b01000 {
+                let szHi = (size >> 1) & 1
+                if let (enumVal, text, accum) = resolveFPThreeSame(uBit: u, szHi: szHi, opIdx: opcode) {
+                    return emitVec3(mnemonic: enumVal, text: text, arr: q ? "8h" : "4h", accumulatesRd: accum)
+                }
+                return nil
+            }
+
+            // 2. FEAT_RDM: SQRDMLAH / SQRDMLSH (U=1, size in {0b01, 0b10}, opcode in {0b10000, 0b10001})
+            if u && (size == 0b01 || size == 0b10) && (opcode == 0b10000 || opcode == 0b10001) {
+                let rdmArr = (size == 0b01) ? (q ? "8h" : "4h") : (q ? "4s" : "2s")
+                let rdmText = (opcode == 0b10000) ? "sqrdmlah" : "sqrdmlsh"
+                return emitVec3(mnemonic: .andVec, text: rdmText, arr: rdmArr, accumulatesRd: true)
+            }
+
+            // 3. FEAT_FCMA: FCMLA / FCADD (U=1, opcode >= 0b11000)
+            if u && opcode >= 0b11000 {
+                let fcArr: String
+                switch (size, q) {
+                case (0b01, false): fcArr = "4h"
+                case (0b01, true):  fcArr = "8h"
+                case (0b10, false): fcArr = "2s"
+                case (0b10, true):  fcArr = "4s"
+                case (0b11, true):  fcArr = "2d"
+                default:            return nil
+                }
+
+                let fcText: String
+                let rotDegrees: UInt64
+                let accumulatesRd: Bool
+                if opcode <= 0b11011 {
+                    fcText = "fcmla"
+                    rotDegrees = UInt64((opcode & 0b11) * 90)
+                    accumulatesRd = true
+                } else if opcode == 0b11100 {
+                    fcText = "fcadd"
+                    rotDegrees = 90
+                    accumulatesRd = false
+                } else if opcode == 0b11110 {
+                    fcText = "fcadd"
+                    rotDegrees = 270
+                    accumulatesRd = false
+                } else {
+                    return nil
+                }
+
+                let vd = A64Register.v(rd, arrangement: fcArr)
+                let vn = A64Register.v(rn, arrangement: fcArr)
+                let vm = A64Register.v(rm, arrangement: fcArr)
+                let reads = accumulatesRd ? activeRegs([vd, vn, vm]) : activeRegs([vn, vm])
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .fadd,
+                    mnemonicText: fcText,
+                    operands: [.register(vd), .register(vn), .register(vm), .unsignedImmediate(rotDegrees)],
+                    operandText: "\(vd.canonicalName), \(vn.canonicalName), \(vm.canonicalName), #\(rotDegrees)",
+                    group: .simdAndFP,
+                    readsRegisters: reads,
+                    writesRegisters: [vd]
+                )
+            }
+
+            return nil
+        }
     }
 }

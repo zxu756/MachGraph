@@ -1462,4 +1462,84 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(cfg.blocks[0].instructions.count == 3)
         #expect(cfg.blocks[0].instructions[1].formattedDisassembly == "udf #0xdead")
     }
+
+    @Test("Stage 7 Group 1: AdvSIMD vector three-register same (integer, bitwise, FP32/FP64, FP16, FHM, RDMA, FCMA) matches advsimd_vec_three_same.tsv")
+    func advsimdVectorThreeSameDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Concrete table & corpus examples across sub-families:
+        let sampleCases: [(UInt32, String)] = [
+            (0x4EE0_8420, "add v0.2d, v1.2d, v0.2d"),          // /bin/csh baseline example
+            (0x4EA3_8441, "add v1.4s, v2.4s, v3.4s"),          // advsimd_vec_three_same.tsv
+            (0x6EE3_8441, "sub v1.2d, v2.2d, v3.2d"),          // advsimd_vec_three_same.tsv
+            (0x4EA3_9C41, "mul v1.4s, v2.4s, v3.4s"),          // advsimd_vec_three_same.tsv
+            (0x2E23_9C41, "pmul v1.8b, v2.8b, v3.8b"),         // 8b/16b-only PMUL
+            (0x4E63_1C41, "bic v1.16b, v2.16b, v3.16b"),       // bitwise BIC
+            (0x4EE2_1C41, "orn v1.16b, v2.16b, v2.16b"),       // Rm==Rn stays ORN (no MOV/MVN alias)
+            (0x6E62_1C41, "bsl v1.16b, v2.16b, v2.16b"),       // Rm==Rn stays BSL
+            (0x4EA2_1C41, "mov v1.16b, v2.16b"),               // ORR Rm==Rn -> MOV preferred alias
+            (0x4EA3_1C41, "orr v1.16b, v2.16b, v3.16b"),       // ORR Rm!=Rn -> stays ORR
+            (0x4E63_D441, "fadd v1.2d, v2.2d, v3.2d"),         // FP64 three-same
+            (0x6E23_FC41, "fdiv v1.4s, v2.4s, v3.4s"),         // FP32 three-same
+            (0x4E43_1441, "fadd v1.8h, v2.8h, v3.8h"),         // FP16 three-same
+            (0x0E23_EC41, "fmlal v1.2s, v2.2h, v3.2h"),        // FEAT_FHM Q=0
+            (0x6EA3_CC41, "fmlsl2 v1.4s, v2.4h, v3.4h"),       // FEAT_FHM Q=1
+            (0x6E83_8441, "sqrdmlah v1.4s, v2.4s, v3.4s"),     // FEAT_RDM
+            (0x6EC3_CC41, "fcmla v1.2d, v2.2d, v3.2d, #90"),   // FEAT_FCMA complex MLA
+            (0x2E83_F441, "fcadd v1.2s, v2.2s, v3.2s, #270"),  // FEAT_FCMA complex ADD
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples from advsimd_vec_three_same.tsv must stay .inst:
+        let unallocatedCases: [UInt32] = [
+            0x0EE3_8441, // Q=0, size=11 integer ADD (no .1d vector ADD)
+            0x2E63_9C41, // PMUL with size=01 (only size=00 allowed)
+            0x2E23_BC41, // U=1 ADDP slot (unallocated)
+            0x0E63_D441, // Q=0 FP64 FADD (no .1d vector FADD)
+            0x2EC3_C441, // Q=0 size=11 FCMLA (no .1d complex pair)
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        // Exhaustive check against all 880 rows in Fixtures/a64/advsimd_vec_three_same.tsv:
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_vec_three_same"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 880)
+        #expect(mismatches.isEmpty, "Group 1 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

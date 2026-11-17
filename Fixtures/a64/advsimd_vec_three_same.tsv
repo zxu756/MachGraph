@@ -1,0 +1,892 @@
+# A64 encoding reference table: advsimd_vec_three_same
+# ARM DDI 0487 C4.1.95.15/16/17: (word & 0x9f000400) == 0x0e000400 excluding AdvSIMD Copy (advsimd_copy.tsv)
+# and the C4.1.95.17 dot-product/matrix slice bit[21]=0, opcode=18..23 (advsimd_dot_product.tsv).
+# Enumerates all 864 non-register combinations of Q=0..1, U=0..1, size=0..3, bit[21]=0..1, opcode=0..31
+# with distinct Rd=1, Rn=2, Rm=3, plus 16 Rm==Rn (Rd=1, Rn=2, Rm=2) bitwise rows (bit[21]=1, opcode=0b00011),
+# totaling 880 rows.
+# Rows: 880 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e advsimd_vec_three_same.s -o advsimd_vec_three_same.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text advsimd_vec_three_same.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate advsimd_vec_three_same
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x0e038441	.long	0x0e038441
+0x0e038c41	.long	0x0e038c41
+0x0e03c441	.long	0x0e03c441
+0x0e03cc41	.long	0x0e03cc41
+0x0e03d441	.long	0x0e03d441
+0x0e03dc41	.long	0x0e03dc41
+0x0e03e441	.long	0x0e03e441
+0x0e03ec41	.long	0x0e03ec41
+0x0e03f441	.long	0x0e03f441
+0x0e03fc41	.long	0x0e03fc41
+0x0e230441	shadd	v1.8b, v2.8b, v3.8b
+0x0e230c41	sqadd	v1.8b, v2.8b, v3.8b
+0x0e231441	srhadd	v1.8b, v2.8b, v3.8b
+0x0e231c41	and	v1.8b, v2.8b, v3.8b
+0x0e232441	shsub	v1.8b, v2.8b, v3.8b
+0x0e232c41	sqsub	v1.8b, v2.8b, v3.8b
+0x0e233441	cmgt	v1.8b, v2.8b, v3.8b
+0x0e233c41	cmge	v1.8b, v2.8b, v3.8b
+0x0e234441	sshl	v1.8b, v2.8b, v3.8b
+0x0e234c41	sqshl	v1.8b, v2.8b, v3.8b
+0x0e235441	srshl	v1.8b, v2.8b, v3.8b
+0x0e235c41	sqrshl	v1.8b, v2.8b, v3.8b
+0x0e236441	smax	v1.8b, v2.8b, v3.8b
+0x0e236c41	smin	v1.8b, v2.8b, v3.8b
+0x0e237441	sabd	v1.8b, v2.8b, v3.8b
+0x0e237c41	saba	v1.8b, v2.8b, v3.8b
+0x0e238441	add	v1.8b, v2.8b, v3.8b
+0x0e238c41	cmtst	v1.8b, v2.8b, v3.8b
+0x0e239441	mla	v1.8b, v2.8b, v3.8b
+0x0e239c41	mul	v1.8b, v2.8b, v3.8b
+0x0e23a441	smaxp	v1.8b, v2.8b, v3.8b
+0x0e23ac41	sminp	v1.8b, v2.8b, v3.8b
+0x0e23b441	.long	0x0e23b441
+0x0e23bc41	addp	v1.8b, v2.8b, v3.8b
+0x0e23c441	fmaxnm	v1.2s, v2.2s, v3.2s
+0x0e23cc41	fmla	v1.2s, v2.2s, v3.2s
+0x0e23d441	fadd	v1.2s, v2.2s, v3.2s
+0x0e23dc41	fmulx	v1.2s, v2.2s, v3.2s
+0x0e23e441	fcmeq	v1.2s, v2.2s, v3.2s
+0x0e23ec41	fmlal	v1.2s, v2.2h, v3.2h
+0x0e23f441	fmax	v1.2s, v2.2s, v3.2s
+0x0e23fc41	frecps	v1.2s, v2.2s, v3.2s
+0x0e430441	fmaxnm	v1.4h, v2.4h, v3.4h
+0x0e430c41	fmla	v1.4h, v2.4h, v3.4h
+0x0e431441	fadd	v1.4h, v2.4h, v3.4h
+0x0e431c41	fmulx	v1.4h, v2.4h, v3.4h
+0x0e432441	fcmeq	v1.4h, v2.4h, v3.4h
+0x0e432c41	.long	0x0e432c41
+0x0e433441	fmax	v1.4h, v2.4h, v3.4h
+0x0e433c41	frecps	v1.4h, v2.4h, v3.4h
+0x0e434441	.long	0x0e434441
+0x0e434c41	.long	0x0e434c41
+0x0e435441	.long	0x0e435441
+0x0e435c41	.long	0x0e435c41
+0x0e436441	.long	0x0e436441
+0x0e436c41	.long	0x0e436c41
+0x0e437441	.long	0x0e437441
+0x0e437c41	.long	0x0e437c41
+0x0e438441	.long	0x0e438441
+0x0e438c41	.long	0x0e438c41
+0x0e43c441	.long	0x0e43c441
+0x0e43cc41	.long	0x0e43cc41
+0x0e43d441	.long	0x0e43d441
+0x0e43dc41	.long	0x0e43dc41
+0x0e43e441	.long	0x0e43e441
+0x0e43ec41	.long	0x0e43ec41
+0x0e43f441	.long	0x0e43f441
+0x0e43fc41	.long	0x0e43fc41
+0x0e630441	shadd	v1.4h, v2.4h, v3.4h
+0x0e630c41	sqadd	v1.4h, v2.4h, v3.4h
+0x0e631441	srhadd	v1.4h, v2.4h, v3.4h
+0x0e631c41	bic	v1.8b, v2.8b, v3.8b
+0x0e632441	shsub	v1.4h, v2.4h, v3.4h
+0x0e632c41	sqsub	v1.4h, v2.4h, v3.4h
+0x0e633441	cmgt	v1.4h, v2.4h, v3.4h
+0x0e633c41	cmge	v1.4h, v2.4h, v3.4h
+0x0e634441	sshl	v1.4h, v2.4h, v3.4h
+0x0e634c41	sqshl	v1.4h, v2.4h, v3.4h
+0x0e635441	srshl	v1.4h, v2.4h, v3.4h
+0x0e635c41	sqrshl	v1.4h, v2.4h, v3.4h
+0x0e636441	smax	v1.4h, v2.4h, v3.4h
+0x0e636c41	smin	v1.4h, v2.4h, v3.4h
+0x0e637441	sabd	v1.4h, v2.4h, v3.4h
+0x0e637c41	saba	v1.4h, v2.4h, v3.4h
+0x0e638441	add	v1.4h, v2.4h, v3.4h
+0x0e638c41	cmtst	v1.4h, v2.4h, v3.4h
+0x0e639441	mla	v1.4h, v2.4h, v3.4h
+0x0e639c41	mul	v1.4h, v2.4h, v3.4h
+0x0e63a441	smaxp	v1.4h, v2.4h, v3.4h
+0x0e63ac41	sminp	v1.4h, v2.4h, v3.4h
+0x0e63b441	sqdmulh	v1.4h, v2.4h, v3.4h
+0x0e63bc41	addp	v1.4h, v2.4h, v3.4h
+0x0e63c441	.long	0x0e63c441
+0x0e63cc41	.long	0x0e63cc41
+0x0e63d441	.long	0x0e63d441
+0x0e63dc41	.long	0x0e63dc41
+0x0e63e441	.long	0x0e63e441
+0x0e63ec41	.long	0x0e63ec41
+0x0e63f441	.long	0x0e63f441
+0x0e63fc41	.long	0x0e63fc41
+0x0e830441	.long	0x0e830441
+0x0e830c41	.long	0x0e830c41
+0x0e831441	.long	0x0e831441
+0x0e831c41	.long	0x0e831c41
+0x0e832441	.long	0x0e832441
+0x0e832c41	.long	0x0e832c41
+0x0e833441	.long	0x0e833441
+0x0e833c41	.long	0x0e833c41
+0x0e834441	.long	0x0e834441
+0x0e834c41	.long	0x0e834c41
+0x0e835441	.long	0x0e835441
+0x0e835c41	.long	0x0e835c41
+0x0e836441	.long	0x0e836441
+0x0e836c41	.long	0x0e836c41
+0x0e837441	.long	0x0e837441
+0x0e837c41	.long	0x0e837c41
+0x0e838441	.long	0x0e838441
+0x0e838c41	.long	0x0e838c41
+0x0e83c441	.long	0x0e83c441
+0x0e83cc41	.long	0x0e83cc41
+0x0e83d441	.long	0x0e83d441
+0x0e83dc41	.long	0x0e83dc41
+0x0e83e441	.long	0x0e83e441
+0x0e83ec41	.long	0x0e83ec41
+0x0e83f441	.long	0x0e83f441
+0x0e83fc41	.long	0x0e83fc41
+0x0ea30441	shadd	v1.2s, v2.2s, v3.2s
+0x0ea30c41	sqadd	v1.2s, v2.2s, v3.2s
+0x0ea31441	srhadd	v1.2s, v2.2s, v3.2s
+0x0ea31c41	orr	v1.8b, v2.8b, v3.8b
+0x0ea32441	shsub	v1.2s, v2.2s, v3.2s
+0x0ea32c41	sqsub	v1.2s, v2.2s, v3.2s
+0x0ea33441	cmgt	v1.2s, v2.2s, v3.2s
+0x0ea33c41	cmge	v1.2s, v2.2s, v3.2s
+0x0ea34441	sshl	v1.2s, v2.2s, v3.2s
+0x0ea34c41	sqshl	v1.2s, v2.2s, v3.2s
+0x0ea35441	srshl	v1.2s, v2.2s, v3.2s
+0x0ea35c41	sqrshl	v1.2s, v2.2s, v3.2s
+0x0ea36441	smax	v1.2s, v2.2s, v3.2s
+0x0ea36c41	smin	v1.2s, v2.2s, v3.2s
+0x0ea37441	sabd	v1.2s, v2.2s, v3.2s
+0x0ea37c41	saba	v1.2s, v2.2s, v3.2s
+0x0ea38441	add	v1.2s, v2.2s, v3.2s
+0x0ea38c41	cmtst	v1.2s, v2.2s, v3.2s
+0x0ea39441	mla	v1.2s, v2.2s, v3.2s
+0x0ea39c41	mul	v1.2s, v2.2s, v3.2s
+0x0ea3a441	smaxp	v1.2s, v2.2s, v3.2s
+0x0ea3ac41	sminp	v1.2s, v2.2s, v3.2s
+0x0ea3b441	sqdmulh	v1.2s, v2.2s, v3.2s
+0x0ea3bc41	addp	v1.2s, v2.2s, v3.2s
+0x0ea3c441	fminnm	v1.2s, v2.2s, v3.2s
+0x0ea3cc41	fmls	v1.2s, v2.2s, v3.2s
+0x0ea3d441	fsub	v1.2s, v2.2s, v3.2s
+0x0ea3dc41	.long	0x0ea3dc41
+0x0ea3e441	.long	0x0ea3e441
+0x0ea3ec41	fmlsl	v1.2s, v2.2h, v3.2h
+0x0ea3f441	fmin	v1.2s, v2.2s, v3.2s
+0x0ea3fc41	frsqrts	v1.2s, v2.2s, v3.2s
+0x0ec30441	fminnm	v1.4h, v2.4h, v3.4h
+0x0ec30c41	fmls	v1.4h, v2.4h, v3.4h
+0x0ec31441	fsub	v1.4h, v2.4h, v3.4h
+0x0ec31c41	.long	0x0ec31c41
+0x0ec32441	.long	0x0ec32441
+0x0ec32c41	.long	0x0ec32c41
+0x0ec33441	fmin	v1.4h, v2.4h, v3.4h
+0x0ec33c41	frsqrts	v1.4h, v2.4h, v3.4h
+0x0ec34441	.long	0x0ec34441
+0x0ec34c41	.long	0x0ec34c41
+0x0ec35441	.long	0x0ec35441
+0x0ec35c41	.long	0x0ec35c41
+0x0ec36441	.long	0x0ec36441
+0x0ec36c41	.long	0x0ec36c41
+0x0ec37441	.long	0x0ec37441
+0x0ec37c41	.long	0x0ec37c41
+0x0ec38441	.long	0x0ec38441
+0x0ec38c41	.long	0x0ec38c41
+0x0ec3c441	.long	0x0ec3c441
+0x0ec3cc41	.long	0x0ec3cc41
+0x0ec3d441	.long	0x0ec3d441
+0x0ec3dc41	.long	0x0ec3dc41
+0x0ec3e441	.long	0x0ec3e441
+0x0ec3ec41	.long	0x0ec3ec41
+0x0ec3f441	.long	0x0ec3f441
+0x0ec3fc41	.long	0x0ec3fc41
+0x0ee30441	.long	0x0ee30441
+0x0ee30c41	.long	0x0ee30c41
+0x0ee31441	.long	0x0ee31441
+0x0ee31c41	orn	v1.8b, v2.8b, v3.8b
+0x0ee32441	.long	0x0ee32441
+0x0ee32c41	.long	0x0ee32c41
+0x0ee33441	.long	0x0ee33441
+0x0ee33c41	.long	0x0ee33c41
+0x0ee34441	.long	0x0ee34441
+0x0ee34c41	.long	0x0ee34c41
+0x0ee35441	.long	0x0ee35441
+0x0ee35c41	.long	0x0ee35c41
+0x0ee36441	.long	0x0ee36441
+0x0ee36c41	.long	0x0ee36c41
+0x0ee37441	.long	0x0ee37441
+0x0ee37c41	.long	0x0ee37c41
+0x0ee38441	.long	0x0ee38441
+0x0ee38c41	.long	0x0ee38c41
+0x0ee39441	.long	0x0ee39441
+0x0ee39c41	.long	0x0ee39c41
+0x0ee3a441	.long	0x0ee3a441
+0x0ee3ac41	.long	0x0ee3ac41
+0x0ee3b441	.long	0x0ee3b441
+0x0ee3bc41	.long	0x0ee3bc41
+0x0ee3c441	.long	0x0ee3c441
+0x0ee3cc41	.long	0x0ee3cc41
+0x0ee3d441	.long	0x0ee3d441
+0x0ee3dc41	.long	0x0ee3dc41
+0x0ee3e441	.long	0x0ee3e441
+0x0ee3ec41	.long	0x0ee3ec41
+0x0ee3f441	.long	0x0ee3f441
+0x0ee3fc41	.long	0x0ee3fc41
+0x2e038441	.long	0x2e038441
+0x2e038c41	.long	0x2e038c41
+0x2e03c441	.long	0x2e03c441
+0x2e03cc41	.long	0x2e03cc41
+0x2e03d441	.long	0x2e03d441
+0x2e03dc41	.long	0x2e03dc41
+0x2e03e441	.long	0x2e03e441
+0x2e03ec41	.long	0x2e03ec41
+0x2e03f441	.long	0x2e03f441
+0x2e03fc41	.long	0x2e03fc41
+0x2e230441	uhadd	v1.8b, v2.8b, v3.8b
+0x2e230c41	uqadd	v1.8b, v2.8b, v3.8b
+0x2e231441	urhadd	v1.8b, v2.8b, v3.8b
+0x2e231c41	eor	v1.8b, v2.8b, v3.8b
+0x2e232441	uhsub	v1.8b, v2.8b, v3.8b
+0x2e232c41	uqsub	v1.8b, v2.8b, v3.8b
+0x2e233441	cmhi	v1.8b, v2.8b, v3.8b
+0x2e233c41	cmhs	v1.8b, v2.8b, v3.8b
+0x2e234441	ushl	v1.8b, v2.8b, v3.8b
+0x2e234c41	uqshl	v1.8b, v2.8b, v3.8b
+0x2e235441	urshl	v1.8b, v2.8b, v3.8b
+0x2e235c41	uqrshl	v1.8b, v2.8b, v3.8b
+0x2e236441	umax	v1.8b, v2.8b, v3.8b
+0x2e236c41	umin	v1.8b, v2.8b, v3.8b
+0x2e237441	uabd	v1.8b, v2.8b, v3.8b
+0x2e237c41	uaba	v1.8b, v2.8b, v3.8b
+0x2e238441	sub	v1.8b, v2.8b, v3.8b
+0x2e238c41	cmeq	v1.8b, v2.8b, v3.8b
+0x2e239441	mls	v1.8b, v2.8b, v3.8b
+0x2e239c41	pmul	v1.8b, v2.8b, v3.8b
+0x2e23a441	umaxp	v1.8b, v2.8b, v3.8b
+0x2e23ac41	uminp	v1.8b, v2.8b, v3.8b
+0x2e23b441	.long	0x2e23b441
+0x2e23bc41	.long	0x2e23bc41
+0x2e23c441	fmaxnmp	v1.2s, v2.2s, v3.2s
+0x2e23cc41	fmlal2	v1.2s, v2.2h, v3.2h
+0x2e23d441	faddp	v1.2s, v2.2s, v3.2s
+0x2e23dc41	fmul	v1.2s, v2.2s, v3.2s
+0x2e23e441	fcmge	v1.2s, v2.2s, v3.2s
+0x2e23ec41	facge	v1.2s, v2.2s, v3.2s
+0x2e23f441	fmaxp	v1.2s, v2.2s, v3.2s
+0x2e23fc41	fdiv	v1.2s, v2.2s, v3.2s
+0x2e430441	fmaxnmp	v1.4h, v2.4h, v3.4h
+0x2e430c41	.long	0x2e430c41
+0x2e431441	faddp	v1.4h, v2.4h, v3.4h
+0x2e431c41	fmul	v1.4h, v2.4h, v3.4h
+0x2e432441	fcmge	v1.4h, v2.4h, v3.4h
+0x2e432c41	facge	v1.4h, v2.4h, v3.4h
+0x2e433441	fmaxp	v1.4h, v2.4h, v3.4h
+0x2e433c41	fdiv	v1.4h, v2.4h, v3.4h
+0x2e434441	.long	0x2e434441
+0x2e434c41	.long	0x2e434c41
+0x2e435441	.long	0x2e435441
+0x2e435c41	.long	0x2e435c41
+0x2e436441	.long	0x2e436441
+0x2e436c41	.long	0x2e436c41
+0x2e437441	.long	0x2e437441
+0x2e437c41	.long	0x2e437c41
+0x2e438441	sqrdmlah	v1.4h, v2.4h, v3.4h
+0x2e438c41	sqrdmlsh	v1.4h, v2.4h, v3.4h
+0x2e43c441	fcmla	v1.4h, v2.4h, v3.4h, #0
+0x2e43cc41	fcmla	v1.4h, v2.4h, v3.4h, #90
+0x2e43d441	fcmla	v1.4h, v2.4h, v3.4h, #180
+0x2e43dc41	fcmla	v1.4h, v2.4h, v3.4h, #270
+0x2e43e441	fcadd	v1.4h, v2.4h, v3.4h, #90
+0x2e43ec41	.long	0x2e43ec41
+0x2e43f441	fcadd	v1.4h, v2.4h, v3.4h, #270
+0x2e43fc41	.long	0x2e43fc41
+0x2e630441	uhadd	v1.4h, v2.4h, v3.4h
+0x2e630c41	uqadd	v1.4h, v2.4h, v3.4h
+0x2e631441	urhadd	v1.4h, v2.4h, v3.4h
+0x2e631c41	bsl	v1.8b, v2.8b, v3.8b
+0x2e632441	uhsub	v1.4h, v2.4h, v3.4h
+0x2e632c41	uqsub	v1.4h, v2.4h, v3.4h
+0x2e633441	cmhi	v1.4h, v2.4h, v3.4h
+0x2e633c41	cmhs	v1.4h, v2.4h, v3.4h
+0x2e634441	ushl	v1.4h, v2.4h, v3.4h
+0x2e634c41	uqshl	v1.4h, v2.4h, v3.4h
+0x2e635441	urshl	v1.4h, v2.4h, v3.4h
+0x2e635c41	uqrshl	v1.4h, v2.4h, v3.4h
+0x2e636441	umax	v1.4h, v2.4h, v3.4h
+0x2e636c41	umin	v1.4h, v2.4h, v3.4h
+0x2e637441	uabd	v1.4h, v2.4h, v3.4h
+0x2e637c41	uaba	v1.4h, v2.4h, v3.4h
+0x2e638441	sub	v1.4h, v2.4h, v3.4h
+0x2e638c41	cmeq	v1.4h, v2.4h, v3.4h
+0x2e639441	mls	v1.4h, v2.4h, v3.4h
+0x2e639c41	.long	0x2e639c41
+0x2e63a441	umaxp	v1.4h, v2.4h, v3.4h
+0x2e63ac41	uminp	v1.4h, v2.4h, v3.4h
+0x2e63b441	sqrdmulh	v1.4h, v2.4h, v3.4h
+0x2e63bc41	.long	0x2e63bc41
+0x2e63c441	.long	0x2e63c441
+0x2e63cc41	.long	0x2e63cc41
+0x2e63d441	.long	0x2e63d441
+0x2e63dc41	.long	0x2e63dc41
+0x2e63e441	.long	0x2e63e441
+0x2e63ec41	.long	0x2e63ec41
+0x2e63f441	.long	0x2e63f441
+0x2e63fc41	.long	0x2e63fc41
+0x2e830441	.long	0x2e830441
+0x2e830c41	.long	0x2e830c41
+0x2e831441	.long	0x2e831441
+0x2e831c41	.long	0x2e831c41
+0x2e832441	.long	0x2e832441
+0x2e832c41	.long	0x2e832c41
+0x2e833441	.long	0x2e833441
+0x2e833c41	.long	0x2e833c41
+0x2e834441	.long	0x2e834441
+0x2e834c41	.long	0x2e834c41
+0x2e835441	.long	0x2e835441
+0x2e835c41	.long	0x2e835c41
+0x2e836441	.long	0x2e836441
+0x2e836c41	.long	0x2e836c41
+0x2e837441	.long	0x2e837441
+0x2e837c41	.long	0x2e837c41
+0x2e838441	sqrdmlah	v1.2s, v2.2s, v3.2s
+0x2e838c41	sqrdmlsh	v1.2s, v2.2s, v3.2s
+0x2e83c441	fcmla	v1.2s, v2.2s, v3.2s, #0
+0x2e83cc41	fcmla	v1.2s, v2.2s, v3.2s, #90
+0x2e83d441	fcmla	v1.2s, v2.2s, v3.2s, #180
+0x2e83dc41	fcmla	v1.2s, v2.2s, v3.2s, #270
+0x2e83e441	fcadd	v1.2s, v2.2s, v3.2s, #90
+0x2e83ec41	.long	0x2e83ec41
+0x2e83f441	fcadd	v1.2s, v2.2s, v3.2s, #270
+0x2e83fc41	.long	0x2e83fc41
+0x2ea30441	uhadd	v1.2s, v2.2s, v3.2s
+0x2ea30c41	uqadd	v1.2s, v2.2s, v3.2s
+0x2ea31441	urhadd	v1.2s, v2.2s, v3.2s
+0x2ea31c41	bit	v1.8b, v2.8b, v3.8b
+0x2ea32441	uhsub	v1.2s, v2.2s, v3.2s
+0x2ea32c41	uqsub	v1.2s, v2.2s, v3.2s
+0x2ea33441	cmhi	v1.2s, v2.2s, v3.2s
+0x2ea33c41	cmhs	v1.2s, v2.2s, v3.2s
+0x2ea34441	ushl	v1.2s, v2.2s, v3.2s
+0x2ea34c41	uqshl	v1.2s, v2.2s, v3.2s
+0x2ea35441	urshl	v1.2s, v2.2s, v3.2s
+0x2ea35c41	uqrshl	v1.2s, v2.2s, v3.2s
+0x2ea36441	umax	v1.2s, v2.2s, v3.2s
+0x2ea36c41	umin	v1.2s, v2.2s, v3.2s
+0x2ea37441	uabd	v1.2s, v2.2s, v3.2s
+0x2ea37c41	uaba	v1.2s, v2.2s, v3.2s
+0x2ea38441	sub	v1.2s, v2.2s, v3.2s
+0x2ea38c41	cmeq	v1.2s, v2.2s, v3.2s
+0x2ea39441	mls	v1.2s, v2.2s, v3.2s
+0x2ea39c41	.long	0x2ea39c41
+0x2ea3a441	umaxp	v1.2s, v2.2s, v3.2s
+0x2ea3ac41	uminp	v1.2s, v2.2s, v3.2s
+0x2ea3b441	sqrdmulh	v1.2s, v2.2s, v3.2s
+0x2ea3bc41	.long	0x2ea3bc41
+0x2ea3c441	fminnmp	v1.2s, v2.2s, v3.2s
+0x2ea3cc41	fmlsl2	v1.2s, v2.2h, v3.2h
+0x2ea3d441	fabd	v1.2s, v2.2s, v3.2s
+0x2ea3dc41	.long	0x2ea3dc41
+0x2ea3e441	fcmgt	v1.2s, v2.2s, v3.2s
+0x2ea3ec41	facgt	v1.2s, v2.2s, v3.2s
+0x2ea3f441	fminp	v1.2s, v2.2s, v3.2s
+0x2ea3fc41	.long	0x2ea3fc41
+0x2ec30441	fminnmp	v1.4h, v2.4h, v3.4h
+0x2ec30c41	.long	0x2ec30c41
+0x2ec31441	fabd	v1.4h, v2.4h, v3.4h
+0x2ec31c41	.long	0x2ec31c41
+0x2ec32441	fcmgt	v1.4h, v2.4h, v3.4h
+0x2ec32c41	facgt	v1.4h, v2.4h, v3.4h
+0x2ec33441	fminp	v1.4h, v2.4h, v3.4h
+0x2ec33c41	.long	0x2ec33c41
+0x2ec34441	.long	0x2ec34441
+0x2ec34c41	.long	0x2ec34c41
+0x2ec35441	.long	0x2ec35441
+0x2ec35c41	.long	0x2ec35c41
+0x2ec36441	.long	0x2ec36441
+0x2ec36c41	.long	0x2ec36c41
+0x2ec37441	.long	0x2ec37441
+0x2ec37c41	.long	0x2ec37c41
+0x2ec38441	.long	0x2ec38441
+0x2ec38c41	.long	0x2ec38c41
+0x2ec3c441	.long	0x2ec3c441
+0x2ec3cc41	.long	0x2ec3cc41
+0x2ec3d441	.long	0x2ec3d441
+0x2ec3dc41	.long	0x2ec3dc41
+0x2ec3e441	.long	0x2ec3e441
+0x2ec3ec41	.long	0x2ec3ec41
+0x2ec3f441	.long	0x2ec3f441
+0x2ec3fc41	.long	0x2ec3fc41
+0x2ee30441	.long	0x2ee30441
+0x2ee30c41	.long	0x2ee30c41
+0x2ee31441	.long	0x2ee31441
+0x2ee31c41	bif	v1.8b, v2.8b, v3.8b
+0x2ee32441	.long	0x2ee32441
+0x2ee32c41	.long	0x2ee32c41
+0x2ee33441	.long	0x2ee33441
+0x2ee33c41	.long	0x2ee33c41
+0x2ee34441	.long	0x2ee34441
+0x2ee34c41	.long	0x2ee34c41
+0x2ee35441	.long	0x2ee35441
+0x2ee35c41	.long	0x2ee35c41
+0x2ee36441	.long	0x2ee36441
+0x2ee36c41	.long	0x2ee36c41
+0x2ee37441	.long	0x2ee37441
+0x2ee37c41	.long	0x2ee37c41
+0x2ee38441	.long	0x2ee38441
+0x2ee38c41	.long	0x2ee38c41
+0x2ee39441	.long	0x2ee39441
+0x2ee39c41	.long	0x2ee39c41
+0x2ee3a441	.long	0x2ee3a441
+0x2ee3ac41	.long	0x2ee3ac41
+0x2ee3b441	.long	0x2ee3b441
+0x2ee3bc41	.long	0x2ee3bc41
+0x2ee3c441	.long	0x2ee3c441
+0x2ee3cc41	.long	0x2ee3cc41
+0x2ee3d441	.long	0x2ee3d441
+0x2ee3dc41	.long	0x2ee3dc41
+0x2ee3e441	.long	0x2ee3e441
+0x2ee3ec41	.long	0x2ee3ec41
+0x2ee3f441	.long	0x2ee3f441
+0x2ee3fc41	.long	0x2ee3fc41
+0x4e038441	.long	0x4e038441
+0x4e038c41	.long	0x4e038c41
+0x4e03c441	.long	0x4e03c441
+0x4e03cc41	.long	0x4e03cc41
+0x4e03d441	.long	0x4e03d441
+0x4e03dc41	.long	0x4e03dc41
+0x4e03e441	.long	0x4e03e441
+0x4e03ec41	.long	0x4e03ec41
+0x4e03f441	.long	0x4e03f441
+0x4e03fc41	.long	0x4e03fc41
+0x4e230441	shadd	v1.16b, v2.16b, v3.16b
+0x4e230c41	sqadd	v1.16b, v2.16b, v3.16b
+0x4e231441	srhadd	v1.16b, v2.16b, v3.16b
+0x4e231c41	and	v1.16b, v2.16b, v3.16b
+0x4e232441	shsub	v1.16b, v2.16b, v3.16b
+0x4e232c41	sqsub	v1.16b, v2.16b, v3.16b
+0x4e233441	cmgt	v1.16b, v2.16b, v3.16b
+0x4e233c41	cmge	v1.16b, v2.16b, v3.16b
+0x4e234441	sshl	v1.16b, v2.16b, v3.16b
+0x4e234c41	sqshl	v1.16b, v2.16b, v3.16b
+0x4e235441	srshl	v1.16b, v2.16b, v3.16b
+0x4e235c41	sqrshl	v1.16b, v2.16b, v3.16b
+0x4e236441	smax	v1.16b, v2.16b, v3.16b
+0x4e236c41	smin	v1.16b, v2.16b, v3.16b
+0x4e237441	sabd	v1.16b, v2.16b, v3.16b
+0x4e237c41	saba	v1.16b, v2.16b, v3.16b
+0x4e238441	add	v1.16b, v2.16b, v3.16b
+0x4e238c41	cmtst	v1.16b, v2.16b, v3.16b
+0x4e239441	mla	v1.16b, v2.16b, v3.16b
+0x4e239c41	mul	v1.16b, v2.16b, v3.16b
+0x4e23a441	smaxp	v1.16b, v2.16b, v3.16b
+0x4e23ac41	sminp	v1.16b, v2.16b, v3.16b
+0x4e23b441	.long	0x4e23b441
+0x4e23bc41	addp	v1.16b, v2.16b, v3.16b
+0x4e23c441	fmaxnm	v1.4s, v2.4s, v3.4s
+0x4e23cc41	fmla	v1.4s, v2.4s, v3.4s
+0x4e23d441	fadd	v1.4s, v2.4s, v3.4s
+0x4e23dc41	fmulx	v1.4s, v2.4s, v3.4s
+0x4e23e441	fcmeq	v1.4s, v2.4s, v3.4s
+0x4e23ec41	fmlal	v1.4s, v2.4h, v3.4h
+0x4e23f441	fmax	v1.4s, v2.4s, v3.4s
+0x4e23fc41	frecps	v1.4s, v2.4s, v3.4s
+0x4e430441	fmaxnm	v1.8h, v2.8h, v3.8h
+0x4e430c41	fmla	v1.8h, v2.8h, v3.8h
+0x4e431441	fadd	v1.8h, v2.8h, v3.8h
+0x4e431c41	fmulx	v1.8h, v2.8h, v3.8h
+0x4e432441	fcmeq	v1.8h, v2.8h, v3.8h
+0x4e432c41	.long	0x4e432c41
+0x4e433441	fmax	v1.8h, v2.8h, v3.8h
+0x4e433c41	frecps	v1.8h, v2.8h, v3.8h
+0x4e434441	.long	0x4e434441
+0x4e434c41	.long	0x4e434c41
+0x4e435441	.long	0x4e435441
+0x4e435c41	.long	0x4e435c41
+0x4e436441	.long	0x4e436441
+0x4e436c41	.long	0x4e436c41
+0x4e437441	.long	0x4e437441
+0x4e437c41	.long	0x4e437c41
+0x4e438441	.long	0x4e438441
+0x4e438c41	.long	0x4e438c41
+0x4e43c441	.long	0x4e43c441
+0x4e43cc41	.long	0x4e43cc41
+0x4e43d441	.long	0x4e43d441
+0x4e43dc41	.long	0x4e43dc41
+0x4e43e441	.long	0x4e43e441
+0x4e43ec41	.long	0x4e43ec41
+0x4e43f441	.long	0x4e43f441
+0x4e43fc41	.long	0x4e43fc41
+0x4e630441	shadd	v1.8h, v2.8h, v3.8h
+0x4e630c41	sqadd	v1.8h, v2.8h, v3.8h
+0x4e631441	srhadd	v1.8h, v2.8h, v3.8h
+0x4e631c41	bic	v1.16b, v2.16b, v3.16b
+0x4e632441	shsub	v1.8h, v2.8h, v3.8h
+0x4e632c41	sqsub	v1.8h, v2.8h, v3.8h
+0x4e633441	cmgt	v1.8h, v2.8h, v3.8h
+0x4e633c41	cmge	v1.8h, v2.8h, v3.8h
+0x4e634441	sshl	v1.8h, v2.8h, v3.8h
+0x4e634c41	sqshl	v1.8h, v2.8h, v3.8h
+0x4e635441	srshl	v1.8h, v2.8h, v3.8h
+0x4e635c41	sqrshl	v1.8h, v2.8h, v3.8h
+0x4e636441	smax	v1.8h, v2.8h, v3.8h
+0x4e636c41	smin	v1.8h, v2.8h, v3.8h
+0x4e637441	sabd	v1.8h, v2.8h, v3.8h
+0x4e637c41	saba	v1.8h, v2.8h, v3.8h
+0x4e638441	add	v1.8h, v2.8h, v3.8h
+0x4e638c41	cmtst	v1.8h, v2.8h, v3.8h
+0x4e639441	mla	v1.8h, v2.8h, v3.8h
+0x4e639c41	mul	v1.8h, v2.8h, v3.8h
+0x4e63a441	smaxp	v1.8h, v2.8h, v3.8h
+0x4e63ac41	sminp	v1.8h, v2.8h, v3.8h
+0x4e63b441	sqdmulh	v1.8h, v2.8h, v3.8h
+0x4e63bc41	addp	v1.8h, v2.8h, v3.8h
+0x4e63c441	fmaxnm	v1.2d, v2.2d, v3.2d
+0x4e63cc41	fmla	v1.2d, v2.2d, v3.2d
+0x4e63d441	fadd	v1.2d, v2.2d, v3.2d
+0x4e63dc41	fmulx	v1.2d, v2.2d, v3.2d
+0x4e63e441	fcmeq	v1.2d, v2.2d, v3.2d
+0x4e63ec41	.long	0x4e63ec41
+0x4e63f441	fmax	v1.2d, v2.2d, v3.2d
+0x4e63fc41	frecps	v1.2d, v2.2d, v3.2d
+0x4e830441	.long	0x4e830441
+0x4e830c41	.long	0x4e830c41
+0x4e831441	.long	0x4e831441
+0x4e831c41	.long	0x4e831c41
+0x4e832441	.long	0x4e832441
+0x4e832c41	.long	0x4e832c41
+0x4e833441	.long	0x4e833441
+0x4e833c41	.long	0x4e833c41
+0x4e834441	.long	0x4e834441
+0x4e834c41	.long	0x4e834c41
+0x4e835441	.long	0x4e835441
+0x4e835c41	.long	0x4e835c41
+0x4e836441	.long	0x4e836441
+0x4e836c41	.long	0x4e836c41
+0x4e837441	.long	0x4e837441
+0x4e837c41	.long	0x4e837c41
+0x4e838441	.long	0x4e838441
+0x4e838c41	.long	0x4e838c41
+0x4e83c441	.long	0x4e83c441
+0x4e83cc41	.long	0x4e83cc41
+0x4e83d441	.long	0x4e83d441
+0x4e83dc41	.long	0x4e83dc41
+0x4e83e441	.long	0x4e83e441
+0x4e83ec41	.long	0x4e83ec41
+0x4e83f441	.long	0x4e83f441
+0x4e83fc41	.long	0x4e83fc41
+0x4ea30441	shadd	v1.4s, v2.4s, v3.4s
+0x4ea30c41	sqadd	v1.4s, v2.4s, v3.4s
+0x4ea31441	srhadd	v1.4s, v2.4s, v3.4s
+0x4ea31c41	orr	v1.16b, v2.16b, v3.16b
+0x4ea32441	shsub	v1.4s, v2.4s, v3.4s
+0x4ea32c41	sqsub	v1.4s, v2.4s, v3.4s
+0x4ea33441	cmgt	v1.4s, v2.4s, v3.4s
+0x4ea33c41	cmge	v1.4s, v2.4s, v3.4s
+0x4ea34441	sshl	v1.4s, v2.4s, v3.4s
+0x4ea34c41	sqshl	v1.4s, v2.4s, v3.4s
+0x4ea35441	srshl	v1.4s, v2.4s, v3.4s
+0x4ea35c41	sqrshl	v1.4s, v2.4s, v3.4s
+0x4ea36441	smax	v1.4s, v2.4s, v3.4s
+0x4ea36c41	smin	v1.4s, v2.4s, v3.4s
+0x4ea37441	sabd	v1.4s, v2.4s, v3.4s
+0x4ea37c41	saba	v1.4s, v2.4s, v3.4s
+0x4ea38441	add	v1.4s, v2.4s, v3.4s
+0x4ea38c41	cmtst	v1.4s, v2.4s, v3.4s
+0x4ea39441	mla	v1.4s, v2.4s, v3.4s
+0x4ea39c41	mul	v1.4s, v2.4s, v3.4s
+0x4ea3a441	smaxp	v1.4s, v2.4s, v3.4s
+0x4ea3ac41	sminp	v1.4s, v2.4s, v3.4s
+0x4ea3b441	sqdmulh	v1.4s, v2.4s, v3.4s
+0x4ea3bc41	addp	v1.4s, v2.4s, v3.4s
+0x4ea3c441	fminnm	v1.4s, v2.4s, v3.4s
+0x4ea3cc41	fmls	v1.4s, v2.4s, v3.4s
+0x4ea3d441	fsub	v1.4s, v2.4s, v3.4s
+0x4ea3dc41	.long	0x4ea3dc41
+0x4ea3e441	.long	0x4ea3e441
+0x4ea3ec41	fmlsl	v1.4s, v2.4h, v3.4h
+0x4ea3f441	fmin	v1.4s, v2.4s, v3.4s
+0x4ea3fc41	frsqrts	v1.4s, v2.4s, v3.4s
+0x4ec30441	fminnm	v1.8h, v2.8h, v3.8h
+0x4ec30c41	fmls	v1.8h, v2.8h, v3.8h
+0x4ec31441	fsub	v1.8h, v2.8h, v3.8h
+0x4ec31c41	.long	0x4ec31c41
+0x4ec32441	.long	0x4ec32441
+0x4ec32c41	.long	0x4ec32c41
+0x4ec33441	fmin	v1.8h, v2.8h, v3.8h
+0x4ec33c41	frsqrts	v1.8h, v2.8h, v3.8h
+0x4ec34441	.long	0x4ec34441
+0x4ec34c41	.long	0x4ec34c41
+0x4ec35441	.long	0x4ec35441
+0x4ec35c41	.long	0x4ec35c41
+0x4ec36441	.long	0x4ec36441
+0x4ec36c41	.long	0x4ec36c41
+0x4ec37441	.long	0x4ec37441
+0x4ec37c41	.long	0x4ec37c41
+0x4ec38441	.long	0x4ec38441
+0x4ec38c41	.long	0x4ec38c41
+0x4ec3c441	.long	0x4ec3c441
+0x4ec3cc41	.long	0x4ec3cc41
+0x4ec3d441	.long	0x4ec3d441
+0x4ec3dc41	.long	0x4ec3dc41
+0x4ec3e441	.long	0x4ec3e441
+0x4ec3ec41	.long	0x4ec3ec41
+0x4ec3f441	.long	0x4ec3f441
+0x4ec3fc41	.long	0x4ec3fc41
+0x4ee30441	.long	0x4ee30441
+0x4ee30c41	sqadd	v1.2d, v2.2d, v3.2d
+0x4ee31441	.long	0x4ee31441
+0x4ee31c41	orn	v1.16b, v2.16b, v3.16b
+0x4ee32441	.long	0x4ee32441
+0x4ee32c41	sqsub	v1.2d, v2.2d, v3.2d
+0x4ee33441	cmgt	v1.2d, v2.2d, v3.2d
+0x4ee33c41	cmge	v1.2d, v2.2d, v3.2d
+0x4ee34441	sshl	v1.2d, v2.2d, v3.2d
+0x4ee34c41	sqshl	v1.2d, v2.2d, v3.2d
+0x4ee35441	srshl	v1.2d, v2.2d, v3.2d
+0x4ee35c41	sqrshl	v1.2d, v2.2d, v3.2d
+0x4ee36441	.long	0x4ee36441
+0x4ee36c41	.long	0x4ee36c41
+0x4ee37441	.long	0x4ee37441
+0x4ee37c41	.long	0x4ee37c41
+0x4ee38441	add	v1.2d, v2.2d, v3.2d
+0x4ee38c41	cmtst	v1.2d, v2.2d, v3.2d
+0x4ee39441	.long	0x4ee39441
+0x4ee39c41	.long	0x4ee39c41
+0x4ee3a441	.long	0x4ee3a441
+0x4ee3ac41	.long	0x4ee3ac41
+0x4ee3b441	.long	0x4ee3b441
+0x4ee3bc41	addp	v1.2d, v2.2d, v3.2d
+0x4ee3c441	fminnm	v1.2d, v2.2d, v3.2d
+0x4ee3cc41	fmls	v1.2d, v2.2d, v3.2d
+0x4ee3d441	fsub	v1.2d, v2.2d, v3.2d
+0x4ee3dc41	.long	0x4ee3dc41
+0x4ee3e441	.long	0x4ee3e441
+0x4ee3ec41	.long	0x4ee3ec41
+0x4ee3f441	fmin	v1.2d, v2.2d, v3.2d
+0x4ee3fc41	frsqrts	v1.2d, v2.2d, v3.2d
+0x6e038441	.long	0x6e038441
+0x6e038c41	.long	0x6e038c41
+0x6e03c441	.long	0x6e03c441
+0x6e03cc41	.long	0x6e03cc41
+0x6e03d441	.long	0x6e03d441
+0x6e03dc41	.long	0x6e03dc41
+0x6e03e441	.long	0x6e03e441
+0x6e03ec41	.long	0x6e03ec41
+0x6e03f441	.long	0x6e03f441
+0x6e03fc41	.long	0x6e03fc41
+0x6e230441	uhadd	v1.16b, v2.16b, v3.16b
+0x6e230c41	uqadd	v1.16b, v2.16b, v3.16b
+0x6e231441	urhadd	v1.16b, v2.16b, v3.16b
+0x6e231c41	eor	v1.16b, v2.16b, v3.16b
+0x6e232441	uhsub	v1.16b, v2.16b, v3.16b
+0x6e232c41	uqsub	v1.16b, v2.16b, v3.16b
+0x6e233441	cmhi	v1.16b, v2.16b, v3.16b
+0x6e233c41	cmhs	v1.16b, v2.16b, v3.16b
+0x6e234441	ushl	v1.16b, v2.16b, v3.16b
+0x6e234c41	uqshl	v1.16b, v2.16b, v3.16b
+0x6e235441	urshl	v1.16b, v2.16b, v3.16b
+0x6e235c41	uqrshl	v1.16b, v2.16b, v3.16b
+0x6e236441	umax	v1.16b, v2.16b, v3.16b
+0x6e236c41	umin	v1.16b, v2.16b, v3.16b
+0x6e237441	uabd	v1.16b, v2.16b, v3.16b
+0x6e237c41	uaba	v1.16b, v2.16b, v3.16b
+0x6e238441	sub	v1.16b, v2.16b, v3.16b
+0x6e238c41	cmeq	v1.16b, v2.16b, v3.16b
+0x6e239441	mls	v1.16b, v2.16b, v3.16b
+0x6e239c41	pmul	v1.16b, v2.16b, v3.16b
+0x6e23a441	umaxp	v1.16b, v2.16b, v3.16b
+0x6e23ac41	uminp	v1.16b, v2.16b, v3.16b
+0x6e23b441	.long	0x6e23b441
+0x6e23bc41	.long	0x6e23bc41
+0x6e23c441	fmaxnmp	v1.4s, v2.4s, v3.4s
+0x6e23cc41	fmlal2	v1.4s, v2.4h, v3.4h
+0x6e23d441	faddp	v1.4s, v2.4s, v3.4s
+0x6e23dc41	fmul	v1.4s, v2.4s, v3.4s
+0x6e23e441	fcmge	v1.4s, v2.4s, v3.4s
+0x6e23ec41	facge	v1.4s, v2.4s, v3.4s
+0x6e23f441	fmaxp	v1.4s, v2.4s, v3.4s
+0x6e23fc41	fdiv	v1.4s, v2.4s, v3.4s
+0x6e430441	fmaxnmp	v1.8h, v2.8h, v3.8h
+0x6e430c41	.long	0x6e430c41
+0x6e431441	faddp	v1.8h, v2.8h, v3.8h
+0x6e431c41	fmul	v1.8h, v2.8h, v3.8h
+0x6e432441	fcmge	v1.8h, v2.8h, v3.8h
+0x6e432c41	facge	v1.8h, v2.8h, v3.8h
+0x6e433441	fmaxp	v1.8h, v2.8h, v3.8h
+0x6e433c41	fdiv	v1.8h, v2.8h, v3.8h
+0x6e434441	.long	0x6e434441
+0x6e434c41	.long	0x6e434c41
+0x6e435441	.long	0x6e435441
+0x6e435c41	.long	0x6e435c41
+0x6e436441	.long	0x6e436441
+0x6e436c41	.long	0x6e436c41
+0x6e437441	.long	0x6e437441
+0x6e437c41	.long	0x6e437c41
+0x6e438441	sqrdmlah	v1.8h, v2.8h, v3.8h
+0x6e438c41	sqrdmlsh	v1.8h, v2.8h, v3.8h
+0x6e43c441	fcmla	v1.8h, v2.8h, v3.8h, #0
+0x6e43cc41	fcmla	v1.8h, v2.8h, v3.8h, #90
+0x6e43d441	fcmla	v1.8h, v2.8h, v3.8h, #180
+0x6e43dc41	fcmla	v1.8h, v2.8h, v3.8h, #270
+0x6e43e441	fcadd	v1.8h, v2.8h, v3.8h, #90
+0x6e43ec41	.long	0x6e43ec41
+0x6e43f441	fcadd	v1.8h, v2.8h, v3.8h, #270
+0x6e43fc41	.long	0x6e43fc41
+0x6e630441	uhadd	v1.8h, v2.8h, v3.8h
+0x6e630c41	uqadd	v1.8h, v2.8h, v3.8h
+0x6e631441	urhadd	v1.8h, v2.8h, v3.8h
+0x6e631c41	bsl	v1.16b, v2.16b, v3.16b
+0x6e632441	uhsub	v1.8h, v2.8h, v3.8h
+0x6e632c41	uqsub	v1.8h, v2.8h, v3.8h
+0x6e633441	cmhi	v1.8h, v2.8h, v3.8h
+0x6e633c41	cmhs	v1.8h, v2.8h, v3.8h
+0x6e634441	ushl	v1.8h, v2.8h, v3.8h
+0x6e634c41	uqshl	v1.8h, v2.8h, v3.8h
+0x6e635441	urshl	v1.8h, v2.8h, v3.8h
+0x6e635c41	uqrshl	v1.8h, v2.8h, v3.8h
+0x6e636441	umax	v1.8h, v2.8h, v3.8h
+0x6e636c41	umin	v1.8h, v2.8h, v3.8h
+0x6e637441	uabd	v1.8h, v2.8h, v3.8h
+0x6e637c41	uaba	v1.8h, v2.8h, v3.8h
+0x6e638441	sub	v1.8h, v2.8h, v3.8h
+0x6e638c41	cmeq	v1.8h, v2.8h, v3.8h
+0x6e639441	mls	v1.8h, v2.8h, v3.8h
+0x6e639c41	.long	0x6e639c41
+0x6e63a441	umaxp	v1.8h, v2.8h, v3.8h
+0x6e63ac41	uminp	v1.8h, v2.8h, v3.8h
+0x6e63b441	sqrdmulh	v1.8h, v2.8h, v3.8h
+0x6e63bc41	.long	0x6e63bc41
+0x6e63c441	fmaxnmp	v1.2d, v2.2d, v3.2d
+0x6e63cc41	.long	0x6e63cc41
+0x6e63d441	faddp	v1.2d, v2.2d, v3.2d
+0x6e63dc41	fmul	v1.2d, v2.2d, v3.2d
+0x6e63e441	fcmge	v1.2d, v2.2d, v3.2d
+0x6e63ec41	facge	v1.2d, v2.2d, v3.2d
+0x6e63f441	fmaxp	v1.2d, v2.2d, v3.2d
+0x6e63fc41	fdiv	v1.2d, v2.2d, v3.2d
+0x6e830441	.long	0x6e830441
+0x6e830c41	.long	0x6e830c41
+0x6e831441	.long	0x6e831441
+0x6e831c41	.long	0x6e831c41
+0x6e832441	.long	0x6e832441
+0x6e832c41	.long	0x6e832c41
+0x6e833441	.long	0x6e833441
+0x6e833c41	.long	0x6e833c41
+0x6e834441	.long	0x6e834441
+0x6e834c41	.long	0x6e834c41
+0x6e835441	.long	0x6e835441
+0x6e835c41	.long	0x6e835c41
+0x6e836441	.long	0x6e836441
+0x6e836c41	.long	0x6e836c41
+0x6e837441	.long	0x6e837441
+0x6e837c41	.long	0x6e837c41
+0x6e838441	sqrdmlah	v1.4s, v2.4s, v3.4s
+0x6e838c41	sqrdmlsh	v1.4s, v2.4s, v3.4s
+0x6e83c441	fcmla	v1.4s, v2.4s, v3.4s, #0
+0x6e83cc41	fcmla	v1.4s, v2.4s, v3.4s, #90
+0x6e83d441	fcmla	v1.4s, v2.4s, v3.4s, #180
+0x6e83dc41	fcmla	v1.4s, v2.4s, v3.4s, #270
+0x6e83e441	fcadd	v1.4s, v2.4s, v3.4s, #90
+0x6e83ec41	.long	0x6e83ec41
+0x6e83f441	fcadd	v1.4s, v2.4s, v3.4s, #270
+0x6e83fc41	.long	0x6e83fc41
+0x6ea30441	uhadd	v1.4s, v2.4s, v3.4s
+0x6ea30c41	uqadd	v1.4s, v2.4s, v3.4s
+0x6ea31441	urhadd	v1.4s, v2.4s, v3.4s
+0x6ea31c41	bit	v1.16b, v2.16b, v3.16b
+0x6ea32441	uhsub	v1.4s, v2.4s, v3.4s
+0x6ea32c41	uqsub	v1.4s, v2.4s, v3.4s
+0x6ea33441	cmhi	v1.4s, v2.4s, v3.4s
+0x6ea33c41	cmhs	v1.4s, v2.4s, v3.4s
+0x6ea34441	ushl	v1.4s, v2.4s, v3.4s
+0x6ea34c41	uqshl	v1.4s, v2.4s, v3.4s
+0x6ea35441	urshl	v1.4s, v2.4s, v3.4s
+0x6ea35c41	uqrshl	v1.4s, v2.4s, v3.4s
+0x6ea36441	umax	v1.4s, v2.4s, v3.4s
+0x6ea36c41	umin	v1.4s, v2.4s, v3.4s
+0x6ea37441	uabd	v1.4s, v2.4s, v3.4s
+0x6ea37c41	uaba	v1.4s, v2.4s, v3.4s
+0x6ea38441	sub	v1.4s, v2.4s, v3.4s
+0x6ea38c41	cmeq	v1.4s, v2.4s, v3.4s
+0x6ea39441	mls	v1.4s, v2.4s, v3.4s
+0x6ea39c41	.long	0x6ea39c41
+0x6ea3a441	umaxp	v1.4s, v2.4s, v3.4s
+0x6ea3ac41	uminp	v1.4s, v2.4s, v3.4s
+0x6ea3b441	sqrdmulh	v1.4s, v2.4s, v3.4s
+0x6ea3bc41	.long	0x6ea3bc41
+0x6ea3c441	fminnmp	v1.4s, v2.4s, v3.4s
+0x6ea3cc41	fmlsl2	v1.4s, v2.4h, v3.4h
+0x6ea3d441	fabd	v1.4s, v2.4s, v3.4s
+0x6ea3dc41	.long	0x6ea3dc41
+0x6ea3e441	fcmgt	v1.4s, v2.4s, v3.4s
+0x6ea3ec41	facgt	v1.4s, v2.4s, v3.4s
+0x6ea3f441	fminp	v1.4s, v2.4s, v3.4s
+0x6ea3fc41	.long	0x6ea3fc41
+0x6ec30441	fminnmp	v1.8h, v2.8h, v3.8h
+0x6ec30c41	.long	0x6ec30c41
+0x6ec31441	fabd	v1.8h, v2.8h, v3.8h
+0x6ec31c41	.long	0x6ec31c41
+0x6ec32441	fcmgt	v1.8h, v2.8h, v3.8h
+0x6ec32c41	facgt	v1.8h, v2.8h, v3.8h
+0x6ec33441	fminp	v1.8h, v2.8h, v3.8h
+0x6ec33c41	.long	0x6ec33c41
+0x6ec34441	.long	0x6ec34441
+0x6ec34c41	.long	0x6ec34c41
+0x6ec35441	.long	0x6ec35441
+0x6ec35c41	.long	0x6ec35c41
+0x6ec36441	.long	0x6ec36441
+0x6ec36c41	.long	0x6ec36c41
+0x6ec37441	.long	0x6ec37441
+0x6ec37c41	.long	0x6ec37c41
+0x6ec38441	.long	0x6ec38441
+0x6ec38c41	.long	0x6ec38c41
+0x6ec3c441	fcmla	v1.2d, v2.2d, v3.2d, #0
+0x6ec3cc41	fcmla	v1.2d, v2.2d, v3.2d, #90
+0x6ec3d441	fcmla	v1.2d, v2.2d, v3.2d, #180
+0x6ec3dc41	fcmla	v1.2d, v2.2d, v3.2d, #270
+0x6ec3e441	fcadd	v1.2d, v2.2d, v3.2d, #90
+0x6ec3ec41	.long	0x6ec3ec41
+0x6ec3f441	fcadd	v1.2d, v2.2d, v3.2d, #270
+0x6ec3fc41	.long	0x6ec3fc41
+0x6ee30441	.long	0x6ee30441
+0x6ee30c41	uqadd	v1.2d, v2.2d, v3.2d
+0x6ee31441	.long	0x6ee31441
+0x6ee31c41	bif	v1.16b, v2.16b, v3.16b
+0x6ee32441	.long	0x6ee32441
+0x6ee32c41	uqsub	v1.2d, v2.2d, v3.2d
+0x6ee33441	cmhi	v1.2d, v2.2d, v3.2d
+0x6ee33c41	cmhs	v1.2d, v2.2d, v3.2d
+0x6ee34441	ushl	v1.2d, v2.2d, v3.2d
+0x6ee34c41	uqshl	v1.2d, v2.2d, v3.2d
+0x6ee35441	urshl	v1.2d, v2.2d, v3.2d
+0x6ee35c41	uqrshl	v1.2d, v2.2d, v3.2d
+0x6ee36441	.long	0x6ee36441
+0x6ee36c41	.long	0x6ee36c41
+0x6ee37441	.long	0x6ee37441
+0x6ee37c41	.long	0x6ee37c41
+0x6ee38441	sub	v1.2d, v2.2d, v3.2d
+0x6ee38c41	cmeq	v1.2d, v2.2d, v3.2d
+0x6ee39441	.long	0x6ee39441
+0x6ee39c41	.long	0x6ee39c41
+0x6ee3a441	.long	0x6ee3a441
+0x6ee3ac41	.long	0x6ee3ac41
+0x6ee3b441	.long	0x6ee3b441
+0x6ee3bc41	.long	0x6ee3bc41
+0x6ee3c441	fminnmp	v1.2d, v2.2d, v3.2d
+0x6ee3cc41	.long	0x6ee3cc41
+0x6ee3d441	fabd	v1.2d, v2.2d, v3.2d
+0x6ee3dc41	.long	0x6ee3dc41
+0x6ee3e441	fcmgt	v1.2d, v2.2d, v3.2d
+0x6ee3ec41	facgt	v1.2d, v2.2d, v3.2d
+0x6ee3f441	fminp	v1.2d, v2.2d, v3.2d
+0x6ee3fc41	.long	0x6ee3fc41
+0x0e221c41	and	v1.8b, v2.8b, v2.8b
+0x0e621c41	bic	v1.8b, v2.8b, v2.8b
+0x0ea21c41	mov	v1.8b, v2.8b
+0x0ee21c41	orn	v1.8b, v2.8b, v2.8b
+0x2e221c41	eor	v1.8b, v2.8b, v2.8b
+0x2e621c41	bsl	v1.8b, v2.8b, v2.8b
+0x2ea21c41	bit	v1.8b, v2.8b, v2.8b
+0x2ee21c41	bif	v1.8b, v2.8b, v2.8b
+0x4e221c41	and	v1.16b, v2.16b, v2.16b
+0x4e621c41	bic	v1.16b, v2.16b, v2.16b
+0x4ea21c41	mov	v1.16b, v2.16b
+0x4ee21c41	orn	v1.16b, v2.16b, v2.16b
+0x6e221c41	eor	v1.16b, v2.16b, v2.16b
+0x6e621c41	bsl	v1.16b, v2.16b, v2.16b
+0x6ea21c41	bit	v1.16b, v2.16b, v2.16b
+0x6ee21c41	bif	v1.16b, v2.16b, v2.16b

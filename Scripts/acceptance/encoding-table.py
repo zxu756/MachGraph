@@ -410,6 +410,58 @@ def _generate_udf_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_vec_three_same_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.15/16/17 Advanced SIMD vector three-register same (+ FP16, FHM, RDMA, FCMA)."""
+    words: List[int] = []
+    rd = 1
+    rn = 2
+    rm = 3
+    for q_bit in (0, 1):
+        for u_bit in (0, 1):
+            for size in range(4):
+                for bit21 in (0, 1):
+                    for opcode in range(32):
+                        # Exclude AdvSIMD Copy (size=0, bit21=0, bit[15]=0 -> covered by advsimd_copy.tsv)
+                        if size == 0 and bit21 == 0 and (opcode & 0b10000) == 0:
+                            continue
+                        # Exclude C4.1.95.17 dot-product / matrix slice (bit21=0, opcode in 18..23 -> advsimd_dot_product.tsv)
+                        if bit21 == 0 and 18 <= opcode <= 23:
+                            continue
+                        word = (
+                            (q_bit << 30)
+                            | (u_bit << 29)
+                            | (0b01110 << 24)
+                            | (size << 22)
+                            | (bit21 << 21)
+                            | (rm << 16)
+                            | (opcode << 11)
+                            | (1 << 10)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+
+    # Also enumerate Rm == Rn (Rd=1, Rn=2, Rm=2) across all 16 (Q, U, size) bitwise forms
+    # (bit21=1, opcode=0b00011) to verify ORR -> MOV preferred alias and non-aliasing AND/BIC/ORN/EOR/BSL/BIT/BIF.
+    for q_bit in (0, 1):
+        for u_bit in (0, 1):
+            for size in range(4):
+                word = (
+                    (q_bit << 30)
+                    | (u_bit << 29)
+                    | (0b01110 << 24)
+                    | (size << 22)
+                    | (1 << 21)
+                    | (rn << 16)
+                    | (0b00011 << 11)
+                    | (1 << 10)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -550,6 +602,18 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "single-bit set/clear, and signed/hex boundaries) plus 48 high-16-bit != 0 counterexamples (.long), totaling 1,083 rows.",
         ),
         generate_words=_generate_udf_words,
+    ),
+    "advsimd_vec_three_same": EncodingGroupSpec(
+        name="advsimd_vec_three_same",
+        title="Advanced SIMD vector three-register same — integer, bitwise (ORR/MOV), FP32/FP64, FP16, FHM, RDMA, and FCMA",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.15/16/17: (word & 0x9f000400) == 0x0e000400 excluding AdvSIMD Copy (advsimd_copy.tsv)",
+            "and the C4.1.95.17 dot-product/matrix slice bit[21]=0, opcode=18..23 (advsimd_dot_product.tsv).",
+            "Enumerates all 864 non-register combinations of Q=0..1, U=0..1, size=0..3, bit[21]=0..1, opcode=0..31",
+            "with distinct Rd=1, Rn=2, Rm=3, plus 16 Rm==Rn (Rd=1, Rn=2, Rm=2) bitwise rows (bit[21]=1, opcode=0b00011),",
+            "totaling 880 rows.",
+        ),
+        generate_words=_generate_advsimd_vec_three_same_words,
     ),
 }
 
