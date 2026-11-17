@@ -2279,4 +2279,72 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
             #expect(mismatches.isEmpty, "Group 16 \(tableName) mismatches: \(mismatches.joined(separator: "; "))")
         }
     }
+
+    @Test("Stage 10 Group 18: Scalar FP <-> integer conversions (FCVTN/P/M/Z/A*, SCVTF/UCVTF, FJCVTZS, FMOV GP<->FP and V.D[1]) match scalar_fp_int_conv.tsv")
+    func scalarFPIntConversionsDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x9E69_0009, "fcvtpu x9, d0"),      // /usr/bin/afinfo baseline example
+            (0x1EF1_035C, "fcvtmu w28, h26"),    // seed 17 fuzz example
+            (0x1E20_0041, "fcvtns w1, s2"),
+            (0x1E21_0041, "fcvtnu w1, s2"),
+            (0x9E68_0041, "fcvtps x1, d2"),
+            (0x9E70_0041, "fcvtms x1, d2"),
+            (0x9EF1_0041, "fcvtmu x1, h2"),
+            (0x1E7E_0041, "fjcvtzs w1, d2"),     // FEAT_JSCVT
+            (0x9EAE_0041, "fmov x1, v2.d[1]"),   // high 64-bit lane to GP
+            (0x9EAF_0041, "fmov v1.d[1], x2"),   // GP to high 64-bit lane
+            (0x9EAF_03E1, "fmov v1.d[1], xzr"),  // XZR to high 64-bit lane
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // FJCVTZS updates NZCV flags
+        let fjcvtzs = decoder.decode(word: 0x1E7E_0041, at: pc)
+        #expect(fjcvtzs.writesFlags == true)
+
+        // Mismatched-width FMOV (w <-> d, x <-> s) and sf=1 FJCVTZS must decode as .inst:
+        for badWord: UInt32 in [0x1E66_0041, 0x1E67_0041, 0x9E26_0041, 0x9E27_0041, 0x9E7E_0041, 0x1EAE_0041] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("scalar_fp_int_conv"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 1536)
+        #expect(mismatches.isEmpty, "Group 18 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

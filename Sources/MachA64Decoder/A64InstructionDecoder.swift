@@ -3140,15 +3140,50 @@ public struct A64InstructionDecoder: Sendable {
         if A64BitUtils.extract(word, 15, 10) == 0b000000 {
             let rmode = A64BitUtils.extract(word, 20, 19)
             let opcode = A64BitUtils.extract(word, 18, 16)
+            let gpRd = A64Register.gp(rd, is64Bit: sf)
+            let gpRn = A64Register.gp(rn, is64Bit: sf)
+
+            // High 64-bit SIMD lane <-> GP moves: ftype == 0b10, sf == 1, rmode == 0b01, opcode in {0b110, 0b111}
+            if sf && ftype == 0b10 && rmode == 0b01 {
+                if opcode == 0b110 {
+                    let vRn = A64Register.v(rn, arrangement: "d[1]")
+                    return A64DecodedInstruction(
+                        address: address, rawWord: word, mnemonic: .fmov,
+                        operands: [.register(gpRd), .register(vRn)], group: .simdAndFP,
+                        readsRegisters: [vRn], writesRegisters: activeRegs([gpRd])
+                    )
+                }
+                if opcode == 0b111 {
+                    let vRd = A64Register.v(rd, arrangement: "d[1]")
+                    return A64DecodedInstruction(
+                        address: address, rawWord: word, mnemonic: .fmov,
+                        operands: [.register(vRd), .register(gpRn)], group: .simdAndFP,
+                        readsRegisters: activeRegs([vRd, gpRn]), writesRegisters: [vRd]
+                    )
+                }
+                return nil
+            }
+
             guard let fpRd = scalarFPRegister(index: rd, ftype: ftype),
                   let fpRn = scalarFPRegister(index: rn, ftype: ftype)
             else {
                 return nil
             }
-            let gpRd = A64Register.gp(rd, is64Bit: sf)
-            let gpRn = A64Register.gp(rn, is64Bit: sf)
+            let validFMovWidth = (!sf && ftype == 0b00) || (sf && ftype == 0b01) || (ftype == 0b11)
 
             switch (rmode, opcode) {
+            case (0b00, 0b000): // FCVTNS <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzs, mnemonicText: "fcvtns",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
+            case (0b00, 0b001): // FCVTNU <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzu, mnemonicText: "fcvtnu",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
             case (0b00, 0b010): // SCVTF <FPd>, <GPn>
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .scvtf,
@@ -3173,6 +3208,30 @@ public struct A64InstructionDecoder: Sendable {
                     operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
                     readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
                 )
+            case (0b01, 0b000): // FCVTPS <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzs, mnemonicText: "fcvtps",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
+            case (0b01, 0b001): // FCVTPU <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzu, mnemonicText: "fcvtpu",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
+            case (0b10, 0b000): // FCVTMS <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzs, mnemonicText: "fcvtms",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
+            case (0b10, 0b001): // FCVTMU <GPd>, <FPn>
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzu, mnemonicText: "fcvtmu",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
+                )
             case (0b11, 0b000): // FCVTZS <GPd>, <FPn>
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .fcvtzs,
@@ -3185,13 +3244,19 @@ public struct A64InstructionDecoder: Sendable {
                     operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
                     readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
                 )
-            case (0b00, 0b110): // FMOV <GPd>, <FPn>
+            case (0b11, 0b110) where !sf && ftype == 0b01: // FJCVTZS <Wd>, <Dn> (FEAT_JSCVT)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .fcvtzs, mnemonicText: "fjcvtzs",
+                    operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
+                    readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd]), writesFlags: true
+                )
+            case (0b00, 0b110) where validFMovWidth: // FMOV <GPd>, <FPn>
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .fmov,
                     operands: [.register(gpRd), .register(fpRn)], group: .simdAndFP,
                     readsRegisters: [fpRn], writesRegisters: activeRegs([gpRd])
                 )
-            case (0b00, 0b111): // FMOV <FPd>, <GPn>
+            case (0b00, 0b111) where validFMovWidth: // FMOV <FPd>, <GPn>
                 return A64DecodedInstruction(
                     address: address, rawWord: word, mnemonic: .fmov,
                     operands: [.register(fpRd), .register(gpRn)], group: .simdAndFP,

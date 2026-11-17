@@ -769,6 +769,36 @@ def _generate_rcpc_ldapr_words() -> List[int]:
     return words
 
 
+def _generate_scalar_fp_int_conv_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.26 Floating-point<->integer conversions:
+    sf(1)|0|S(1)|11110|ftype(2)|1|rmode(2)|opcode(3)|000000|Rn(5)|Rd(5), i.e. (word & 0x5f20fc00) == 0x1e200000.
+    Enumerates all 2 x 2 x 4 x 4 x 8 x 3 = 1,536 combinations of sf=0..1, S=0..1 (including S=1 unallocated),
+    ftype=0..3 (S, D, Q/lane-1, H), rmode=0..3, opcode=0..7 across (Rd, Rn) in {(1, 2), (1, 31), (31, 2)}
+    (covering FCVTNS/U, SCVTF/UCVTF, FCVTAS/U, FCVTPS/U, FCVTMS/U, FCVTZS/U, FJCVTZS, FMOV GP<->FP,
+    FMOV X<->V.D[1], wzr/xzr vs s31/d31/h31/v31, and mismatched-width FMOV unallocated counterexamples).
+    """
+    words: List[int] = []
+    for sf in (0, 1):
+        for s_bit in (0, 1):
+            for ftype in range(4):
+                for rmode in range(4):
+                    for opcode in range(8):
+                        for rd, rn in ((1, 2), (1, 31), (31, 2)):
+                            word = (
+                                (sf << 31)
+                                | (s_bit << 29)
+                                | (0b11110 << 24)
+                                | (ftype << 22)
+                                | (1 << 21)
+                                | (rmode << 19)
+                                | (opcode << 16)
+                                | (rn << 5)
+                                | rd
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1035,6 +1065,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "and (Rs, Rn, Rt) in {(31,2,1), (31,31,1), (31,2,31), (30,2,1)} (complementing lse_atomic.tsv).",
         ),
         generate_words=_generate_rcpc_ldapr_words,
+    ),
+    "scalar_fp_int_conv": EncodingGroupSpec(
+        name="scalar_fp_int_conv",
+        title="Scalar floating-point <-> integer conversions & GP<->FP moves — FCVTN/P/M/Z/A*, SCVTF, UCVTF, FJCVTZS, and FMOV",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.26 Floating-point<->integer conversions: (word & 0x5f20fc00) == 0x1e200000.",
+            "Enumerates all 2 x 2 x 4 x 4 x 8 x 3 = 1,536 combinations of sf=0..1, S=0..1, ftype=0..3 (S/D/lane-1/H),",
+            "rmode=0..3, opcode=0..7 across (Rd, Rn) in {(1,2), (1,31), (31,2)}.",
+        ),
+        generate_words=_generate_scalar_fp_int_conv_words,
     ),
 }
 

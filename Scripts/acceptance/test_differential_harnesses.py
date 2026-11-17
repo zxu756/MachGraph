@@ -1957,9 +1957,11 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
 
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0xDAC13BF0), "PAC data/instruction pointer")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x38BFC108), "LDAPR (RCpc) and LSE atomic")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x9E690009), "Scalar FP <-> integer conversions")
         expected_counts = {
             "pac_data_ptr": 3200,
             "rcpc_ldapr": 512,
+            "scalar_fp_int_conv": 1536,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1971,7 +1973,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "pac_data_ptr", "rcpc_ldapr", "--out-dir", tmp],
+                ["generate", "pac_data_ptr", "rcpc_ldapr", "scalar_fp_int_conv", "--out-dir", tmp],
             )
             self.assertEqual(rc, 0, f"generate stage 10 tables failed: {stdout_txt}\n{stderr_txt}")
             pc, pr = enc_table.load_reference_table(os.path.join(tmp, "pac_data_ptr.tsv"))
@@ -2011,6 +2013,29 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             lm = {m for _, m, _ in lr}
             for expected_mnem in ("ldaprb", "ldaprh", "ldapr", "swpb", "swp", ".long"):
                 self.assertIn(expected_mnem, lm)
+
+            ic, ir = enc_table.load_reference_table(os.path.join(tmp, "scalar_fp_int_conv.tsv"))
+            self.assertEqual(len(ir), 1536)
+            self.assertTrue(any("encoding-table.py generate scalar_fp_int_conv" in c for c in ic))
+            im = {m for _, m, _ in ir}
+            for expected_mnem in (
+                "fcvtns",
+                "fcvtnu",
+                "scvtf",
+                "ucvtf",
+                "fcvtas",
+                "fcvtau",
+                "fcvtps",
+                "fcvtpu",
+                "fcvtms",
+                "fcvtmu",
+                "fcvtzs",
+                "fcvtzu",
+                "fjcvtzs",
+                "fmov",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, im)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
