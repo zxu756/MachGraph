@@ -304,11 +304,14 @@ public struct A64InstructionDecoder: Sendable {
 
         // Alias: MOV <Xd|SP>, #<imm> when ORR with Rn == XZR/WZR and !MoveWidePreferred(sf, immN, imms, immr)
         if opc == 0b01 && rn == 31 && !moveWidePreferred(is64: is64, immN: immN, imms: imms, immr: immr) {
+            let signedMask: Int64 = is64
+                ? Int64(bitPattern: wmask)
+                : Int64(Int32(bitPattern: UInt32(truncatingIfNeeded: wmask)))
             return A64DecodedInstruction(
                 address: address,
                 rawWord: word,
                 mnemonic: .mov,
-                operands: [.register(rdReg), .unsignedImmediate(wmask)],
+                operands: [.register(rdReg), .immediate(signedMask)],
                 group: .dataProcessingImm,
                 flow: .sequential,
                 readsRegisters: [],
@@ -1225,6 +1228,27 @@ public struct A64InstructionDecoder: Sendable {
                 )
             }
 
+            if isRead {
+                let syslStr = "\(xtReg.canonicalName), #\(op1), c\(crn), c\(crm), #\(op2)"
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .sys,
+                    mnemonicText: "sysl",
+                    operands: [
+                        .register(xtReg),
+                        .unsignedImmediate(UInt64(op1)),
+                        .unsignedImmediate(UInt64(crn)),
+                        .unsignedImmediate(UInt64(crm)),
+                        .unsignedImmediate(UInt64(op2))
+                    ],
+                    operandText: syslStr,
+                    group: .branchAndSystem,
+                    readsRegisters: [],
+                    writesRegisters: activeRegs([xtReg])
+                )
+            }
+
             let opStr = rt == 31
                 ? "#\(op1), c\(crn), c\(crm), #\(op2)"
                 : "#\(op1), c\(crn), c\(crm), #\(op2), \(xtReg.canonicalName)"
@@ -1232,14 +1256,14 @@ public struct A64InstructionDecoder: Sendable {
                 address: address,
                 rawWord: word,
                 mnemonic: .sys,
-                mnemonicText: isRead ? "sysl" : "sys",
+                mnemonicText: "sys",
                 operands: rt == 31
                     ? [.unsignedImmediate(UInt64(op1)), .unsignedImmediate(UInt64(crn)), .unsignedImmediate(UInt64(crm)), .unsignedImmediate(UInt64(op2))]
                     : [.unsignedImmediate(UInt64(op1)), .unsignedImmediate(UInt64(crn)), .unsignedImmediate(UInt64(crm)), .unsignedImmediate(UInt64(op2)), .register(xtReg)],
                 operandText: opStr,
                 group: .branchAndSystem,
-                readsRegisters: isRead ? [] : activeRegs([xtReg]),
-                writesRegisters: isRead ? activeRegs([xtReg]) : []
+                readsRegisters: activeRegs([xtReg]),
+                writesRegisters: []
             )
         }
 
@@ -1850,11 +1874,21 @@ public struct A64InstructionDecoder: Sendable {
                     : activeRegs([baseReg, indexReg, targetReg])
                 let writes = spec.isLoad ? activeRegs([targetReg]) : []
 
+                // G50: Byte-width register-offset transfers (scaleShift == 0) with S == 1 print an explicit `#0`
+                // on UXTW / SXTW / SXTX (`option != 0b011`; `option == 0b011` already emits `lsl #0`).
+                let explicitOperandText: String?
+                if sFlag && spec.scaleShift == 0 && option != 0b011, let ext = extendClause {
+                    explicitOperandText = "\(targetReg.canonicalName), [\(baseReg.canonicalName), \(indexReg.canonicalName), \(ext.description) #0]"
+                } else {
+                    explicitOperandText = nil
+                }
+
                 return A64DecodedInstruction(
                     address: address,
                     rawWord: word,
                     mnemonic: spec.mnemonic,
                     operands: [.register(targetReg), .memory(addrMode)],
+                    operandText: explicitOperandText,
                     group: .loadStore,
                     readsRegisters: reads,
                     writesRegisters: writes
@@ -2373,8 +2407,17 @@ public struct A64InstructionDecoder: Sendable {
         let rmIs64 = is64 && (option == 0b011 || option == 0b111)
         let rmReg = A64Register.gp(rm, is64Bit: rmIs64, allowSP: false)
 
-        let extEnum = A64ShiftExtendParser.decodeExtendOption(option: option, shift: imm3)
-        let rmOp = A64Operand.shiftedRegister(rmReg, extEnum)
+        // G49: When Rd or Rn is SP/WSP and extend matches register width (UXTW for 32-bit, UXTX for 64-bit),
+        // the preferred syntax omits the modifier for imm3 == 0 and prints `lsl #imm3` for imm3 in 1...4.
+        let involvesSP = rdReg.isStackPointer || rnReg.isStackPointer
+        let preferredLSL = involvesSP && (is64 ? (option == 0b011) : (option == 0b010))
+        let rmOp: A64Operand
+        if preferredLSL {
+            rmOp = (imm3 == 0) ? .register(rmReg) : .shiftedRegister(rmReg, .lsl(imm3))
+        } else {
+            let extEnum = A64ShiftExtendParser.decodeExtendOption(option: option, shift: imm3)
+            rmOp = .shiftedRegister(rmReg, extEnum)
+        }
 
         if setsFlags && rd == 31 {
             return A64DecodedInstruction(

@@ -316,14 +316,17 @@ public enum A64Operand: Sendable, Codable, Hashable, CustomStringConvertible {
             return reg.canonicalName
         case .immediate(let val):
             if val < 0 {
-                let mag = UInt64(bitPattern: -val)
+                let mag = 0 &- UInt64(bitPattern: val)
                 return mag >= 16 ? "#-0x\(String(mag, radix: 16))" : "#-\(mag)"
             }
             return val >= 16 ? "#0x\(String(val, radix: 16))" : "#\(val)"
         case .unsignedImmediate(let val):
             return val >= 16 ? "#0x\(String(val, radix: 16))" : "#\(val)"
         case .fpImmediate(let d):
-            return String(format: "#%.6g", d)
+            if d == 0.0 && d.bitPattern == 0 {
+                return "#0.0"
+            }
+            return String(format: "#%.8f", locale: Locale(identifier: "en_US_POSIX"), d)
         case .branchTarget(let addr):
             return addr.compactHexString
         case .memory(let mode):

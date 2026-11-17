@@ -1015,4 +1015,226 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(decoder.decode(word: 0xF823_4041, at: pc).formattedDisassembly == "ldsmax x3, x1, [x2]")
         #expect(decoder.decode(word: 0xF823_805F, at: pc).formattedDisassembly == "swp x3, xzr, [x2]")
     }
+
+    @Test("G47: Scalar FMOV #imm8 and FCMP/FCMPE #0.0 match llvm-objdump verbatim across all 1,152 fp_imm.tsv rows and round-trip through A64MiniAssembler")
+    func fpImmediateAndFcmpZeroVerbatimReferenceAndAssemblerRoundTrip() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Concrete precision-loss and #0.0 examples from 02-machgraph.md (G47):
+        #expect(decoder.decode(word: 0x1E68_3000, at: pc).formattedDisassembly == "fmov d0, #0.13281250")
+        #expect(decoder.decode(word: 0x1E28_3000, at: pc).formattedDisassembly == "fmov s0, #0.13281250")
+        #expect(decoder.decode(word: 0x1EE8_3000, at: pc).formattedDisassembly == "fmov h0, #0.13281250")
+        #expect(decoder.decode(word: 0x1E60_1000, at: pc).formattedDisassembly == "fmov d0, #2.00000000")
+        #expect(decoder.decode(word: 0x1E60_2108, at: pc).formattedDisassembly == "fcmp d8, #0.0")
+        #expect(decoder.decode(word: 0x1E60_2118, at: pc).formattedDisassembly == "fcmpe d8, #0.0")
+        #expect(decoder.decode(word: 0x1E20_2048, at: pc).formattedDisassembly == "fcmp s2, #0.0")
+        #expect(decoder.decode(word: 0x1EE0_2058, at: pc).formattedDisassembly == "fcmpe h2, #0.0")
+
+        // Verbatim text comparison (NOT numeric O2) against every row in Fixtures/a64/fp_imm.tsv:
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("fp_imm"), encoding: .utf8)
+        let lines = rawText.split(whereSeparator: \.isNewline).map(String.init)
+        var rowCount = 0
+        var verbatimMismatches: [String] = []
+        var roundTripMismatches: [String] = []
+        var fcmpZeroRowCount = 0
+
+        for line in lines where !line.hasPrefix("#") && !line.trimmingCharacters(in: .whitespaces).isEmpty {
+            let parts = line.split(separator: "\t", maxSplits: 2).map(String.init)
+            #expect(parts.count == 3, "Malformed fp_imm.tsv row: \(line)")
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let refMnem = parts[1]
+            let refOps = parts[2]
+            rowCount += 1
+
+            let decoded = decoder.decode(word: word, at: pc)
+            if refMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    verbatimMismatches.append(String(format: "0x%08x expected .inst got %@", word, decoded.formattedDisassembly))
+                }
+                continue
+            }
+
+            let expectedText = "\(refMnem) \(refOps)"
+            if decoded.formattedDisassembly != expectedText {
+                if verbatimMismatches.count < 12 {
+                    verbatimMismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                }
+            }
+            if (refMnem == "fcmp" || refMnem == "fcmpe") && refOps.hasSuffix("#0.0") {
+                fcmpZeroRowCount += 1
+            }
+
+            // Canonical encodings (FMOV #imm8 and FCMP/FCMPE with Rm==0 for #0.0) must round-trip via A64MiniAssembler:
+            let isNonCanonicalZeroCmp = (refMnem == "fcmp" || refMnem == "fcmpe") && refOps.hasSuffix("#0.0") && ((word >> 16) & 0x1F) != 0
+            if !isNonCanonicalZeroCmp {
+                if let reencoded = try? assembler.assembleSingle(decoded.formattedDisassembly, at: pc), reencoded == word {
+                    // ok
+                } else {
+                    if roundTripMismatches.count < 10 {
+                        roundTripMismatches.append(String(format: "0x%08x ('%@') failed round-trip", word, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+
+        #expect(rowCount == 1152)
+        #expect(fcmpZeroRowCount == 12)
+        #expect(verbatimMismatches.isEmpty, "G47 verbatim mismatches (\(verbatimMismatches.count)): \(verbatimMismatches.joined(separator: "; "))")
+        #expect(roundTripMismatches.isEmpty, "G47 assembler round-trip mismatches: \(roundTripMismatches.joined(separator: "; "))")
+    }
+
+    @Test("G48a: Logical-immediate ORR mov alias formats negative signed immediates in 32-bit and 64-bit while preserving unsigned logical immediates")
+    func logicalImmediateOrrMovAliasFormatsSignedImmediates() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Signed negative MOV bitmask immediates from standard/full corpus, logical_imm.tsv, and fuzz seeds:
+        let negativeMovCases: [(UInt32, String)] = [
+            (0x3201_07E1, "mov w1, #-0x7fffffff"),            // logical_imm.tsv (0x80000001)
+            (0x3201_0BE1, "mov w1, #-0x7ffffffd"),            // /usr/bin/ssh (0x80000003)
+            (0x320D_B7EA, "mov w10, #-0x60007"),              // /bin/unlink (0xfff9fff9)
+            (0x3227_27F3, "mov w19, #-0x1fffff9"),            // seed 20261117
+            (0x320A_AFE9, "mov w9, #-0x3c003d"),              // seed 17
+            (0x3201_07FF, "mov wsp, #-0x7fffffff"),           // 32-bit WSP destination
+            (0xB202_E7EA, "mov x10, #-0x3333333333333334"),   // /usr/bin/ssh (0xcccccccccccccccc)
+            (0xB260_7FE8, "mov x8, #-0x100000000"),           // /bin/bash (0xffffffff00000000)
+            (0xB250_63E1, "mov x1, #-0xfffffffffe01"),        // logical_imm.tsv
+            (0xB21B_73E2, "mov x2, #-0x1c0000001d"),          // seed 20261117
+            (0xB20B_6FEA, "mov x10, #-0x1e0000001e0001"),     // seed 17
+            (0xB202_E7FF, "mov sp, #-0x3333333333333334"),    // 64-bit SP destination
+        ]
+        for (word, expected) in negativeMovCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .mov, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            let reencoded = try assembler.assembleSingle(decoded.formattedDisassembly, at: pc)
+            if word == 0x3227_27F3 {
+                // Non-canonical random fuzz word (32-bit immr=39 aliases canonical immr=7 -> 0x320727f3)
+                #expect(reencoded == 0x3207_27F3)
+                #expect(decoder.decode(word: reencoded, at: pc).formattedDisassembly == expected)
+            } else {
+                #expect(reencoded == word, "word=0x\(String(word, radix: 16))")
+            }
+        }
+
+        // Int64.min boundary in A64Operand.immediate must not trap on negation:
+        #expect(A64Operand.immediate(Int64.min).description == "#-0x8000000000000000")
+
+        // Positive bitmask MOV and non-MOV logical immediates (ORR/AND/EOR/TST) remain unsigned:
+        #expect(decoder.decode(word: 0xB200_03E1, at: pc).formattedDisassembly == "mov x1, #0x100000001")
+        #expect(decoder.decode(word: 0x323F_63E1, at: pc).formattedDisassembly == "mov w1, #0x3fffffe")
+        #expect(decoder.decode(word: 0xB269_E7F4, at: pc).formattedDisassembly == "orr x20, xzr, #0xffffffffff81ffff")
+        #expect(decoder.decode(word: 0x9240_0041, at: pc).formattedDisassembly == "and x1, x2, #1")
+        #expect(decoder.decode(word: 0xF202_E45F, at: pc).formattedDisassembly == "tst x2, #0xcccccccccccccccc")
+    }
+
+    @Test("G49: Extended-register ADD/SUB/ADDS/SUBS and CMN/CMP with SP/WSP emit lsl #n or omit #0 for matching width UXTW/UXTX")
+    func extendedRegisterAddSubSpLslPreferredFormatting() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Preferred LSL / omitted-#0 forms when Rd or Rn is SP/WSP and extend is UXTW (32-bit) or UXTX (64-bit):
+        let lslPreferredCases: [(UInt32, String)] = [
+            (0x0B23_405F, "add wsp, w2, w3"),               // 32-bit Rd=wsp, uxtw #0 -> omit
+            (0x0B23_43E1, "add w1, wsp, w3"),               // 32-bit Rn=wsp, uxtw #0 -> omit
+            (0x0B34_4F7F, "add wsp, w27, w20, lsl #3"),     // seed 20261117
+            (0x2B27_47FA, "adds w26, wsp, w7, lsl #1"),     // seed 17
+            (0x2B23_43FF, "cmn wsp, w3"),                   // S=1, Rd=wzr, Rn=wsp, uxtw #0 -> cmn omit
+            (0x6B23_53FF, "cmp wsp, w3, lsl #4"),           // S=1, Rd=wzr, Rn=wsp, uxtw #4 -> cmp lsl #4
+            (0x6B23_4FE1, "subs w1, wsp, w3, lsl #3"),      // 32-bit subs Rn=wsp
+            (0xCB36_623F, "sub sp, x17, x22"),              // seed 17 (64-bit Rd=sp, uxtx #0 -> omit)
+            (0xCB25_73F7, "sub x23, sp, x5, lsl #4"),       // /usr/bin/assetutil (64-bit Rn=sp, uxtx #4)
+            (0x8B23_63FF, "add sp, sp, x3"),                // both Rd=sp and Rn=sp, uxtx #0
+            (0xAB23_67E1, "adds x1, sp, x3, lsl #1"),       // 64-bit adds Rn=sp
+            (0xAB23_73FF, "cmn sp, x3, lsl #4"),            // 64-bit cmn Rn=sp, uxtx #4
+            (0xEB23_63FF, "cmp sp, x3"),                    // 64-bit cmp Rn=sp, uxtx #0
+            (0xEB23_6FE1, "subs x1, sp, x3, lsl #3"),       // 64-bit subs Rn=sp
+        ]
+        for (word, expected) in lslPreferredCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            let reencoded = try assembler.assembleSingle(decoded.formattedDisassembly, at: pc)
+            #expect(reencoded == word, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples where UXTW/UXTX/SXT* MUST be preserved:
+        let nonLslCounterexamples: [(UInt32, String)] = [
+            (0xCB23_4BE5, "sub x5, sp, w3, uxtw #2"),       // 64-bit SP with 32-bit UXTW (option=010) stays uxtw
+            (0x0B23_645F, "add wsp, w2, w3, uxtx #1"),      // 32-bit WSP with option=011 UXTX stays uxtx
+            (0xEB23_645F, "cmp x2, x3, uxtx #1"),           // S=1, Rd=31 is XZR (not SP), Rn=x2 -> stays uxtx
+            (0x2B23_405F, "cmn w2, w3, uxtw"),              // S=1, Rd=31 is WZR (not WSP), Rn=w2 -> stays uxtw
+            (0x8B23_6841, "add x1, x2, x3, uxtx #2"),       // Neither Rd nor Rn is SP -> stays uxtx
+            (0xCB23_EBFF, "sub sp, sp, x3, sxtx #2"),       // Signed extend SXTX with SP -> stays sxtx
+        ]
+        for (word, expected) in nonLslCounterexamples {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+    }
+
+    @Test("G50: Register-offset byte loads and stores (including SIMD scalar B) print explicit #0 when S=1 across uxtw, sxtw, and sxtx")
+    func registerOffsetByteLoadStoreExplicitZeroShiftWhenSSet() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // All 18 table forms (6 byte instructions x 3 extend options with S=1) plus fuzz examples:
+        let s1ByteCases: [(UInt32, String)] = [
+            (0x3823_5841, "strb w1, [x2, w3, uxtw #0]"),
+            (0x3823_D841, "strb w1, [x2, w3, sxtw #0]"),
+            (0x3823_F841, "strb w1, [x2, x3, sxtx #0]"),
+            (0x3863_5841, "ldrb w1, [x2, w3, uxtw #0]"),
+            (0x3863_D841, "ldrb w1, [x2, w3, sxtw #0]"),
+            (0x3863_F841, "ldrb w1, [x2, x3, sxtx #0]"),
+            (0x38A3_5841, "ldrsb x1, [x2, w3, uxtw #0]"),
+            (0x38A3_D841, "ldrsb x1, [x2, w3, sxtw #0]"),
+            (0x38A3_F841, "ldrsb x1, [x2, x3, sxtx #0]"),
+            (0x38E3_5841, "ldrsb w1, [x2, w3, uxtw #0]"),
+            (0x38E3_D841, "ldrsb w1, [x2, w3, sxtw #0]"),
+            (0x38E3_F841, "ldrsb w1, [x2, x3, sxtx #0]"),
+            (0x3C23_5841, "str b1, [x2, w3, uxtw #0]"),
+            (0x3C23_D841, "str b1, [x2, w3, sxtw #0]"),
+            (0x3C23_F841, "str b1, [x2, x3, sxtx #0]"),
+            (0x3C63_5841, "ldr b1, [x2, w3, uxtw #0]"),
+            (0x3C63_D841, "ldr b1, [x2, w3, sxtw #0]"),
+            (0x3C63_F841, "ldr b1, [x2, x3, sxtx #0]"),
+            (0x3833_FAFF, "strb wzr, [x23, x19, sxtx #0]"), // seed 20261117
+            (0x3C2C_5BA3, "str b3, [x29, w12, uxtw #0]"),   // seed 17
+        ]
+        for (word, expected) in s1ByteCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples: S=0 omits #0; option=011 S=1 prints lsl #0; larger widths omit #0 when S=0:
+        #expect(decoder.decode(word: 0x3823_4841, at: pc).formattedDisassembly == "strb w1, [x2, w3, uxtw]")
+        #expect(decoder.decode(word: 0x3863_C841, at: pc).formattedDisassembly == "ldrb w1, [x2, w3, sxtw]")
+        #expect(decoder.decode(word: 0x3C63_E841, at: pc).formattedDisassembly == "ldr b1, [x2, x3, sxtx]")
+        #expect(decoder.decode(word: 0x3823_7841, at: pc).formattedDisassembly == "strb w1, [x2, x3, lsl #0]")
+        #expect(decoder.decode(word: 0x3823_6841, at: pc).formattedDisassembly == "strb w1, [x2, x3]")
+        #expect(decoder.decode(word: 0x7863_4841, at: pc).formattedDisassembly == "ldrh w1, [x2, w3, uxtw]")
+        #expect(decoder.decode(word: 0x7863_5841, at: pc).formattedDisassembly == "ldrh w1, [x2, w3, uxtw #1]")
+    }
+
+    @Test("G51: SYSL prints destination Xt (including xzr) as first operand while SYS keeps trailing optional Xt")
+    func syslOperandOrderAndXzrDestinationMatchLLVMReference() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let syslCases: [(UInt32, String, [A64Register])] = [
+            (0xD529_F175, "sysl x21, #1, c15, c1, #3", [.x(21)]), // seed 17 / G51
+            (0xD52D_322C, "sysl x12, #5, c3, c2, #1", [.x(12)]),  // seed 20261117
+            (0xD528_0101, "sysl x1, #0, c0, c1, #0", [.x(1)]),    // system_instr.tsv Rt=1
+            (0xD528_011F, "sysl xzr, #0, c0, c1, #0", []),        // system_instr.tsv Rt=31 (xzr retained!)
+            (0xD52B_7520, "sysl x0, #3, c7, c5, #1", [.x(0)]),    // L=1 never uses IC/DC/AT/TLBI aliases
+            (0xD52B_753F, "sysl xzr, #3, c7, c5, #1", []),
+        ]
+        for (word, expected, expectedWrites) in syslCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonicText == "sysl", "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Counterexamples: L=0 SYS without preferred alias keeps Xt last and omits xzr when Rt==31:
+        #expect(decoder.decode(word: 0xD508_0101, at: pc).formattedDisassembly == "sys #0, c0, c1, #0, x1")
+        #expect(decoder.decode(word: 0xD508_011F, at: pc).formattedDisassembly == "sys #0, c0, c1, #0")
+    }
 }
