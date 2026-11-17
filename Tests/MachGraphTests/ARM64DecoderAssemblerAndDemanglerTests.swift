@@ -2,6 +2,7 @@ import Foundation
 import Testing
 import MachGraphModels
 import MachA64Decoder
+import MachCFGEngine
 
 @Suite("ARM64 Instruction Decoder, Two-Pass Mini-Assembler, Idioms & Demangler")
 struct ARM64DecoderAssemblerAndDemanglerTests {
@@ -1307,5 +1308,158 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
 
         #expect(totalChecked == 32768 + 12288)
         #expect(mismatchCount == 0, "G61 mismatches (\(mismatchCount)): \(mismatchSamples.joined(separator: "; "))")
+    }
+
+    @Test("Stage 6 Rule 1: MOVZ and MOVN emit preferred mov with signed immediate while preserving A64Mnemonic and caller idioms")
+    func moveWideImmediateMovPreferredAliasAndCallerInvariants() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("move_wide_imm"), encoding: .utf8)
+
+        var rowCount = 0
+        var movAliasCount = 0
+        var retainedWideCount = 0
+        var movkCount = 0
+        var unallocatedCount = 0
+
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                unallocatedCount += 1
+                #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+                continue
+            }
+
+            #expect(decoded.mnemonicText == expectedMnem, "word=0x\(String(word, radix: 16)) got \(decoded.formattedDisassembly)")
+
+            switch expectedMnem {
+            case "mov":
+                movAliasCount += 1
+                // Structured mnemonic MUST remain .movz or .movn for A64IdiomRecognizer / CFG / Lifter callers!
+                #expect(decoded.mnemonic == .movz || decoded.mnemonic == .movn, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.formattedDisassembly == "mov \(expectedOps)", "word=0x\(String(word, radix: 16))")
+            case "movz":
+                retainedWideCount += 1
+                #expect(decoded.mnemonic == .movz, "word=0x\(String(word, radix: 16))")
+            case "movn":
+                retainedWideCount += 1
+                #expect(decoded.mnemonic == .movn, "word=0x\(String(word, radix: 16))")
+            case "movk":
+                movkCount += 1
+                #expect(decoded.mnemonic == .movk, "word=0x\(String(word, radix: 16))")
+            default:
+                Issue.record("Unexpected mnemonic \(expectedMnem) in move_wide_imm.tsv")
+            }
+
+            // Every valid row in move_wide_imm.tsv must round-trip cleanly through A64MiniAssembler:
+            let reencoded = try assembler.assembleSingle(decoded.formattedDisassembly, at: pc)
+            #expect(reencoded == word, "Round-trip mismatch for '\(decoded.formattedDisassembly)'")
+        }
+
+        #expect(rowCount == 128)
+        #expect(movAliasCount == 38)
+        #expect(retainedWideCount == 10)
+        #expect(movkCount == 24)
+        #expect(unallocatedCount == 56)
+
+        // Zero-register destination (wzr / xzr) boundary checks:
+        #expect(decoder.decode(word: 0x5280_001F, at: pc).formattedDisassembly == "mov wzr, #0x0")
+        #expect(decoder.decode(word: 0x1280_001F, at: pc).formattedDisassembly == "mov wzr, #-0x1")
+        #expect(decoder.decode(word: 0x129F_FFFF, at: pc).formattedDisassembly == "movn wzr, #0xffff")
+        #expect(decoder.decode(word: 0x929F_FFFF, at: pc).formattedDisassembly == "mov xzr, #-0x10000")
+
+        // Verify caller invariant: A64IdiomRecognizer still resolves MOVZ/MOVN + MOVK 64-bit chains via structured .movz/.movn:
+        let chainProg = try assembler.assembleProgram("""
+            movz x0, #0xcdef
+            movk x0, #0x89ab, lsl #16
+            movk x0, #0x4567, lsl #32
+            movk x0, #0x0123, lsl #48
+        """, baseAddress: pc)
+        #expect(chainProg.instructions[0].mnemonic == .movz)
+        #expect(chainProg.instructions[0].mnemonicText == "mov")
+        let resolvedChain = idiomRecognizer.resolveMovWideChain(chainProg.instructions)
+        #expect(resolvedChain == 0x0123_4567_89AB_CDEF)
+    }
+
+    @Test("Stage 6 Rule 2: 0x0000xxxx decodes as udf #imm16 while keeping sequential flow, assembler round-trip, and CFG invariants")
+    func udfImmediateDecodingAssemblerRoundTripAndHypothesis6() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("udf"), encoding: .utf8)
+
+        var rowCount = 0
+        var udfCount = 0
+        var longCount = 0
+
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == "udf" {
+                udfCount += 1
+                #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.mnemonicText == "udf", "word=0x\(String(word, radix: 16))")
+                #expect(decoded.flow == .sequential, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.readsRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.writesRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.formattedDisassembly == "udf \(expectedOps)", "word=0x\(String(word, radix: 16))")
+                let reencoded = try assembler.assembleSingle(decoded.formattedDisassembly, at: pc)
+                #expect(reencoded == word, "UDF round-trip mismatch for 0x\(String(word, radix: 16))")
+            } else {
+                longCount += 1
+                #expect(expectedMnem == ".long")
+                #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+                #expect(decoded.formattedDisassembly == String(format: ".inst 0x%08x", word))
+            }
+        }
+
+        #expect(rowCount == 1083)
+        #expect(udfCount == 1035)
+        #expect(longCount == 48)
+
+        // Decimal immediate convenience and strict 16-bit unsigned range enforcement in A64MiniAssembler:
+        #expect(try assembler.assembleSingle("udf #0", at: pc) == 0x0000_0000)
+        #expect(try assembler.assembleSingle("udf #12", at: pc) == 0x0000_000C)
+        #expect(try assembler.assembleSingle("udf #65535", at: pc) == 0x0000_FFFF)
+        #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf", at: pc) }
+        #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf #-1", at: pc) }
+        #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf #0x10000", at: pc) }
+        #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf x0", at: pc) }
+
+        // Hypothesis 6 check: 0x0000xxxx keeps sequential flow, pure 0x00000000 alignment padding is still pruned,
+        // and jump-table recovery is completely unaffected.
+        let insnsWithTrailingZeroPadding: [A64DecodedInstruction] = [
+            decoder.decode(word: 0x5280_0540, at: pc),                  // mov w0, #0x2a
+            decoder.decode(word: 0x0000_DEAD, at: pc.adding(UInt64(4))), // udf #0xdead (sequential inside block)
+            decoder.decode(word: 0xD65F_03C0, at: pc.adding(UInt64(8))), // ret
+            decoder.decode(word: 0x0000_0000, at: pc.adding(UInt64(12))), // udf #0x0 (trailing alignment padding)
+            decoder.decode(word: 0x0000_0000, at: pc.adding(UInt64(16))), // udf #0x0 (trailing alignment padding)
+        ]
+        let cfg = CFGBuilderEngine().buildCFG(
+            functionAddress: pc,
+            name: "_udf_padding_probe",
+            instructions: insnsWithTrailingZeroPadding
+        )
+        #expect(cfg.blocks.count == 1)
+        #expect(cfg.blocks[0].instructions.count == 3)
+        #expect(cfg.blocks[0].instructions[1].formattedDisassembly == "udf #0xdead")
     }
 }

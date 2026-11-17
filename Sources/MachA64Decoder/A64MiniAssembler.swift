@@ -631,7 +631,16 @@ public struct A64MiniAssembler: Sendable {
             }
             return base | UInt32(rd.index)
 
-        // Exception Generation
+        // Exception Generation & Permanently Undefined
+        case "udf":
+            guard operands.count == 1,
+                  let signed = Self.parseSignedInt64(operands[0]),
+                  signed >= 0 && signed <= 0xFFFF
+            else {
+                throw err(line, src, "udf expects a 16-bit unsigned immediate")
+            }
+            return UInt32(signed)
+
         case "svc", "hvc", "smc", "brk", "hlt":
             guard operands.count == 1, let imm = Self.parseSignedOrUnsigned64(operands[0]), imm <= 0xFFFF else {
                 throw err(line, src, "\(mnemonic) expects a 16-bit unsigned immediate")

@@ -15,7 +15,9 @@ public struct A64InstructionDecoder: Sendable {
         let op0 = A64BitUtils.extract(word, 28, 25)
 
         // Top-level A64 encoding group dispatch (ARM DDI 0487 C4.1)
-        if (op0 & 0b1110) == 0b1000 {
+        if (word & 0xFFFF_0000) == 0x0000_0000 {
+            return decodeUDF(word: word, at: address)
+        } else if (op0 & 0b1110) == 0b1000 {
             if let decoded = decodeDataProcessingImmediate(word: word, at: address, symbolLookup: symbolLookup) {
                 return decoded
             }
@@ -83,6 +85,25 @@ public struct A64InstructionDecoder: Sendable {
     }
 
     // MARK: - Shared Instruction Construction Helpers
+
+    private func decodeUDF(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction {
+        let imm16 = UInt64(word & 0xFFFF)
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .unknown,
+            mnemonicText: "udf",
+            operands: [.unsignedImmediate(imm16)],
+            operandText: String(format: "#0x%llx", imm16),
+            group: .branchAndSystem,
+            flow: .sequential,
+            readsRegisters: [],
+            writesRegisters: [],
+            readsFlags: false,
+            writesFlags: false,
+            autoComment: "Permanently undefined"
+        )
+    }
 
     private func makeUnknownInstruction(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction {
         A64DecodedInstruction(
@@ -364,6 +385,14 @@ public struct A64InstructionDecoder: Sendable {
         return false
     }
 
+    private static func formatSignedHexImmediate(_ val: Int64) -> String {
+        if val < 0 {
+            let mag = 0 &- UInt64(bitPattern: val)
+            return "#-0x\(String(mag, radix: 16))"
+        }
+        return "#0x\(String(UInt64(bitPattern: val), radix: 16))"
+    }
+
     private func decodeMoveWideImmediate(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
         let is64 = A64BitUtils.flag(word, 31)
         let opc = A64BitUtils.extract(word, 30, 29)
@@ -389,6 +418,11 @@ public struct A64InstructionDecoder: Sendable {
             let signedVal: Int64 = is64
                 ? Int64(bitPattern: inverted)
                 : Int64(Int32(bitPattern: UInt32(truncatingIfNeeded: inverted)))
+            let keepMovn = (imm16 == 0 && hw != 0) || (!is64 && imm16 == 0xFFFF)
+            let mnemonicText: String? = keepMovn ? nil : "mov"
+            let operandText: String? = keepMovn
+                ? nil
+                : "\(rdReg.canonicalName), \(Self.formatSignedHexImmediate(signedVal))"
             let comment = String(
                 format: "mov %@, #%lld (0x%llx)",
                 rdReg.canonicalName,
@@ -399,7 +433,9 @@ public struct A64InstructionDecoder: Sendable {
                 address: address,
                 rawWord: word,
                 mnemonic: .movn,
+                mnemonicText: mnemonicText,
                 operands: [.register(rdReg), immOp],
+                operandText: operandText,
                 group: .dataProcessingImm,
                 flow: .sequential,
                 readsRegisters: [],
@@ -409,6 +445,14 @@ public struct A64InstructionDecoder: Sendable {
 
         case 0b10: // MOVZ
             let synthesized = imm16 << Int(shiftBits)
+            let signedVal: Int64 = is64
+                ? Int64(bitPattern: synthesized)
+                : Int64(Int32(bitPattern: UInt32(truncatingIfNeeded: synthesized)))
+            let keepMovz = (imm16 == 0 && hw != 0)
+            let mnemonicText: String? = keepMovz ? nil : "mov"
+            let operandText: String? = keepMovz
+                ? nil
+                : "\(rdReg.canonicalName), \(Self.formatSignedHexImmediate(signedVal))"
             let comment: String? = (shiftBits > 0 || imm16 >= 16)
                 ? String(format: "mov %@, #0x%llx", rdReg.canonicalName, synthesized)
                 : nil
@@ -416,7 +460,9 @@ public struct A64InstructionDecoder: Sendable {
                 address: address,
                 rawWord: word,
                 mnemonic: .movz,
+                mnemonicText: mnemonicText,
                 operands: [.register(rdReg), immOp],
+                operandText: operandText,
                 group: .dataProcessingImm,
                 flow: .sequential,
                 readsRegisters: [],
