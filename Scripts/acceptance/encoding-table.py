@@ -739,6 +739,36 @@ def _generate_pac_data_ptr_words() -> List[int]:
     return words
 
 
+def _generate_rcpc_ldapr_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.8 Atomic memory operations o3=1 subtable (SWP* & FEAT_LRCPC LDAPR*):
+    size(2)|111000|A(1)|R(1)|1|Rs(5)|1|opc(3)|00|Rn(5)|Rt(5), i.e. (word & 0x3f208c00) == 0x38208000.
+    Enumerates all 4 x 2 x 2 x 8 x 4 = 512 combinations of size=0..3, A=0..1, R=0..1, opc=0..7,
+    and (Rs, Rn, Rt) in {(31,2,1), (31,31,1), (31,2,31), (30,2,1)} (covering LDAPRB/LDAPRH/LDAPR W/X,
+    Rn=SP, Rt=WZR/XZR, and Rs=30 != 31 unallocated counterexamples alongside lse_atomic.tsv).
+    """
+    words: List[int] = []
+    reg_tuples = ((31, 2, 1), (31, 31, 1), (31, 2, 31), (30, 2, 1))
+    for size in range(4):
+        for a_bit in (0, 1):
+            for r_bit in (0, 1):
+                for opc in range(8):
+                    for rs, rn, rt in reg_tuples:
+                        word = (
+                            (size << 30)
+                            | (0b111000 << 24)
+                            | (a_bit << 23)
+                            | (r_bit << 22)
+                            | (1 << 21)
+                            | (rs << 16)
+                            | (1 << 15)
+                            | (opc << 12)
+                            | (rn << 5)
+                            | rt
+                        )
+                        words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -995,6 +1025,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "opcode=0..63 (128 rows), totaling 3,200 rows.",
         ),
         generate_words=_generate_pac_data_ptr_words,
+    ),
+    "rcpc_ldapr": EncodingGroupSpec(
+        name="rcpc_ldapr",
+        title="RCpc register-base load-acquire (FEAT_LRCPC) & o3=1 atomic subtable — LDAPRB, LDAPRH, LDAPR (W/X), and SWP*",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.8 Atomic memory operations o3=1 subtable: (word & 0x3f208c00) == 0x38208000.",
+            "Enumerates all 4 x 2 x 2 x 8 x 4 = 512 combinations of size=0..3, A=0..1, R=0..1, opc=0..7,",
+            "and (Rs, Rn, Rt) in {(31,2,1), (31,31,1), (31,2,31), (30,2,1)} (complementing lse_atomic.tsv).",
+        ),
+        generate_words=_generate_rcpc_ldapr_words,
     ),
 }
 

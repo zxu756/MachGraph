@@ -2204,4 +2204,79 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 3200)
         #expect(mismatches.isEmpty, "Group 5 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 16: RCpc load-acquire (LDAPRB, LDAPRH, LDAPR W/X) and LSE atomic operations match lse_atomic.tsv and rcpc_ldapr.tsv")
+    func rcpcLdaprAndLseAtomicDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x38BF_C108, "ldaprb w8, [x8]", [.x(8)], [.w(8)]),     // /usr/bin/afinfo baseline example
+            (0x38BF_C041, "ldaprb w1, [x2]", [.x(2)], [.w(1)]),     // lse_atomic.tsv / rcpc_ldapr.tsv
+            (0x78BF_C041, "ldaprh w1, [x2]", [.x(2)], [.w(1)]),     // lse_atomic.tsv / rcpc_ldapr.tsv
+            (0xB8BF_C041, "ldapr w1, [x2]", [.x(2)], [.w(1)]),      // lse_atomic.tsv / rcpc_ldapr.tsv
+            (0xF8BF_C041, "ldapr x1, [x2]", [.x(2)], [.x(1)]),      // lse_atomic.tsv / rcpc_ldapr.tsv
+            (0x38BF_C3E1, "ldaprb w1, [sp]", [.sp], [.w(1)]),       // Rn=31 is SP
+            (0xF8BF_C3E1, "ldapr x1, [sp]", [.sp], [.x(1)]),        // Rn=31 is SP
+            (0xB8BF_C05F, "ldapr wzr, [x2]", [.x(2)], []),          // Rt=31 is wzr
+            (0xF8BF_C05F, "ldapr xzr, [x2]", [.x(2)], []),          // Rt=31 is xzr
+            (0x78A3_6041, "ldumaxah w3, w1, [x2]", [.x(2), .w(3)], [.w(1)]), // Group 16 LSE atomic ldumaxah
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0x38BE_C041, // Rs=30 (!= 31) in LDAPR slot is unallocated
+            0x38A3_C041, // Rs=3  (!= 31) in LDAPR slot is unallocated
+            0x38FF_C041, // A=1, R=1 (not R=0) with o3=1, opc=100, Rs=31 is unallocated
+            0x383F_C041, // A=0, R=0 with o3=1, opc=100, Rs=31 is unallocated
+            0x387F_C041, // A=0, R=1 with o3=1, opc=100, Rs=31 is unallocated
+            0x38BF_D041, // opc=101 with o3=1, Rs=31 is unallocated
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        for (tableName, expectedRows) in [("lse_atomic", 1024), ("rcpc_ldapr", 512)] {
+            let rawText = try String(contentsOf: RepoFixtures.a64TableURL(tableName), encoding: .utf8)
+            var rowCount = 0
+            var mismatches: [String] = []
+            for line in rawText.split(whereSeparator: \.isNewline) {
+                if line.hasPrefix("#") { continue }
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty { continue }
+                let parts = line.split(separator: "\t", maxSplits: 2)
+                let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+                let word = try #require(UInt32(wordHex, radix: 16))
+                let expectedMnem = String(parts[1])
+                let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+                let decoded = decoder.decode(word: word, at: pc)
+                rowCount += 1
+
+                if expectedMnem == ".long" {
+                    if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected .inst got '%@'", tableName, word, decoded.formattedDisassembly))
+                        }
+                    }
+                } else {
+                    let expectedText = "\(expectedMnem) \(expectedOps)"
+                    if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                        if mismatches.count < 12 {
+                            mismatches.append(String(format: "%@ 0x%08x expected '%@' got '%@'", tableName, word, expectedText, decoded.formattedDisassembly))
+                        }
+                    }
+                }
+            }
+            #expect(rowCount == expectedRows)
+            #expect(mismatches.isEmpty, "Group 16 \(tableName) mismatches: \(mismatches.joined(separator: "; "))")
+        }
+    }
 }

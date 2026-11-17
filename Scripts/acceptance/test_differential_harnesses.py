@@ -1956,18 +1956,24 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         enc_fuzz = _load_script_module("encoding_fuzz_stage10_check", "encoding-fuzz.py")
 
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0xDAC13BF0), "PAC data/instruction pointer")
-        self.assertIn("pac_data_ptr", enc_table.ENCODING_GROUPS)
-        g5_words = enc_table.ENCODING_GROUPS["pac_data_ptr"].generate_words()
-        self.assertEqual(len(g5_words), 3200)
-        self.assertLessEqual(len(g5_words), 4096)
-        self.assertEqual(len(set(g5_words)), len(g5_words), "duplicate words in pac_data_ptr")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x38BFC108), "LDAPR (RCpc) and LSE atomic")
+        expected_counts = {
+            "pac_data_ptr": 3200,
+            "rcpc_ldapr": 512,
+        }
+        for grp_name, expected_len in expected_counts.items():
+            self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[grp_name].generate_words()
+            self.assertEqual(len(words), expected_len)
+            self.assertLessEqual(len(words), 4096)
+            self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
 
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "pac_data_ptr", "--out-dir", tmp],
+                ["generate", "pac_data_ptr", "rcpc_ldapr", "--out-dir", tmp],
             )
-            self.assertEqual(rc, 0, f"generate pac_data_ptr failed: {stdout_txt}\n{stderr_txt}")
+            self.assertEqual(rc, 0, f"generate stage 10 tables failed: {stdout_txt}\n{stderr_txt}")
             pc, pr = enc_table.load_reference_table(os.path.join(tmp, "pac_data_ptr.tsv"))
             self.assertEqual(len(pr), 3200)
             self.assertTrue(any("encoding-table.py generate pac_data_ptr" in c for c in pc))
@@ -1998,6 +2004,13 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 ".long",
             ):
                 self.assertIn(expected_mnem, pm)
+
+            lc, lr = enc_table.load_reference_table(os.path.join(tmp, "rcpc_ldapr.tsv"))
+            self.assertEqual(len(lr), 512)
+            self.assertTrue(any("encoding-table.py generate rcpc_ldapr" in c for c in lc))
+            lm = {m for _, m, _ in lr}
+            for expected_mnem in ("ldaprb", "ldaprh", "ldapr", "swpb", "swp", ".long"):
+                self.assertIn(expected_mnem, lm)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

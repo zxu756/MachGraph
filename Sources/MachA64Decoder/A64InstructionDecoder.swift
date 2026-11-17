@@ -2031,6 +2031,27 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
+        if o3 && opc == 0b100 && isAcquire && !isRelease && rs == 31 {
+            let ldaprMnemonic: A64Mnemonic
+            switch size {
+            case 0b00: ldaprMnemonic = .ldarb
+            case 0b01: ldaprMnemonic = .ldarh
+            default:   ldaprMnemonic = .ldar
+            }
+            let text = "ldapr\(widthSuffix)"
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: ldaprMnemonic,
+                mnemonicText: text,
+                operands: [.register(rtReg), memOp],
+                group: .atomicLSE,
+                readsRegisters: activeRegs([baseReg]),
+                writesRegisters: activeRegs([rtReg]),
+                autoComment: "Load-acquire RCpc"
+            )
+        }
+
         if !o3 {
             let opStem: String
             let enumVal: A64Mnemonic
