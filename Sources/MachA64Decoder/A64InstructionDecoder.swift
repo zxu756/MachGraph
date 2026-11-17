@@ -3052,7 +3052,15 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // 3. Common Advanced SIMD / NEON Vector Operations
+        // 3. AdvSIMD Scalar Three-Register Same (integer, saturating/shift, FP32/FP64, FP16, RDMA):
+        //    (word & 0xDF00_0400) == 0x5E00_0400
+        if (word & 0xDF00_0400) == 0x5E00_0400 {
+            if let advScalar = decodeAdvSIMDScalarThreeSame(word: word, at: address) {
+                return advScalar
+            }
+        }
+
+        // 4. Common Advanced SIMD / NEON Vector Operations
         return decodeNEONVectorBlock(word: word, at: address)
     }
 
@@ -3709,6 +3717,117 @@ public struct A64InstructionDecoder: Sendable {
                     readsRegisters: reads,
                     writesRegisters: [vd]
                 )
+            }
+
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDScalarThreeSame(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let bit21 = A64BitUtils.flag(word, 21)
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let opcode = A64BitUtils.extract(word, 15, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func scalarSIMDReg(_ index: UInt8, sizeCode: UInt32) -> A64Register {
+            switch sizeCode {
+            case 0b00: return .b(index)
+            case 0b01: return .h(index)
+            case 0b10: return .s(index)
+            default:   return .d(index)
+            }
+        }
+
+        func emitScalar3(
+            mnemonic: A64Mnemonic,
+            text: String,
+            sizeCode: UInt32,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let sd = scalarSIMDReg(rd, sizeCode: sizeCode)
+            let sn = scalarSIMDReg(rn, sizeCode: sizeCode)
+            let sm = scalarSIMDReg(rm, sizeCode: sizeCode)
+            let reads = accumulatesRd ? activeRegs([sd, sn, sm]) : activeRegs([sn, sm])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(sd), .register(sn), .register(sm)],
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [sd]
+            )
+        }
+
+        if bit21 {
+            // A. Saturating arithmetic & shifts across B / H / S / D (size = 00..11)
+            switch opcode {
+            case 0b00001: return emitScalar3(mnemonic: .andVec, text: u ? "uqadd" : "sqadd", sizeCode: size)
+            case 0b00101: return emitScalar3(mnemonic: .andVec, text: u ? "uqsub" : "sqsub", sizeCode: size)
+            case 0b01001: return emitScalar3(mnemonic: .andVec, text: u ? "uqshl" : "sqshl", sizeCode: size)
+            case 0b01011: return emitScalar3(mnemonic: .andVec, text: u ? "uqrshl" : "sqrshl", sizeCode: size)
+
+            // B. 64-bit integer scalar operations (D register only: size == 0b11)
+            case 0b00110 where size == 0b11: return emitScalar3(mnemonic: .cmeq, text: u ? "cmhi" : "cmgt", sizeCode: 0b11)
+            case 0b00111 where size == 0b11: return emitScalar3(mnemonic: .cmeq, text: u ? "cmhs" : "cmge", sizeCode: 0b11)
+            case 0b01000 where size == 0b11: return emitScalar3(mnemonic: .andVec, text: u ? "ushl" : "sshl", sizeCode: 0b11)
+            case 0b01010 where size == 0b11: return emitScalar3(mnemonic: .andVec, text: u ? "urshl" : "srshl", sizeCode: 0b11)
+            case 0b10000 where size == 0b11: return emitScalar3(mnemonic: .andVec, text: u ? "sub" : "add", sizeCode: 0b11)
+            case 0b10001 where size == 0b11: return emitScalar3(mnemonic: .cmeq, text: u ? "cmeq" : "cmtst", sizeCode: 0b11)
+
+            // C. Saturating doubling multiply high (H / S only: size in {0b01, 0b10})
+            case 0b10110 where size == 0b01 || size == 0b10:
+                return emitScalar3(mnemonic: .andVec, text: u ? "sqrdmulh" : "sqdmulh", sizeCode: size)
+
+            default:
+                break
+            }
+
+            // D. Scalar FP32/FP64 three-same (S when size<0>==0 -> sizeCode 0b10; D when size<0>==1 -> sizeCode 0b11)
+            if opcode >= 0b11000 {
+                let szHi = (size >> 1) & 1
+                let fpSizeCode: UInt32 = ((size & 1) == 0) ? 0b10 : 0b11
+                switch (u, szHi, opcode) {
+                case (false, 0, 0b11011): return emitScalar3(mnemonic: .fmul, text: "fmulx", sizeCode: fpSizeCode)
+                case (false, 0, 0b11100): return emitScalar3(mnemonic: .cmeq, text: "fcmeq", sizeCode: fpSizeCode)
+                case (false, 0, 0b11111): return emitScalar3(mnemonic: .fmul, text: "frecps", sizeCode: fpSizeCode)
+                case (false, 1, 0b11111): return emitScalar3(mnemonic: .fmul, text: "frsqrts", sizeCode: fpSizeCode)
+                case (true, 0, 0b11100):  return emitScalar3(mnemonic: .cmeq, text: "fcmge", sizeCode: fpSizeCode)
+                case (true, 0, 0b11101):  return emitScalar3(mnemonic: .cmeq, text: "facge", sizeCode: fpSizeCode)
+                case (true, 1, 0b11010):  return emitScalar3(mnemonic: .fsub, text: "fabd", sizeCode: fpSizeCode)
+                case (true, 1, 0b11100):  return emitScalar3(mnemonic: .cmeq, text: "fcmgt", sizeCode: fpSizeCode)
+                case (true, 1, 0b11101):  return emitScalar3(mnemonic: .cmeq, text: "facgt", sizeCode: fpSizeCode)
+                default:                  return nil
+                }
+            }
+            return nil
+        } else {
+            // bit[21] == 0: Scalar FP16 three-same (C4.1.95.5) and Scalar RDMA (C4.1.95.7; excludes Scalar Copy size==0b00)
+            guard size != 0b00 else { return nil }
+
+            if (size & 1) == 1 && opcode < 0b01000 {
+                let szHi = (size >> 1) & 1
+                switch (u, szHi, opcode) {
+                case (false, 0, 0b011): return emitScalar3(mnemonic: .fmul, text: "fmulx", sizeCode: 0b01)
+                case (false, 0, 0b100): return emitScalar3(mnemonic: .cmeq, text: "fcmeq", sizeCode: 0b01)
+                case (false, 0, 0b111): return emitScalar3(mnemonic: .fmul, text: "frecps", sizeCode: 0b01)
+                case (false, 1, 0b111): return emitScalar3(mnemonic: .fmul, text: "frsqrts", sizeCode: 0b01)
+                case (true, 0, 0b100):  return emitScalar3(mnemonic: .cmeq, text: "fcmge", sizeCode: 0b01)
+                case (true, 0, 0b101):  return emitScalar3(mnemonic: .cmeq, text: "facge", sizeCode: 0b01)
+                case (true, 1, 0b010):  return emitScalar3(mnemonic: .fsub, text: "fabd", sizeCode: 0b01)
+                case (true, 1, 0b100):  return emitScalar3(mnemonic: .cmeq, text: "fcmgt", sizeCode: 0b01)
+                case (true, 1, 0b101):  return emitScalar3(mnemonic: .cmeq, text: "facgt", sizeCode: 0b01)
+                default:                return nil
+                }
+            }
+
+            if u && (size == 0b01 || size == 0b10) && (opcode == 0b10000 || opcode == 0b10001) {
+                let rdmText = (opcode == 0b10000) ? "sqrdmlah" : "sqrdmlsh"
+                return emitScalar3(mnemonic: .andVec, text: rdmText, sizeCode: size, accumulatesRd: true)
             }
 
             return nil

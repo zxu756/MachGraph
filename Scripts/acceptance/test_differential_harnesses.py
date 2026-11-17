@@ -1690,6 +1690,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         enc_table = self._mod()
         expected_counts = {
             "advsimd_vec_three_same": 880,
+            "advsimd_scalar_three_same": 480,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1700,15 +1701,22 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
-                enc_table, ["generate", "advsimd_vec_three_same", "--out-dir", tmp]
+                enc_table, ["generate", "advsimd_vec_three_same", "advsimd_scalar_three_same", "--out-dir", tmp]
             )
-            self.assertEqual(rc, 0, f"generate advsimd_vec_three_same failed: {stdout_txt}\n{stderr_txt}")
+            self.assertEqual(rc, 0, f"generate stage 7 tables failed: {stdout_txt}\n{stderr_txt}")
             comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vec_three_same.tsv"))
             self.assertEqual(len(rows), 880)
             self.assertTrue(any("encoding-table.py generate advsimd_vec_three_same" in c for c in comments))
             mnems = {m for _, m, _ in rows}
             for expected_mnem in ("add", "sub", "mul", "orr", "mov", "fadd", "fmlal", "sqrdmlah", "fcmla", ".long"):
                 self.assertIn(expected_mnem, mnems)
+
+            s_comments, s_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_three_same.tsv"))
+            self.assertEqual(len(s_rows), 480)
+            self.assertTrue(any("encoding-table.py generate advsimd_scalar_three_same" in c for c in s_comments))
+            s_mnems = {m for _, m, _ in s_rows}
+            for expected_mnem in ("sqadd", "uqshl", "add", "sub", "cmgt", "cmhi", "fabd", "fmulx", "sqrdmlah", ".long"):
+                self.assertIn(expected_mnem, s_mnems)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

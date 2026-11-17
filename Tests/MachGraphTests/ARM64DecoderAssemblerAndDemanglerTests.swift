@@ -1542,4 +1542,77 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 880)
         #expect(mismatches.isEmpty, "Group 1 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 7 Group 14: AdvSIMD scalar three-register same (integer, saturating/shift, FP32/FP64, FP16, RDMA) matches advsimd_scalar_three_same.tsv")
+    func advsimdScalarThreeSameDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x7EA1_D400, "fabd s0, s0, s1"),       // /usr/bin/afida baseline example
+            (0x5EE3_8441, "add d1, d2, d3"),        // 64-bit scalar ADD
+            (0x7EE3_8441, "sub d1, d2, d3"),        // 64-bit scalar SUB
+            (0x5EE3_3441, "cmgt d1, d2, d3"),       // 64-bit scalar CMGT
+            (0x7EE3_3441, "cmhi d1, d2, d3"),       // 64-bit scalar CMHI
+            (0x5E23_0C41, "sqadd b1, b2, b3"),      // 8-bit saturating SQADD
+            (0x7EE6_4E76, "uqshl d22, d19, d6"),    // seed 20261117 example
+            (0x5E63_B441, "sqdmulh h1, h2, h3"),    // 16-bit SQDMULH
+            (0x7EA3_B441, "sqrdmulh s1, s2, s3"),   // 32-bit SQRDMULH
+            (0x5E63_DC41, "fmulx d1, d2, d3"),      // FP64 scalar FMULX
+            (0x5ECC_3E6A, "frsqrts h10, h19, h12"), // seed 17 FP16 scalar FRSQRTS
+            (0x7EC3_1441, "fabd h1, h2, h3"),       // FP16 scalar FABD
+            (0x7E43_8441, "sqrdmlah h1, h2, h3"),   // FEAT_RDM 16-bit scalar SQRDMLAH
+            (0x7E83_8C41, "sqrdmlsh s1, s2, s3"),   // FEAT_RDM 32-bit scalar SQRDMLSH
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples from advsimd_scalar_three_same.tsv must stay .inst:
+        let unallocatedCases: [UInt32] = [
+            0x5EA3_8441, // scalar ADD with size=10 (only size=11 D-reg allowed)
+            0x5E23_B441, // scalar SQDMULH with size=00 (only size in {01, 10} allowed)
+            0x5E23_D441, // scalar FADD in AdvSIMD scalar space (uses 0x1e202800 Scalar FP instead)
+            0x7EE3_8441 ^ (1 << 30), // bit[30]==0 is Scalar FP space, not AdvSIMD scalar
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_scalar_three_same"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 480)
+        #expect(mismatches.isEmpty, "Group 14 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

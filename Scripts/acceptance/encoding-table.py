@@ -462,6 +462,35 @@ def _generate_advsimd_vec_three_same_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_scalar_three_same_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.5/6/7 Advanced SIMD scalar three-register same (+ FP16 & RDMA)."""
+    words: List[int] = []
+    rd = 1
+    rn = 2
+    rm = 3
+    for u_bit in (0, 1):
+        for size in range(4):
+            for bit21 in (0, 1):
+                for opcode in range(32):
+                    # Exclude AdvSIMD Scalar Copy (size=0, bit21=0, bit[15]=0 -> Group 15, Stage 11)
+                    if size == 0 and bit21 == 0 and (opcode & 0b10000) == 0:
+                        continue
+                    word = (
+                        (1 << 30)
+                        | (u_bit << 29)
+                        | (0b11110 << 24)
+                        | (size << 22)
+                        | (bit21 << 21)
+                        | (rm << 16)
+                        | (opcode << 11)
+                        | (1 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -614,6 +643,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "totaling 880 rows.",
         ),
         generate_words=_generate_advsimd_vec_three_same_words,
+    ),
+    "advsimd_scalar_three_same": EncodingGroupSpec(
+        name="advsimd_scalar_three_same",
+        title="Advanced SIMD scalar three-register same — integer, saturating/shift, FP32/FP64, FP16, and RDMA",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.5/6/7: (word & 0xdf000400) == 0x5e000400 excluding AdvSIMD Scalar Copy",
+            "(size=0, bit[21]=0, bit[15]=0; Group 15).",
+            "Enumerates all 480 non-register combinations of U=0..1, size=0..3, bit[21]=0..1, opcode=0..31",
+            "with distinct scalar registers Rd=1, Rn=2, Rm=3.",
+        ),
+        generate_words=_generate_advsimd_scalar_three_same_words,
     ),
 }
 
