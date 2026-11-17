@@ -808,4 +808,110 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(tsb.mnemonicText == "tsb")
         #expect(tsb.formattedDisassembly == "tsb csync")
     }
+
+    @Test("G52a: Register-offset load/store and PRFM reject option<1>==0 unallocated encodings as .inst")
+    func registerOffsetLoadStoreAndPrfmRejectUnallocatedOptionEncodings() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Unallocated option in {0b000, 0b001, 0b100, 0b101} from Fixtures/a64/load_store_reg_offset.tsv:
+        let unallocatedWords: [UInt32] = [
+            0x3823_0841, // option=000 (strb space)
+            0x3863_2841, // option=001 (ldrb space)
+            0xFC63_9841, // option=100, S=1 (ldr d1 space)
+            0xFC63_B841, // option=101, S=1 (ldr d1 space)
+            0xF8A3_0840, // option=000 (prfm space)
+            0xF8A3_B858, // option=101, S=1 (rprfm rt=24 space)
+        ]
+        for word in unallocatedWords {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "Expected .unknown for 0x\(String(word, radix: 16)), got \(decoded.mnemonic)")
+            #expect(decoded.mnemonicText == ".inst", "Expected .inst for 0x\(String(word, radix: 16)), got \(decoded.formattedDisassembly)")
+        }
+
+        // Valid option<1>==1 encodings ({0b010, 0b011, 0b110, 0b111}) continue decoding:
+        #expect(decoder.decode(word: 0xF863_4841, at: pc).formattedDisassembly == "ldr x1, [x2, w3, uxtw]")
+        #expect(decoder.decode(word: 0xF863_7841, at: pc).formattedDisassembly == "ldr x1, [x2, x3, lsl #3]")
+        #expect(decoder.decode(word: 0xFC63_C841, at: pc).formattedDisassembly == "ldr d1, [x2, w3, sxtw]")
+        #expect(decoder.decode(word: 0xF8A3_E840, at: pc).formattedDisassembly == "prfm pldl1keep, [x2, x3, sxtx]")
+    }
+
+    @Test("G52b (D-M2-4): Conditional branch encodings with bit[4]==1 (bc.<cond>) decode as .inst under apple-m1")
+    func conditionalBranchConsistentHintBit4DecodesAsInst() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // FEAT_HBC `bc.<cond>` words (bit[4]==1) from Fixtures/a64/cond_branch_imm.tsv:
+        let bcWords: [UInt32] = [
+            0x5400_0010, // bc.eq
+            0x5400_0031, // bc.ne
+            0x5480_001A, // bc.ge
+            0x54FF_FFFE, // bc.al
+            0x54FF_FFFF, // bc.nv
+        ]
+        for word in bcWords {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "Expected .unknown for 0x\(String(word, radix: 16)), got \(decoded.mnemonic)")
+            #expect(decoded.mnemonicText == ".inst", "Expected .inst for 0x\(String(word, radix: 16)), got \(decoded.formattedDisassembly)")
+        }
+
+        // Standard `b.<cond>` words (bit[4]==0) continue decoding:
+        #expect(decoder.decode(word: 0x5400_0000, at: pc).formattedDisassembly == "b.eq 0x100001000")
+        #expect(decoder.decode(word: 0x5400_0021, at: pc).formattedDisassembly == "b.ne 0x100001004")
+        #expect(decoder.decode(word: 0x54FF_FFEE, at: pc).formattedDisassembly == "b.al 0x100000ffc")
+    }
+
+    @Test("G52c: AdvSIMD Copy checks bit[15]==0 at group entry before DUP, UMOV, SMOV, and INS/MOV")
+    func advsimdCopyChecksBit15AtGroupEntry() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Unallocated bit[15]==1 words from random fuzz seeds (17, 20261117) and Fixtures/a64/advsimd_copy.tsv:
+        let bit15SetWords: [UInt32] = [
+            0x4E0E_87A9, // seed 17 (DUP element path)
+            0x0E19_8F6F, // seed 20261117 (DUP general path)
+            0x0E12_BE72, // seed 20261117 (UMOV path)
+            0x4E19_9F3D, // seed 20261117 (INS/MOV path)
+            0x0E01_AC41, // advsimd_copy.tsv (SMOV path)
+            0x0E04_BC41, // advsimd_copy.tsv (UMOV->MOV path)
+        ]
+        for word in bit15SetWords {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "Expected .unknown for 0x\(String(word, radix: 16)), got \(decoded.mnemonic)")
+            #expect(decoded.mnemonicText == ".inst", "Expected .inst for 0x\(String(word, radix: 16)), got \(decoded.formattedDisassembly)")
+        }
+
+        // Valid bit[15]==0 encodings across all four copy subforms continue decoding:
+        #expect(decoder.decode(word: 0x0E01_0C41, at: pc).formattedDisassembly == "dup v1.8b, w2")
+        #expect(decoder.decode(word: 0x0E01_2C41, at: pc).formattedDisassembly == "smov w1, v2.b[0]")
+        #expect(decoder.decode(word: 0x0E01_3C41, at: pc).formattedDisassembly == "umov w1, v2.b[0]")
+        #expect(decoder.decode(word: 0x4E01_1C41, at: pc).formattedDisassembly == "mov v1.b[0], w2")
+    }
+
+    @Test("G52d: RPRFM encodings in register-offset prefetch space format named and hex range-prefetch operands")
+    func rprfmRegisterOffsetEncodingsMatchLLVMReference() {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        // Named and immediate RPRFM encodings from Fixtures/a64/load_store_reg_offset.tsv and fuzz seed 20261117:
+        let rprfmCases: [(UInt32, String)] = [
+            (0xF8A3_4858, "rprfm pldkeep, x3, [x2]"),
+            (0xF8A3_4859, "rprfm pstkeep, x3, [x2]"),
+            (0xF8A3_485A, "rprfm #0x2, x3, [x2]"),
+            (0xF8A3_485B, "rprfm #0x3, x3, [x2]"),
+            (0xF8A3_485C, "rprfm pldstrm, x3, [x2]"),
+            (0xF8A3_485D, "rprfm pststrm, x3, [x2]"),
+            (0xF8A3_485E, "rprfm #0x6, x3, [x2]"),
+            (0xF8A3_5858, "rprfm #0x8, x3, [x2]"),
+            (0xF8A3_6858, "rprfm #0x10, x3, [x2]"),
+            (0xF8A3_C858, "rprfm #0x20, x3, [x2]"),
+            (0xF8A3_F85F, "rprfm #0x3f, x3, [x2]"),
+            (0xF8B3_F9FF, "rprfm #0x3f, x19, [x15]"), // seed 20261117
+            (0xF8BF_4BF8, "rprfm pldkeep, xzr, [sp]"),
+        ]
+        for (word, expected) in rprfmCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonicText == "rprfm", "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Boundary prfop=23 (< 24) stays PRFM:
+        #expect(decoder.decode(word: 0xF8A3_4857, at: pc).formattedDisassembly == "prfm #0x17, [x2, w3, uxtw]")
+    }
 }

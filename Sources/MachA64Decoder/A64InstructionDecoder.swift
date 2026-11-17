@@ -751,14 +751,13 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
-        // 4. Conditional Branch Immediate (B.<cond> / BC.<cond>): bits[31:24] == 0b01010100
+        // 4. Conditional Branch Immediate (B.<cond>): bits[31:24] == 0b01010100, bit[4] == 0
         if (word & 0xFF00_0000) == 0x5400_0000 {
-            let isConsistentHint = A64BitUtils.flag(word, 4)
+            guard !A64BitUtils.flag(word, 4) else { return nil }
             let imm19 = UInt64(A64BitUtils.extract(word, 23, 5))
             let cond = A64ConditionCode(nibble: word & 0xF)
             let byteOffset = signExtend(imm19, bits: 19) * 4
             let target = address.adding(byteOffset)
-            let prefix = isConsistentHint ? "bc" : "b"
             let flow: A64FlowSemantics = (cond == .al || cond == .nv)
                 ? .unconditionalJump(target: target)
                 : .conditionalBranch(target: target, condition: cond)
@@ -767,7 +766,7 @@ public struct A64InstructionDecoder: Sendable {
                 address: address,
                 rawWord: word,
                 mnemonic: .bCond,
-                mnemonicText: "\(prefix).\(cond.mnemonicSuffix)",
+                mnemonicText: "b.\(cond.mnemonicSuffix)",
                 operands: [.branchTarget(target)],
                 group: .branchAndSystem,
                 flow: flow,
@@ -1747,12 +1746,43 @@ public struct A64InstructionDecoder: Sendable {
         } else {
             // bit21 == 1: Register Offset (op4 == 10), LSE Atomics (op4 == 00), PAC Load (op4 == 01/11)
             if op4 == 0b10 {
+                let option = A64BitUtils.extract(word, 15, 13)
+                guard (option & 0b010) != 0 else { return nil }
                 guard let spec = resolveSingleMemTransferSpec(size: size, isSIMD: isSIMD, opc: opc, rt: rt) else {
                     return nil
                 }
                 let rm = UInt8(A64BitUtils.extract(word, 20, 16))
-                let option = A64BitUtils.extract(word, 15, 13)
                 let sFlag = A64BitUtils.flag(word, 12)
+
+                if let prfCode = spec.prefetchCode {
+                    // FEAT_RPRFM carves out prfop 24..31 (bits[4:3] == 0b11) into RPRFM <rprfop>, <Xm>, [<Xn|SP>]
+                    if (prfCode & 0b11000) == 0b11000 {
+                        let rprfImm6 = (((option >> 2) & 1) << 5)
+                            | ((option & 1) << 4)
+                            | ((sFlag ? 1 : 0) << 3)
+                            | (prfCode & 0x7)
+                        let rprfOpText: String
+                        switch rprfImm6 {
+                        case 0x00: rprfOpText = "pldkeep"
+                        case 0x01: rprfOpText = "pstkeep"
+                        case 0x04: rprfOpText = "pldstrm"
+                        case 0x05: rprfOpText = "pststrm"
+                        default:   rprfOpText = String(format: "#0x%x", rprfImm6)
+                        }
+                        let xmReg = A64Register.x(rm, allowSP: false)
+                        let baseZeroMem = A64Operand.memory(.baseOffset(base: baseReg, offset: 0))
+                        return A64DecodedInstruction(
+                            address: address,
+                            rawWord: word,
+                            mnemonic: .prfm,
+                            mnemonicText: "rprfm",
+                            operands: [.prefetchOp(rprfOpText), .register(xmReg), baseZeroMem],
+                            group: .loadStore,
+                            readsRegisters: activeRegs([baseReg, xmReg])
+                        )
+                    }
+                }
+
                 let shiftAmt = UInt8(sFlag ? spec.scaleShift : 0)
 
                 let indexIs64 = (option == 0b011 || option == 0b111)
@@ -3158,8 +3188,9 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // 2. AdvSIMD Copy (DUP, INS, UMOV, SMOV): (word & 0x9FE0_0400) == 0x0E00_0400
+        // 2. AdvSIMD Copy (DUP, INS, UMOV, SMOV): (word & 0x9FE0_8400) == 0x0E00_0400 (bit[15] == 0)
         if (word & 0x9FE0_0400) == 0x0E00_0400 {
+            guard !A64BitUtils.flag(word, 15) else { return nil }
             let imm5 = A64BitUtils.extract(word, 20, 16)
             let imm4 = A64BitUtils.extract(word, 14, 11)
             let tz = imm5.trailingZeroBitCount
