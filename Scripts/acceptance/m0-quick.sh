@@ -85,7 +85,7 @@ PY
 # ------------------------------------------------------------------------------
 # Row 2: machgraph disasm /bin/ls vs xcrun llvm-objdump -d --arch=arm64e /bin/ls
 # ------------------------------------------------------------------------------
-# Normalization rules live in mnemonic-agreement.py (movz/movn -> mov, udf -> .inst, vector suffix dropped).
+# Mnemonic normalization table lives in mnemonic_normalization.py (0 rules as of M2 Stage 6).
 python3 "${REPO_ROOT}/Scripts/acceptance/mnemonic-agreement.py" /bin/ls \
     --arch arm64e --machgraph "${BIN}" --min-agreement 99.9 --max-wrong 0 \
     --label "Row 2: disasm /bin/ls vs llvm-objdump"

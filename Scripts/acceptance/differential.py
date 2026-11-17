@@ -9,9 +9,8 @@ Reference command (fixed by `02-machgraph.md`, M1 item 1 / G32 / G42 / D-M2-1):
   xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
 
 Normalization rules:
-  - Mnemonics: imported from `mnemonic_normalization.py` (only the two narrow
-    rules remaining in M2 Stage 1: `movz`/`movn` == `mov`, `udf` == `.inst`;
-    generic Neon syntax is enforced on reference output).
+  - Mnemonics: imported from `mnemonic_normalization.py` (0 normalization rules
+    as of M2 Stage 6; generic Neon syntax is enforced on reference output).
   - Operands: imported from `operand_normalization.py` (rules O1-O4 only,
     evaluated on every mnemonic-agreed instruction without affecting mnemonic
     counts or pass/fail exit status).

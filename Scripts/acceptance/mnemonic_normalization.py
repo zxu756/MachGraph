@@ -4,11 +4,14 @@
 Both `mnemonic-agreement.py` and `differential.py` import this module so the
 allowed normalization table and fixed reference command exist in one place.
 
-Policy (fixed by `02-machgraph.md`, M1 item 3 and M2 item 1 / D-M2-1):
-  - Rule 3 (Darwin vector arrangement suffix) has been removed now that the
-    reference command enables `-mllvm=-aarch64-neon-syntax=generic`.
-  - Only two rules remain (`wide_immediate_mov` and `permanently_undefined_udf`),
-    and this table may only shrink (to zero in M2), never grow.
+Policy (fixed by `02-machgraph.md`, M1 item 3 and M2 items 1 & 5 / D-M2-1):
+  - Rule 3 (Darwin vector arrangement suffix) was removed in M2 Stage 1 now that
+    the reference command enables `-mllvm=-aarch64-neon-syntax=generic`.
+  - Rules 1 (`wide_immediate_mov`) and 2 (`permanently_undefined_udf`) were
+    removed in M2 Stage 6 now that MachGraph emits preferred `mov` on MOVZ/MOVN
+    and `udf #imm16` on `0x0000xxxx`.
+  - Zero mnemonic normalization rules remain (`len(NORMALIZATION_RULES) == 0`),
+    and this table may never grow.
 """
 
 import os
@@ -41,34 +44,11 @@ def build_reference_command(binary: str, arch: str) -> List[str]:
     ]
 
 
-# Declarative table of the ONLY permitted normalization rules, each with its
-# architectural rationale. Rule 3 (Darwin vector arrangement suffix) was removed
-# in M2 Stage 1 under D-M2-1.
-NORMALIZATION_RULES = (
-    {
-        "id": "wide_immediate_mov",
-        "reference": "mov",
-        "machgraph": ("movz", "movn"),
-        "reason": (
-            "llvm-objdump prints the preferred alias 'mov' for MOVZ/MOVN "
-            "wide-immediate moves when representable as a synthesized immediate, "
-            "whereas MachGraph prints the underlying 'movz'/'movn' mnemonic "
-            "(scheduled for M2)."
-        ),
-    },
-    {
-        "id": "permanently_undefined_udf",
-        "reference": "udf",
-        "machgraph": (".inst",),
-        "reason": (
-            "llvm-objdump prints 'udf' for permanently-undefined A64 words "
-            "(0x0000_0000..0x0000_ffff), whereas MachGraph emits raw '.inst' "
-            "directives for undefined encodings (scheduled for M2)."
-        ),
-    },
-)
+# Declarative table of permitted mnemonic normalization rules.
+# Rule 3 was removed in M2 Stage 1 (D-M2-1); Rules 1 and 2 were removed in M2 Stage 6.
+NORMALIZATION_RULES = ()
 
-NORMALIZATION_SUMMARY = "movz/movn->mov, udf->.inst"
+NORMALIZATION_SUMMARY = "none"
 
 _NEON_ARRANGEMENT_SUFFIX_RE = re.compile(
     r"^[a-z0-9_]+\.(?:16b|8b|8h|4h|2h|4s|2s|2d|1d|1q|b|h|s|d|q)$"
@@ -161,17 +141,11 @@ def normalize_reference_mnemonic(mnemonic: str) -> str:
 
 
 def mnemonics_agree(normalized_reference: str, machgraph_mnemonic: str) -> bool:
-    """Compare a reference mnemonic against a MachGraph mnemonic under Rules 1 and 2."""
+    """Compare a reference mnemonic against a MachGraph mnemonic with zero normalization rules."""
     if normalized_reference == ".long":
         return False
     mg = machgraph_mnemonic.strip().lower()
-    if mg == normalized_reference:
-        return True
-    if normalized_reference == "mov" and mg in ("movz", "movn"):  # Rule 1
-        return True
-    if normalized_reference == "udf" and mg == ".inst":  # Rule 2
-        return True
-    return False
+    return mg == normalized_reference
 
 
 def classify_mnemonic_pair(raw_reference: str, raw_machgraph: str) -> Tuple[str, str, str]:

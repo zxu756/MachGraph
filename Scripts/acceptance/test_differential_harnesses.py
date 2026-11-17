@@ -59,7 +59,7 @@ class TestItem1MachOReferenceCommand(unittest.TestCase):
         cmd = mnemonic_normalization.build_reference_command("/usr/libexec/rosetta/oahd-helper", "arm64")
         self.assertIn("--macho", cmd)
         self.assertIn("--mcpu=apple-m1", cmd)
-        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
+        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 0)
 
         # Single-architecture arm64 Mach-O must yield >0 reference instructions
         thin_bin = "/usr/libexec/rosetta/oahd-helper"
@@ -935,12 +935,16 @@ class TestItem10DropRule3AndGenericNeonSelfCheck(unittest.TestCase):
     """M2 Stage 1: delete Rule 3 (vector arrangement suffix) and fail hard if reference output is not generic syntax."""
 
     def test_rule3_removed_and_arrangement_suffix_not_normalized(self):
-        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
+        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 0)
         rule_ids = [r["id"] for r in mnemonic_normalization.NORMALIZATION_RULES]
-        self.assertEqual(rule_ids, ["wide_immediate_mov", "permanently_undefined_udf"])
+        self.assertEqual(rule_ids, [])
         self.assertNotIn("vector suffix", mnemonic_normalization.NORMALIZATION_SUMMARY)
 
-        # Without Rule 3, Apple-style suffixed mnemonics must NOT agree with generic mnemonics
+        # Without Rules 1, 2, or 3, non-identical mnemonics must NOT be normalized to agree
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("mov", "movz")[0], "wrong")
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("mov", "movn")[0], "wrong")
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("udf", ".inst")[0], "unknown")
+        self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("udf", "udf")[0], "agree")
         self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("mov.16b", "mov")[0], "wrong")
         self.assertEqual(mnemonic_normalization.classify_mnemonic_pair("fmov.2d", "fmov")[0], "wrong")
         # Conditional branches remain exact matches
@@ -1270,7 +1274,8 @@ class TestItem12OperandNormalizationRules(unittest.TestCase):
         self.assertTrue(hasattr(op_norm, "OPERAND_NORMALIZATION_RULES"))
         self.assertLessEqual(len(op_norm.OPERAND_NORMALIZATION_RULES), 4)
         self.assertEqual(len(op_norm.OPERAND_NORMALIZATION_RULES), 4)
-        self.assertLessEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 2)
+        self.assertLessEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 0)
+        self.assertEqual(len(mnemonic_normalization.NORMALIZATION_RULES), 0)
         ids = [r["id"] for r in op_norm.OPERAND_NORMALIZATION_RULES]
         self.assertEqual(ids, ["O1", "O2", "O3", "O4"])
         for rule in op_norm.OPERAND_NORMALIZATION_RULES:
@@ -1425,14 +1430,14 @@ class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
                     "    print('0x0000000000001008\\t5800010a\\tldr\\tx10, 0x00001028')\n"
                     "    print('0x000000000000100c\\t0d9f4100\\tst1\\t{v0.h}[1], [X8], #2')\n"
                     "    print('0x0000000000001010\\t1e6e1001\\tfmov\\td1, #1')\n"
-                    "    print('0x0000000000001014\\t12800000\\tmovn\\tw0, #0')\n"
-                    "    print('0x0000000000001018\\t12800022\\tmovn\\tw2, #1')\n"
+                    "    print('0x0000000000001014\\t12800000\\tmov\\tw0, #0')\n"
+                    "    print('0x0000000000001018\\t12800022\\tmov\\tw2, #1')\n"
                     "    print('0x000000000000101c\\tb202e7e8\\tmov\\tx8, #0xcccccccccccccccc')\n"
                     "    print('0x0000000000001020\\tffffff64\\t.inst\\t0xffffff64')\n"
                     "    print('0x0000000000001024\\t4ee08420\\t.inst\\t0x4ee08420')\n"
                     "else:\n"
                     "    print('0x0000000000002000\\td503201f\\tnop\\t')\n"
-                    "    print('0x0000000000002004\\t12800005\\tmovn\\tw5, #0')\n"
+                    "    print('0x0000000000002004\\t12800005\\tmov\\tw5, #0')\n"
                 )
             os.chmod(mg_script, os.stat(mg_script).st_mode | stat.S_IXUSR)
             report_json = os.path.join(tmp, "report.json")
@@ -1486,7 +1491,7 @@ class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
 
             d0 = diffs[0]
             self.assertEqual(d0["llvm_mnemonic"], "mov")
-            self.assertEqual(d0["machgraph_mnemonic"], "movn")
+            self.assertEqual(d0["machgraph_mnemonic"], "mov")
             self.assertEqual(d0["llvm_shape"], "W, #-N")
             self.assertEqual(d0["machgraph_shape"], "W, #N")
             self.assertEqual(d0["count"], 3)
@@ -1494,7 +1499,7 @@ class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
             self.assertEqual(len(d0["examples"]), 3)
             self.assertEqual(d0["examples"][0]["address"], "0x1014")
             self.assertEqual(d0["examples"][0]["llvm"], "mov w0, #-0x1")
-            self.assertEqual(d0["examples"][0]["machgraph"], "movn w0, #0")
+            self.assertEqual(d0["examples"][0]["machgraph"], "mov w0, #0")
             self.assertEqual(d0["examples"][1]["address"], "0x1018")
             self.assertEqual(d0["examples"][2]["address"], "0x2004")
 
@@ -1738,13 +1743,13 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 os.chmod(stub_path, os.stat(stub_path).st_mode | stat.S_IXUSR)
                 return stub_path
 
-            # 1. All 4 rows match (including Rule 1 movz->mov and O2 #16 == #0x10 and .long -> .inst) -> exit 0
+            # 1. All 4 rows match (including exact mov mnemonic, O2 #16 == #0x10, and .long -> .inst) -> exit 0
             mg_ok = make_disasm_stub(
                 "mg_ok.py",
                 [
                     ("d503201f", "nop", ""),
                     ("32800001", ".inst", "0x32800001"),
-                    ("d2800201", "movz", "x1, #16"),
+                    ("d2800201", "mov", "x1, #16"),
                     ("91004041", "add", "x1, x2, #16"),
                 ],
             )
@@ -1759,7 +1764,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 [
                     ("d503201f", "nop", ""),
                     ("32800001", "movn", "w1, #0"),
-                    ("d2800201", "movz", "x1, #16"),
+                    ("d2800201", "mov", "x1, #16"),
                     ("91004041", "add", "x1, x2, #16"),
                 ],
             )
@@ -1778,7 +1783,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 [
                     ("d503201f", "nop", ""),
                     ("32800001", ".inst", "0x32800001"),
-                    ("d2800201", "movz", "x1, #16"),
+                    ("d2800201", "mov", "x1, #16"),
                     ("91004041", "add", "x1, x2, 16"),
                 ],
             )
@@ -1797,7 +1802,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 [
                     ("d503201f", "nop", ""),
                     ("32800001", ".inst", "0x32800001"),
-                    ("d2800201", "movz", "x1, #16"),
+                    ("d2800201", "mov", "x1, #16"),
                     ("91004041", ".inst", "0x91004041"),
                 ],
             )
@@ -1865,7 +1870,7 @@ class TestItem15EncodingFuzzHarness(unittest.TestCase):
         #  2: 0x32800001 -> .long 0x32800001 (both unrecognized: .long + .inst)
         #  3: 0x4ee08420 -> add v0.2d, v1.2d, v0.2d (unknown: MG emits .inst, AdvSIMD vector three-register same)
         #  4: 0x54000050 -> .long 0x54000050 (wrong: MG emits bc.eq)
-        #  5: 0xd2a00021 -> mov x1, #0x10000 (agree via Rule 1, operand mismatch: MG emits movz x1, #1, lsl #16)
+        #  5: 0xd2a00021 -> mov x1, #0x10000 (agree on mov, operand mismatch: stub emits mov x1, #1, lsl #16)
         controlled_words = [
             0xD503201F,
             0x91004041,
@@ -1882,7 +1887,7 @@ class TestItem15EncodingFuzzHarness(unittest.TestCase):
                 ("32800001", ".inst", "0x32800001"),
                 ("4ee08420", ".inst", "0x4ee08420"),
                 ("54000050", "bc.eq", "0x100000300"),
-                ("d2a00021", "movz", "x1, #1, lsl #16"),
+                ("d2a00021", "mov", "x1, #1, lsl #16"),
             ]
             stub_mg = os.path.join(tmp, "fake_mg.py")
             with open(stub_mg, "w", encoding="utf-8") as fh:
@@ -1939,7 +1944,7 @@ class TestItem15EncodingFuzzHarness(unittest.TestCase):
 
             op_diffs = payload["operand_differences"]
             self.assertEqual(len(op_diffs), 1)
-            self.assertEqual(op_diffs[0]["category"], "mov|movz: X, #N != X, #N, lsl #N")
+            self.assertEqual(op_diffs[0]["category"], "mov|mov: X, #N != X, #N, lsl #N")
             self.assertEqual(op_diffs[0]["count"], 1)
 
     def test_encoding_fuzz_exit_codes_0_1_2(self):
