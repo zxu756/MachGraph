@@ -1610,6 +1610,49 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             self.assertIn("b.eq", mnems)
             self.assertNotIn("bc.eq", mnems)
 
+    def test_stage5_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        expected_counts = {
+            "fp_imm": 1152,
+            "add_sub_ext_reg": 4096,
+            "system_instr": 4096,
+            "sysreg_mrs_op1_0": 4096,
+            "sysreg_mrs_op1_1": 4096,
+            "sysreg_mrs_op1_2": 4096,
+            "sysreg_mrs_op1_3": 4096,
+            "sysreg_mrs_op1_4": 4096,
+            "sysreg_mrs_op1_5": 4096,
+            "sysreg_mrs_op1_6": 4096,
+            "sysreg_mrs_op1_7": 4096,
+            "sysreg_msr_op1_0": 4096,
+            "sysreg_msr_op1_1": 4096,
+            "sysreg_msr_op1_3": 4096,
+        }
+        for grp_name, expected_len in expected_counts.items():
+            self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
+            words = enc_table.ENCODING_GROUPS[grp_name].generate_words()
+            self.assertEqual(len(words), expected_len)
+            self.assertLessEqual(len(words), 4096)
+            self.assertEqual(len(set(words)), len(words), f"duplicate words in {grp_name}")
+
+        # Verify the 8 MRS slices partition all 32,768 MRS system-register encodings with no overlap
+        mrs_all_words = []
+        for op1 in range(8):
+            mrs_all_words.extend(enc_table.ENCODING_GROUPS[f"sysreg_mrs_op1_{op1}"].generate_words())
+        self.assertEqual(len(mrs_all_words), 32768)
+        self.assertEqual(len(set(mrs_all_words)), 32768)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table, ["generate", "fp_imm", "--out-dir", tmp]
+            )
+            self.assertEqual(rc, 0, f"generate fp_imm failed: {stdout_txt}\n{stderr_txt}")
+            _, rows = enc_table.load_reference_table(os.path.join(tmp, "fp_imm.tsv"))
+            self.assertEqual(len(rows), 1152)
+            fcmp_zero_ops = [ops for _, m, ops in rows if m in ("fcmp", "fcmpe") and "#" in ops]
+            self.assertTrue(fcmp_zero_ops)
+            self.assertTrue(all(ops.endswith("#0.0") for ops in fcmp_zero_ops))
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

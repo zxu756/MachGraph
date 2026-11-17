@@ -265,6 +265,115 @@ def _generate_lse_atomic_words() -> List[int]:
     return words
 
 
+def _generate_fp_imm_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.24 Floating-point immediate & C4.1.95.22 Floating-point compare."""
+    words: List[int] = []
+    # 1. All 4 x 256 = 1,024 combinations of ftype=0..3 (S, D, unallocated 10, H) and imm8=0..255
+    #    with sf=0, S=0, Rn=0, Rd=1.
+    for ftype in range(4):
+        for imm8 in range(256):
+            word = 0x1E201000 | (ftype << 22) | (imm8 << 13) | 1
+            words.append(word)
+
+    # 2. All 2 x 2 x 4 x 4 x 2 = 128 combinations of FCMP / FCMPE across sf=0..1, S=0..1,
+    #    ftype=0..3, opc=0..3 (register vs #0.0, quiet vs signaling), and Rm in {0, 3} with Rn=2.
+    for sf in (0, 1):
+        for s_bit in (0, 1):
+            for ftype in range(4):
+                for opc in range(4):
+                    for rm in (0, 3):
+                        word = (
+                            (sf << 31)
+                            | (s_bit << 29)
+                            | 0x1E202000
+                            | (ftype << 22)
+                            | (rm << 16)
+                            | (2 << 5)
+                            | (opc << 3)
+                        )
+                        words.append(word)
+    return words
+
+
+def _generate_add_sub_ext_reg_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.2 Add/subtract (extended register): (word & 0x1f200000) == 0x0b200000."""
+    words: List[int] = []
+    reg_pairs = ((1, 2), (31, 2), (1, 31), (31, 31))
+    imm3_samples = (0, 1, 4, 7)
+    rm = 3
+    for sf in (0, 1):
+        for op in (0, 1):
+            for s_bit in (0, 1):
+                for opt in range(4):
+                    for option in range(8):
+                        for imm3 in imm3_samples:
+                            for rd, rn in reg_pairs:
+                                word = (
+                                    (sf << 31)
+                                    | (op << 30)
+                                    | (s_bit << 29)
+                                    | (0b01011 << 24)
+                                    | (opt << 22)
+                                    | (1 << 21)
+                                    | (rm << 16)
+                                    | (option << 13)
+                                    | (imm3 << 10)
+                                    | (rn << 5)
+                                    | rd
+                                )
+                                words.append(word)
+    return words
+
+
+def _generate_system_instr_words() -> List[int]:
+    """ARM DDI 0487 C4.1.93.6 System instructions (SYS / SYSL): (word & 0xffd80000) == 0xd5080000."""
+    words: List[int] = []
+    crm_samples = (1, 8)
+    op2_samples = (0, 1, 4, 7)
+    rt_samples = (1, 31)
+    for l_bit in (0, 1):
+        for op1 in range(8):
+            for crn in range(16):
+                for crm in crm_samples:
+                    for op2 in op2_samples:
+                        for rt in rt_samples:
+                            word = (
+                                0xD5080000
+                                | (l_bit << 21)
+                                | (op1 << 16)
+                                | (crn << 12)
+                                | (crm << 8)
+                                | (op2 << 5)
+                                | rt
+                            )
+                            words.append(word)
+    return words
+
+
+def _make_sysreg_words_generator(is_read: bool, op1_val: int) -> Callable[[], List[int]]:
+    """ARM DDI 0487 C4.1.93.7 System register move (MRS L=1 / MSR L=0) slice for fixed op1."""
+
+    def _gen() -> List[int]:
+        words: List[int] = []
+        base = 0xD5200000 if is_read else 0xD5000000
+        rt = 1
+        for op0 in (2, 3):
+            for crn in range(16):
+                for crm in range(16):
+                    for op2 in range(8):
+                        sys_enc = (
+                            ((op0 & 0x3) << 14)
+                            | ((op1_val & 0x7) << 11)
+                            | (crn << 7)
+                            | (crm << 3)
+                            | op2
+                        )
+                        words.append(base | (sys_enc << 5) | rt)
+        return words
+
+    return _gen
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -340,6 +449,62 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
         ),
         generate_words=_generate_lse_atomic_words,
     ),
+    "fp_imm": EncodingGroupSpec(
+        name="fp_imm",
+        title="Scalar floating-point immediate and zero compare — FMOV #imm8 and FCMP / FCMPE #0.0",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.24 Floating-point immediate & C4.1.95.22 Floating-point compare.",
+            "Enumerates all 4 x 256 = 1,024 FMOV #imm8 combinations (ftype=0..3 covering S/D/unallocated/H x imm8=0..255, Rd=1)",
+            "plus 2 x 2 x 4 x 4 x 2 = 128 FCMP/FCMPE combinations (sf=0..1, S=0..1, ftype=0..3, opc=0..3, Rm in {0,3}, Rn=2).",
+        ),
+        generate_words=_generate_fp_imm_words,
+    ),
+    "add_sub_ext_reg": EncodingGroupSpec(
+        name="add_sub_ext_reg",
+        title="Add/subtract (extended register) — ADD / ADDS / SUB / SUBS, CMN / CMP, and SP LSL preferred aliases",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.2 Add/subtract (extended register): (word & 0x1f200000) == 0x0b200000.",
+            "Enumerates all 2 x 2 x 2 x 4 x 8 x 4 x 4 = 4,096 combinations of sf=0..1, op=0..1, S=0..1, opt=0..3,",
+            "option=0..7, imm3 in {0, 1, 4, 7}, and (Rd, Rn) in {(1,2), (31,2), (1,31), (31,31)} with Rm=3.",
+        ),
+        generate_words=_generate_add_sub_ext_reg_words,
+    ),
+    "system_instr": EncodingGroupSpec(
+        name="system_instr",
+        title="System instructions — SYS (IC / DC / AT / TLBI / CFP / DVP / CPP / APAS aliases) and SYSL",
+        header_notes=(
+            "ARM DDI 0487 C4.1.93.6 System instructions (op0=01): (word & 0xffd80000) == 0xd5080000.",
+            "Enumerates all 2 x 8 x 16 x 2 x 4 x 2 = 4,096 combinations of L=0..1 (SYS vs SYSL), op1=0..7,",
+            "CRn=0..15, CRm in {1, 8}, op2 in {0, 1, 4, 7}, and Rt in {1, 31} (x1 vs xzr).",
+        ),
+        generate_words=_generate_system_instr_words,
+    ),
+    **{
+        f"sysreg_mrs_op1_{op1}": EncodingGroupSpec(
+            name=f"sysreg_mrs_op1_{op1}",
+            title=f"System register move MRS (L=1) — slice op1={op1} (op0 in {{2,3}}, CRn=0..15, CRm=0..15, op2=0..7)",
+            header_notes=(
+                f"ARM DDI 0487 C4.1.93.7 MRS <Xt>, <systemreg>: slice {op1 + 1}/8 of all 32,768 MRS system-register encodings.",
+                f"Range: L=1, op0 in {{2, 3}} (2), op1={op1} (1), CRn=0..15 (16), CRm=0..15 (16), op2=0..7 (8) with fixed Rt=1 (4,096 rows).",
+                "Across sysreg_mrs_op1_0..sysreg_mrs_op1_7 (8 x 4,096 = 32,768 rows), every MRS encoding is covered.",
+            ),
+            generate_words=_make_sysreg_words_generator(is_read=True, op1_val=op1),
+        )
+        for op1 in range(8)
+    },
+    **{
+        f"sysreg_msr_op1_{op1}": EncodingGroupSpec(
+            name=f"sysreg_msr_op1_{op1}",
+            title=f"System register move MSR (L=0) — slice op1={op1} (op0 in {{2,3}}, CRn=0..15, CRm=0..15, op2=0..7)",
+            header_notes=(
+                f"ARM DDI 0487 C4.1.93.7 MSR <systemreg>, <Xt>: MSR verification slice for op1={op1}.",
+                f"Range: L=0, op0 in {{2, 3}} (2), op1={op1} (1), CRn=0..15 (16), CRm=0..15 (16), op2=0..7 (8) with fixed Rt=1 (4,096 rows).",
+                "Verifies shared RW names, write-only names (e.g. OSLAR_EL1/TRCOSLAR/PMSWINC_EL0), RO generic fallbacks, and DBGDTRTX_EL0.",
+            ),
+            generate_words=_make_sysreg_words_generator(is_read=False, op1_val=op1),
+        )
+        for op1 in (0, 1, 3)
+    },
 }
 
 
