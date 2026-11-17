@@ -3436,19 +3436,10 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // 4. AdvSIMD CMEQ #0 (Two-Reg Misc): (word & 0xBF3F_FC00) == 0x0E20_9800
-        if (word & 0xBF3F_FC00) == 0x0E20_9800 {
-            guard !(size == 0b11 && !q) else { return nil }
-            let arrTableQ0 = ["8b", "4h", "2s", "1d"]
-            let arrTableQ1 = ["16b", "8h", "4s", "2d"]
-            let arr = q ? arrTableQ1[Int(size)] : arrTableQ0[Int(size)]
-            let vd = A64Register.v(rd, arrangement: arr)
-            let vn = A64Register.v(rn, arrangement: arr)
-            return A64DecodedInstruction(
-                address: address, rawWord: word, mnemonic: .cmeq,
-                operands: [.register(vd), .register(vn), .unsignedImmediate(0)],
-                group: .simdAndFP, readsRegisters: [vn], writesRegisters: [vd]
-            )
+        // 4. AdvSIMD Vector Two-Register Miscellaneous (C4.1.95.20 & C4.1.95.21 FP16):
+        //    (word & 0x9F3E_0C00) == 0x0E20_0800 || (word & 0x9F7E_0C00) == 0x0E78_0800
+        if (word & 0x9F3E_0C00) == 0x0E20_0800 || (word & 0x9F7E_0C00) == 0x0E78_0800 {
+            return decodeAdvSIMDVectorTwoRegMisc(word: word, at: address)
         }
 
         // 5. AdvSIMD Across Lanes (ADDV): (word & 0xBF3F_FC00) == 0x0E31_B800
@@ -4020,5 +4011,290 @@ public struct A64InstructionDecoder: Sendable {
         let szHi = (size >> 1) & 1
         let fpSizeCode: UInt32 = ((size & 1) == 0) ? 0b10 : 0b11
         return resolveScalarFPMisc(fpSizeCode: fpSizeCode, szHi: szHi)
+    }
+
+    private func decodeAdvSIMDVectorTwoRegMisc(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let isFP16Subtable = (word & 0x9F7E_0C00) == 0x0E78_0800
+        let opcode = A64BitUtils.extract(word, 16, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func emitVec2(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dstArr: String,
+            srcArr: String,
+            accumulatesRd: Bool = false
+        ) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: dstArr)
+            let vn = A64Register.v(rn, arrangement: srcArr)
+            let reads = accumulatesRd ? activeRegs([vd, vn]) : activeRegs([vn])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn)],
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [vd]
+            )
+        }
+
+        func emitVecZeroCmp(text: String, arr: String, isFP: Bool) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: arr)
+            let vn = A64Register.v(rn, arrangement: arr)
+            let zeroOp: A64Operand = isFP ? .fpImmediate(0.0) : .unsignedImmediate(0)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .cmeq,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn), zeroOp],
+                group: .simdAndFP,
+                readsRegisters: [vn],
+                writesRegisters: [vd]
+            )
+        }
+
+        func resolveCommonVectorFPMisc(arr: String, szHi: UInt32, allowFrintts: Bool) -> A64DecodedInstruction? {
+            if szHi == 1 && opcode >= 0b01100 && opcode <= 0b01111 {
+                switch opcode {
+                case 0b01100: return emitVecZeroCmp(text: u ? "fcmge" : "fcmgt", arr: arr, isFP: true)
+                case 0b01101: return emitVecZeroCmp(text: u ? "fcmle" : "fcmeq", arr: arr, isFP: true)
+                case 0b01110 where !u: return emitVecZeroCmp(text: "fcmlt", arr: arr, isFP: true)
+                case 0b01111: return emitVec2(mnemonic: u ? .fneg : .fabs, text: u ? "fneg" : "fabs", dstArr: arr, srcArr: arr)
+                default: return nil
+                }
+            }
+
+            switch (u, szHi, opcode) {
+            case (false, 0, 0b11000): return emitVec2(mnemonic: .frintn, text: "frintn", dstArr: arr, srcArr: arr)
+            case (false, 1, 0b11000): return emitVec2(mnemonic: .frintp, text: "frintp", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11000): return emitVec2(mnemonic: .frintn, text: "frinta", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11001): return emitVec2(mnemonic: .frintm, text: "frintm", dstArr: arr, srcArr: arr)
+            case (false, 1, 0b11001): return emitVec2(mnemonic: .frintz, text: "frintz", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11001): return emitVec2(mnemonic: .frintn, text: "frintx", dstArr: arr, srcArr: arr)
+            case (true,  1, 0b11001): return emitVec2(mnemonic: .frintn, text: "frinti", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11010): return emitVec2(mnemonic: .fcvtas, text: "fcvtns", dstArr: arr, srcArr: arr)
+            case (false, 1, 0b11010): return emitVec2(mnemonic: .fcvtas, text: "fcvtps", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11010): return emitVec2(mnemonic: .fcvtau, text: "fcvtnu", dstArr: arr, srcArr: arr)
+            case (true,  1, 0b11010): return emitVec2(mnemonic: .fcvtau, text: "fcvtpu", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11011): return emitVec2(mnemonic: .fcvtzs, text: "fcvtms", dstArr: arr, srcArr: arr)
+            case (false, 1, 0b11011): return emitVec2(mnemonic: .fcvtzs, text: "fcvtzs", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11011): return emitVec2(mnemonic: .fcvtzu, text: "fcvtmu", dstArr: arr, srcArr: arr)
+            case (true,  1, 0b11011): return emitVec2(mnemonic: .fcvtzu, text: "fcvtzu", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11100): return emitVec2(mnemonic: .fcvtas, text: "fcvtas", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11100): return emitVec2(mnemonic: .fcvtau, text: "fcvtau", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11101): return emitVec2(mnemonic: .scvtf, text: "scvtf", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11101): return emitVec2(mnemonic: .ucvtf, text: "ucvtf", dstArr: arr, srcArr: arr)
+            case (false, 1, 0b11101): return emitVec2(mnemonic: .fabs, text: "frecpe", dstArr: arr, srcArr: arr)
+            case (true,  1, 0b11101): return emitVec2(mnemonic: .fabs, text: "frsqrte", dstArr: arr, srcArr: arr)
+
+            case (false, 0, 0b11110) where allowFrintts:
+                return emitVec2(mnemonic: .frintz, text: "frint32z", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11110) where allowFrintts:
+                return emitVec2(mnemonic: .frintn, text: "frint32x", dstArr: arr, srcArr: arr)
+            case (false, 0, 0b11111) where allowFrintts:
+                return emitVec2(mnemonic: .frintz, text: "frint64z", dstArr: arr, srcArr: arr)
+            case (true,  0, 0b11111) where allowFrintts:
+                return emitVec2(mnemonic: .frintn, text: "frint64x", dstArr: arr, srcArr: arr)
+
+            case (true,  1, 0b11111): return emitVec2(mnemonic: .fsqrt, text: "fsqrt", dstArr: arr, srcArr: arr)
+            default:                  return nil
+            }
+        }
+
+        // 1. C4.1.95.21: FP16 two-register miscellaneous (4h / 8h)
+        if isFP16Subtable {
+            let hArr = q ? "8h" : "4h"
+            return resolveCommonVectorFPMisc(arr: hArr, szHi: (size >> 1) & 1, allowFrintts: false)
+        }
+
+        // 2. C4.1.95.20: Integer two-register miscellaneous (opcode < 0b01100)
+        if opcode < 0b01100 {
+            let stdIntArr: String?
+            switch (size, q) {
+            case (0b00, false): stdIntArr = "8b"
+            case (0b00, true):  stdIntArr = "16b"
+            case (0b01, false): stdIntArr = "4h"
+            case (0b01, true):  stdIntArr = "8h"
+            case (0b10, false): stdIntArr = "2s"
+            case (0b10, true):  stdIntArr = "4s"
+            case (0b11, true):  stdIntArr = "2d"
+            default:            stdIntArr = nil
+            }
+
+            switch opcode {
+            case 0b00000:
+                if !u && size < 0b11, let arr = stdIntArr {
+                    return emitVec2(mnemonic: .andVec, text: "rev64", dstArr: arr, srcArr: arr)
+                }
+                if u && size < 0b10, let arr = stdIntArr {
+                    return emitVec2(mnemonic: .andVec, text: "rev32", dstArr: arr, srcArr: arr)
+                }
+                return nil
+
+            case 0b00001 where !u && size == 0b00:
+                let bArr = q ? "16b" : "8b"
+                return emitVec2(mnemonic: .andVec, text: "rev16", dstArr: bArr, srcArr: bArr)
+
+            case 0b00010 where size < 0b11,
+                 0b00110 where size < 0b11:
+                let dstArrsQ0 = ["4h", "2s", "1d"]
+                let dstArrsQ1 = ["8h", "4s", "2d"]
+                let srcArrsQ0 = ["8b", "4h", "2s"]
+                let srcArrsQ1 = ["16b", "8h", "4s"]
+                let idx = Int(size)
+                let dstArr = q ? dstArrsQ1[idx] : dstArrsQ0[idx]
+                let srcArr = q ? srcArrsQ1[idx] : srcArrsQ0[idx]
+                let isAccum = (opcode == 0b00110)
+                let mnemText = isAccum ? (u ? "uadalp" : "sadalp") : (u ? "uaddlp" : "saddlp")
+                return emitVec2(mnemonic: .andVec, text: mnemText, dstArr: dstArr, srcArr: srcArr, accumulatesRd: isAccum)
+
+            case 0b00011:
+                guard let arr = stdIntArr else { return nil }
+                return emitVec2(mnemonic: .andVec, text: u ? "usqadd" : "suqadd", dstArr: arr, srcArr: arr, accumulatesRd: true)
+
+            case 0b00100 where size < 0b11:
+                guard let arr = stdIntArr else { return nil }
+                return emitVec2(mnemonic: .andVec, text: u ? "clz" : "cls", dstArr: arr, srcArr: arr)
+
+            case 0b00101:
+                let bArr = q ? "16b" : "8b"
+                if !u && size == 0b00 {
+                    return emitVec2(mnemonic: .andVec, text: "cnt", dstArr: bArr, srcArr: bArr)
+                }
+                if u && size == 0b00 {
+                    return emitVec2(mnemonic: .orrVec, text: "mvn", dstArr: bArr, srcArr: bArr)
+                }
+                if u && size == 0b01 {
+                    return emitVec2(mnemonic: .andVec, text: "rbit", dstArr: bArr, srcArr: bArr)
+                }
+                return nil
+
+            case 0b00111:
+                guard let arr = stdIntArr else { return nil }
+                return emitVec2(mnemonic: .andVec, text: u ? "sqneg" : "sqabs", dstArr: arr, srcArr: arr)
+
+            case 0b01000:
+                guard let arr = stdIntArr else { return nil }
+                return emitVecZeroCmp(text: u ? "cmge" : "cmgt", arr: arr, isFP: false)
+
+            case 0b01001:
+                guard let arr = stdIntArr else { return nil }
+                return emitVecZeroCmp(text: u ? "cmle" : "cmeq", arr: arr, isFP: false)
+
+            case 0b01010 where !u:
+                guard let arr = stdIntArr else { return nil }
+                return emitVecZeroCmp(text: "cmlt", arr: arr, isFP: false)
+
+            case 0b01011:
+                guard let arr = stdIntArr else { return nil }
+                return emitVec2(mnemonic: .andVec, text: u ? "neg" : "abs", dstArr: arr, srcArr: arr)
+
+            default:
+                return nil
+            }
+        }
+
+        // 3. C4.1.95.20: Narrowing & widening vector operations (0b10000...0b10111)
+        if opcode >= 0b10000 && opcode < 0b11000 {
+            let narrowDstQ0 = ["8b", "4h", "2s"]
+            let narrowDstQ1 = ["16b", "8h", "4s"]
+            let narrowSrc = ["8h", "4s", "2d"]
+
+            switch opcode {
+            case 0b10010 where size < 0b11:
+                let idx = Int(size)
+                let text = u ? (q ? "sqxtun2" : "sqxtun") : (q ? "xtn2" : "xtn")
+                return emitVec2(
+                    mnemonic: .andVec,
+                    text: text,
+                    dstArr: q ? narrowDstQ1[idx] : narrowDstQ0[idx],
+                    srcArr: narrowSrc[idx],
+                    accumulatesRd: q
+                )
+
+            case 0b10011 where u && size < 0b11:
+                let idx = Int(size)
+                let dstArr = narrowSrc[idx]
+                let srcArr = q ? narrowDstQ1[idx] : narrowDstQ0[idx]
+                let shiftBits = UInt64(8 << size)
+                let vd = A64Register.v(rd, arrangement: dstArr)
+                let vn = A64Register.v(rn, arrangement: srcArr)
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .andVec,
+                    mnemonicText: q ? "shll2" : "shll",
+                    operands: [.register(vd), .register(vn), .unsignedImmediate(shiftBits)],
+                    operandText: "\(vd.canonicalName), \(vn.canonicalName), #\(shiftBits)",
+                    group: .simdAndFP,
+                    readsRegisters: [vn],
+                    writesRegisters: [vd]
+                )
+
+            case 0b10100 where size < 0b11:
+                let idx = Int(size)
+                let text = u ? (q ? "uqxtn2" : "uqxtn") : (q ? "sqxtn2" : "sqxtn")
+                return emitVec2(
+                    mnemonic: .andVec,
+                    text: text,
+                    dstArr: q ? narrowDstQ1[idx] : narrowDstQ0[idx],
+                    srcArr: narrowSrc[idx],
+                    accumulatesRd: q
+                )
+
+            case 0b10110:
+                if !u && size < 0b10 {
+                    let dstArr = (size == 0b00) ? (q ? "8h" : "4h") : (q ? "4s" : "2s")
+                    let srcArr = (size == 0b00) ? "4s" : "2d"
+                    return emitVec2(mnemonic: .fcvt, text: q ? "fcvtn2" : "fcvtn", dstArr: dstArr, srcArr: srcArr, accumulatesRd: q)
+                }
+                if u && size == 0b01 {
+                    let dstArr = q ? "4s" : "2s"
+                    return emitVec2(mnemonic: .fcvt, text: q ? "fcvtxn2" : "fcvtxn", dstArr: dstArr, srcArr: "2d", accumulatesRd: q)
+                }
+                return nil
+
+            case 0b10111 where !u && size < 0b10:
+                let dstArr = (size == 0b00) ? "4s" : "2d"
+                let srcArr = (size == 0b00) ? (q ? "8h" : "4h") : (q ? "4s" : "2s")
+                return emitVec2(mnemonic: .fcvt, text: q ? "fcvtl2" : "fcvtl", dstArr: dstArr, srcArr: srcArr)
+
+            default:
+                return nil
+            }
+        }
+
+        // 4. C4.1.95.20: FP32/FP64 zero-compare, FABS/FNEG, rounding, conversions, URECPE/URSQRTE, FSQRT & FRINTTS
+        let szHi = (size >> 1) & 1
+        let szLo = size & 1
+
+        if opcode == 0b11100 && szHi == 1 {
+            guard szLo == 0 else { return nil }
+            let sArr = q ? "4s" : "2s"
+            return emitVec2(mnemonic: .andVec, text: u ? "ursqrte" : "urecpe", dstArr: sArr, srcArr: sArr)
+        }
+
+        let fpArr: String
+        if szLo == 0 {
+            fpArr = q ? "4s" : "2s"
+        } else if q {
+            fpArr = "2d"
+        } else {
+            return nil
+        }
+
+        return resolveCommonVectorFPMisc(arr: fpArr, szHi: szHi, allowFrintts: true)
     }
 }

@@ -1758,6 +1758,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
 
         expected_counts = {
             "advsimd_scalar_two_reg_misc": 512,
+            "advsimd_vec_two_reg_misc": 1024,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1769,9 +1770,9 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "advsimd_scalar_two_reg_misc", "--out-dir", tmp],
+                ["generate", "advsimd_scalar_two_reg_misc", "advsimd_vec_two_reg_misc", "--out-dir", tmp],
             )
-            self.assertEqual(rc, 0, f"generate stage 8 scalar table failed: {stdout_txt}\n{stderr_txt}")
+            self.assertEqual(rc, 0, f"generate stage 8 tables failed: {stdout_txt}\n{stderr_txt}")
             s_comments, s_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_two_reg_misc.tsv"))
             self.assertEqual(len(s_rows), 512)
             self.assertTrue(any("encoding-table.py generate advsimd_scalar_two_reg_misc" in c for c in s_comments))
@@ -1799,6 +1800,44 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 ".long",
             ):
                 self.assertIn(expected_mnem, s_mnems)
+
+            v_comments, v_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vec_two_reg_misc.tsv"))
+            self.assertEqual(len(v_rows), 1024)
+            self.assertTrue(any("encoding-table.py generate advsimd_vec_two_reg_misc" in c for c in v_comments))
+            v_mnems = {m for _, m, _ in v_rows}
+            for expected_mnem in (
+                "rev64",
+                "rev32",
+                "rev16",
+                "cnt",
+                "mvn",
+                "rbit",
+                "cls",
+                "clz",
+                "saddlp",
+                "uadalp",
+                "abs",
+                "neg",
+                "cmeq",
+                "fcmeq",
+                "xtn",
+                "xtn2",
+                "sqxtn",
+                "sqxtn2",
+                "shll",
+                "shll2",
+                "fcvtn",
+                "fcvtl2",
+                "fcvtxn2",
+                "frintn",
+                "frint32z",
+                "frint64x",
+                "urecpe",
+                "frecpe",
+                "fsqrt",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, v_mnems)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

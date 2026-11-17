@@ -552,6 +552,37 @@ def _generate_advsimd_scalar_two_reg_misc_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_vec_two_reg_misc_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.20 Advanced SIMD two-register miscellaneous &
+    C4.1.95.21 Advanced SIMD two-register miscellaneous FP16:
+    0|Q|U|01110|size(2)|b21_17(5)|opcode(5)|10|Rn(5)|Rd(5), with b21_17 in {0b10000, 0b11100}.
+    Enumerates all 2 x 2 x 2 x 4 x 32 = 1,024 non-register combinations of subtable (0b10000 vs 0b11100),
+    Q=0..1, U=0..1, size=0..3 (including bit[22]=0 unallocated counterexamples in the FP16 subtable),
+    and opcode=0..31 with distinct vector registers Rd=1, Rn=2.
+    """
+    words: List[int] = []
+    rd = 1
+    rn = 2
+    for b21_17 in (0b10000, 0b11100):
+        for q_bit in (0, 1):
+            for u_bit in (0, 1):
+                for size in range(4):
+                    for opcode in range(32):
+                        word = (
+                            (q_bit << 30)
+                            | (u_bit << 29)
+                            | (0b01110 << 24)
+                            | (size << 22)
+                            | (b21_17 << 17)
+                            | (opcode << 12)
+                            | (0b10 << 10)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -737,6 +768,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "and opcode=0..31 with fixed distinct scalar registers Rd=1, Rn=2.",
         ),
         generate_words=_generate_advsimd_scalar_two_reg_misc_words,
+    ),
+    "advsimd_vec_two_reg_misc": EncodingGroupSpec(
+        name="advsimd_vec_two_reg_misc",
+        title="Advanced SIMD vector two-register miscellaneous — rev/cnt/mvn/rbit, pairwise-long, zero-compare, narrowing/widening, and FP32/FP64/FP16/FRINTTS",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.20 ((word & 0x9f3e0c00) == 0x0e200800) & C4.1.95.21 FP16 ((word & 0x9f3e0c00) == 0x0e380800).",
+            "Enumerates all 2 x 2 x 2 x 4 x 32 = 1,024 non-register combinations of b21_17 in {0b10000, 0b11100},",
+            "Q=0..1, U=0..1, size=0..3 (including bit[22]=0 unallocated counterexamples in the FP16 subtable),",
+            "and opcode=0..31 with fixed distinct vector registers Rd=1, Rn=2.",
+        ),
+        generate_words=_generate_advsimd_vec_two_reg_misc_words,
     ),
 }
 

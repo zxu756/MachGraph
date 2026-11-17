@@ -1772,4 +1772,103 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 512)
         #expect(mismatches.isEmpty, "Group 2 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 8 Group 4: AdvSIMD vector two-register misc (rev/cnt/mvn/rbit, pairwise-long, zero-compare, narrowing/widening, FP32/FP64/FP16 & FRINTTS) matches advsimd_vec_two_reg_misc.tsv")
+    func advsimdVectorTwoRegMiscDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x0EA0_0800, "rev64 v0.2s, v0.2s"),                // /bin/csh baseline example
+            (0x6E20_0841, "rev32 v1.16b, v2.16b"),              // advsimd_vec_two_reg_misc.tsv
+            (0x4E20_1841, "rev16 v1.16b, v2.16b"),              // advsimd_vec_two_reg_misc.tsv
+            (0x4E20_5841, "cnt v1.16b, v2.16b"),                // CNT .16b
+            (0x6E20_5841, "mvn v1.16b, v2.16b"),                // NOT preferred alias MVN
+            (0x2E60_5841, "rbit v1.8b, v2.8b"),                 // RBIT (size=01 uses .8b/.16b!)
+            (0x6E60_5841, "rbit v1.16b, v2.16b"),               // RBIT Q=1
+            (0x0EA0_2841, "saddlp v1.1d, v2.2s"),               // SADDLP Q=0 size=10 -> .1d
+            (0x0E20_6AB1, "sadalp v17.4h, v21.8b"),             // seed 20261117 example
+            (0x4EE0_8841, "cmgt v1.2d, v2.2d, #0"),             // integer zero-compare .2d
+            (0x4EE0_9841, "cmeq v1.2d, v2.2d, #0"),             // existing CMEQ #0 preserved
+            (0x6EE0_B841, "neg v1.2d, v2.2d"),                  // 64-bit lane NEG
+            (0x0E61_2841, "xtn v1.4h, v2.4s"),                  // XTN Q=0
+            (0x4E61_2841, "xtn2 v1.8h, v2.4s"),                 // XTN2 Q=1
+            (0x2E21_3841, "shll v1.8h, v2.8b, #8"),             // SHLL #8
+            (0x6EA1_3841, "shll2 v1.2d, v2.4s, #32"),           // SHLL2 #32 (decimal shift)
+            (0x0E21_7841, "fcvtl v1.4s, v2.4h"),                // FCVTL Q=0
+            (0x4E61_7841, "fcvtl2 v1.2d, v2.4s"),               // FCVTL2 Q=1
+            (0x2E61_6841, "fcvtxn v1.2s, v2.2d"),               // FCVTXN Q=0
+            (0x6E61_6841, "fcvtxn2 v1.4s, v2.2d"),              // FCVTXN2 Q=1
+            (0x6E21_9A6F, "frintx v15.4s, v19.4s"),             // seed 17 example
+            (0x4E21_E841, "frint32z v1.4s, v2.4s"),             // FEAT_FRINTTS FRINT32Z
+            (0x6E61_F841, "frint64x v1.2d, v2.2d"),             // FEAT_FRINTTS FRINT64X
+            (0x4EA1_C841, "urecpe v1.4s, v2.4s"),               // URECPE (.2s/.4s only)
+            (0x6EE1_F841, "fsqrt v1.2d, v2.2d"),                // FSQRT .2d
+            (0x4EF8_C841, "fcmgt v1.8h, v2.8h, #0.0"),          // FP16 zero-compare
+            (0x6EF9_F841, "fsqrt v1.8h, v2.8h"),                // FP16 FSQRT
+            (0x6E79_D841, "ucvtf v1.8h, v2.8h"),                // FP16 UCVTF
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters.count == 1, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Accumulating & upper-half narrowing (*2) forms read destination Vd as well as source Vn:
+        #expect(decoder.decode(word: 0x0E20_6841, at: pc).readsRegisters.count == 2) // sadalp v1.4h, v2.8b
+        #expect(decoder.decode(word: 0x4E61_2841, at: pc).readsRegisters.count == 2) // xtn2 v1.8h, v2.4s
+        #expect(decoder.decode(word: 0x0E61_2841, at: pc).readsRegisters.count == 1) // xtn v1.4h, v2.4s
+
+        // Unallocated counterexamples from advsimd_vec_two_reg_misc.tsv must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0x0EE0_0841, // REV64 with size=11 is unallocated
+            0x2EA0_0841, // REV32 with size=10 is unallocated
+            0x0E60_1841, // REV16 with size=01 is unallocated
+            0x4EE0_4841, // CLS with size=11 (.2d) is unallocated
+            0x0EE0_9841, // CMEQ #0 with Q=0, size=11 (.1d) is unallocated
+            0x2E21_6841, // FCVTXN with size=00 is unallocated (only size=01 D->S exists)
+            0x4EE1_C841, // URECPE with size=11 (.2d) is unallocated
+            0x4EE1_F841, // U=0, szHi=1 opcode=11111 has no vector FRECPX
+            0x0E39_D841, // FP16 subtable with bit[22]==0 (size=00) is unallocated
+            0x4E79_E841, // FP16 subtable has no FRINT32Z
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_vec_two_reg_misc"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 1024)
+        #expect(mismatches.isEmpty, "Group 4 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
