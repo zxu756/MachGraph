@@ -799,6 +799,49 @@ def _generate_scalar_fp_int_conv_words() -> List[int]:
     return words
 
 
+def _generate_scalar_fp_one_source_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.21 Floating-point data-processing (1 source):
+    M(1)|0|S(1)|11110|ftype(2)|1|opcode(6)|10000|Rn(5)|Rd(5), i.e. (word & 0x5f207c00) == 0x1e204000.
+    1) Enumerates all 2 x 2 x 4 x 64 = 1,024 non-register combinations of M=0..1, S=0..1,
+       ftype=0..3 (S, D, unallocated 10, H), opcode=0..63 with distinct (Rd, Rn) = (1, 2)
+       (covering FMOV, FABS, FNEG, FSQRT, cross-width FCVT + same-width unallocated FCVT counterexamples,
+       FRINTN/P/M/Z/A/X/I, and FRINT32Z/X / FRINT64Z/X on S/D + H unallocated counterexamples).
+    2) Plus 3 x 32 = 96 high-register rows M=0, S=0, ftype in {0, 1, 3}, opcode=0..31 with (Rd, Rn) = (31, 31).
+    Total = 1,120 rows (<= 4,096).
+    """
+    words: List[int] = []
+    for m_bit in (0, 1):
+        for s_bit in (0, 1):
+            for ftype in range(4):
+                for opcode in range(64):
+                    word = (
+                        (m_bit << 31)
+                        | (s_bit << 29)
+                        | (0b11110 << 24)
+                        | (ftype << 22)
+                        | (1 << 21)
+                        | (opcode << 15)
+                        | (0b10000 << 10)
+                        | (2 << 5)
+                        | 1
+                    )
+                    words.append(word)
+
+    for ftype in (0, 1, 3):
+        for opcode in range(32):
+            word = (
+                (0b11110 << 24)
+                | (ftype << 22)
+                | (1 << 21)
+                | (opcode << 15)
+                | (0b10000 << 10)
+                | (31 << 5)
+                | 31
+            )
+            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1075,6 +1118,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "rmode=0..3, opcode=0..7 across (Rd, Rn) in {(1,2), (1,31), (31,2)}.",
         ),
         generate_words=_generate_scalar_fp_int_conv_words,
+    ),
+    "scalar_fp_one_source": EncodingGroupSpec(
+        name="scalar_fp_one_source",
+        title="Scalar floating-point data-processing (1 source) — FMOV, FABS, FNEG, FSQRT, FCVT, FRINTN/P/M/Z/A/X/I, and FRINT32/64*",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.21 Floating-point data-processing (1 source): (word & 0x5f207c00) == 0x1e204000.",
+            "Enumerates all 2 x 2 x 4 x 64 = 1,024 combinations of M=0..1, S=0..1, ftype=0..3 (S/D/unallocated/H),",
+            "opcode=0..63 with (Rd, Rn) = (1, 2), plus 96 high-register rows (Rd, Rn) = (31, 31), totaling 1,120 rows.",
+        ),
+        generate_words=_generate_scalar_fp_one_source_words,
     ),
 }
 

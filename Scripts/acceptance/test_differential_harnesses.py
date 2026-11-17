@@ -1958,10 +1958,12 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0xDAC13BF0), "PAC data/instruction pointer")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x38BFC108), "LDAPR (RCpc) and LSE atomic")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x9E690009), "Scalar FP <-> integer conversions")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1E664000), "Scalar FP data-processing (1 source)")
         expected_counts = {
             "pac_data_ptr": 3200,
             "rcpc_ldapr": 512,
             "scalar_fp_int_conv": 1536,
+            "scalar_fp_one_source": 1120,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1973,7 +1975,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "pac_data_ptr", "rcpc_ldapr", "scalar_fp_int_conv", "--out-dir", tmp],
+                ["generate", "pac_data_ptr", "rcpc_ldapr", "scalar_fp_int_conv", "scalar_fp_one_source", "--out-dir", tmp],
             )
             self.assertEqual(rc, 0, f"generate stage 10 tables failed: {stdout_txt}\n{stderr_txt}")
             pc, pr = enc_table.load_reference_table(os.path.join(tmp, "pac_data_ptr.tsv"))
@@ -2036,6 +2038,31 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 ".long",
             ):
                 self.assertIn(expected_mnem, im)
+
+            oc, orows = enc_table.load_reference_table(os.path.join(tmp, "scalar_fp_one_source.tsv"))
+            self.assertEqual(len(orows), 1120)
+            self.assertTrue(any("encoding-table.py generate scalar_fp_one_source" in c for c in oc))
+            om = {m for _, m, _ in orows}
+            for expected_mnem in (
+                "fmov",
+                "fabs",
+                "fneg",
+                "fsqrt",
+                "fcvt",
+                "frintn",
+                "frintp",
+                "frintm",
+                "frintz",
+                "frinta",
+                "frintx",
+                "frinti",
+                "frint32z",
+                "frint32x",
+                "frint64z",
+                "frint64x",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, om)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

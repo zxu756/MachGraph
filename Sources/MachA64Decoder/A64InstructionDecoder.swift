@@ -3332,13 +3332,13 @@ public struct A64InstructionDecoder: Sendable {
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .fneg, operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
             case 0b000011:
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .fsqrt, operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
-            case 0b000100: // FCVT to single
+            case 0b000100 where ftype != 0b00: // FCVT to single (D->S, H->S)
                 let dstS = A64Register.s(rd)
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .fcvt, operands: [.register(dstS), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [dstS])
-            case 0b000101: // FCVT to double
+            case 0b000101 where ftype != 0b01: // FCVT to double (S->D, H->D)
                 let dstD = A64Register.d(rd)
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .fcvt, operands: [.register(dstD), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [dstD])
-            case 0b000111: // FCVT to half
+            case 0b000111 where ftype != 0b11: // FCVT to half (S->H, D->H)
                 let dstH = A64Register.h(rd)
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .fcvt, operands: [.register(dstH), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [dstH])
             case 0b001000:
@@ -3349,6 +3349,20 @@ public struct A64InstructionDecoder: Sendable {
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintm, operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
             case 0b001011:
                 return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintz, operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b001100:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintn, mnemonicText: "frinta", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b001110:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintn, mnemonicText: "frintx", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b001111:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintn, mnemonicText: "frinti", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b010000 where ftype == 0b00 || ftype == 0b01:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintz, mnemonicText: "frint32z", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b010001 where ftype == 0b00 || ftype == 0b01:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintn, mnemonicText: "frint32x", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b010010 where ftype == 0b00 || ftype == 0b01:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintz, mnemonicText: "frint64z", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
+            case 0b010011 where ftype == 0b00 || ftype == 0b01:
+                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .frintn, mnemonicText: "frint64x", operands: [.register(fpRd), .register(fpRn)], group: .simdAndFP, readsRegisters: [fpRn], writesRegisters: [fpRd])
             default:
                 return nil
             }

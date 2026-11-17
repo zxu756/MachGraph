@@ -2347,4 +2347,66 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 1536)
         #expect(mismatches.isEmpty, "Group 18 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 19: Scalar FP 1-source operations (FRINTA/X/I, FRINT32Z/X, FRINT64Z/X, and cross-width FCVT) match scalar_fp_one_source.tsv")
+    func scalarFPOneSourceDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x1E66_4000, "frinta d0, d0"),      // /usr/bin/afinfo baseline example
+            (0x1E27_C104, "frinti s4, s8"),      // seed 20261117 fuzz example
+            (0x1E27_4041, "frintx s1, s2"),
+            (0x1EE6_4041, "frinta h1, h2"),
+            (0x1EE7_C041, "frinti h1, h2"),
+            (0x1E28_4041, "frint32z s1, s2"),
+            (0x1E28_C041, "frint32x s1, s2"),
+            (0x1E69_4041, "frint64z d1, d2"),
+            (0x1E69_C041, "frint64x d1, d2"),
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Same-width FCVT (S->S, D->D, H->H) and FP16 FRINT32Z/64Z must decode as .inst:
+        for badWord: UInt32 in [0x1E22_4041, 0x1E62_C041, 0x1EE3_C041, 0x1EE8_4041, 0x1EE9_4041] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("scalar_fp_one_source"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 1120)
+        #expect(mismatches.isEmpty, "Group 19 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
