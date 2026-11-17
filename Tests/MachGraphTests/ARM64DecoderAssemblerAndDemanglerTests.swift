@@ -2057,4 +2057,77 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(totalRows == 8192)
         #expect(mismatches.isEmpty, "Group 30 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 9 Group 12: Scalar FP <-> fixed-point conversions (SCVTF, UCVTF, FCVTZS, FCVTZU with #fbits across S/D/H and W/X/ZR) match scalar_fp_fixed_point.tsv")
+    func scalarFPFixedPointConversionsDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x1E02_C000, "scvtf s0, w0, #0x10", [.w(0)], [.s(0)]),     // /usr/bin/IOMFBDiagnose baseline example
+            (0x1E18_82BA, "fcvtzs w26, s21, #0x20", [.s(21)], [.w(26)]), // seed 20261117 example
+            (0x9E19_7DCA, "fcvtzu x10, s14, #0x21", [.s(14)], [.x(10)]), // seed 17 example (sf=1 scale=31 -> #0x21)
+            (0x9E42_0041, "scvtf d1, x2, #0x40", [.x(2)], [.d(1)]),      // sf=1 scale=0 -> #0x40
+            (0x9EC3_FC41, "ucvtf h1, x2, #0x1", [.x(2)], [.h(1)]),       // FP16 H target, scale=63 -> #0x1
+            (0x1ED8_8041, "fcvtzs w1, h2, #0x20", [.h(2)], [.w(1)]),     // FP16 H source, sf=0 max #fbits=32
+            (0x1E03_83E1, "ucvtf s1, wzr, #0x20", [], [.s(1)]),          // Rn=31 is wzr (readsRegisters omits ZR)
+            (0x9E59_805F, "fcvtzu xzr, d2, #0x20", [.d(2)], []),         // Rd=31 is xzr (writesRegisters omits ZR)
+            (0x9E18_83E1, "fcvtzs x1, s31, #0x20", [.s(31)], [.x(1)]),   // FP Rn=31 stays s31
+            (0x9E42_805F, "scvtf d31, x2, #0x20", [.x(2)], [.d(31)]),    // FP Rd=31 stays d31
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples from scalar_fp_fixed_point.tsv must remain .inst:
+        let unallocatedCases: [UInt32] = [
+            0x1E02_7C41, // sf=0 with scale=31 (#fbits=33 > 32) is unallocated
+            0x1E02_0041, // sf=0 with scale=0 (#fbits=64 > 32) is unallocated
+            0x3E02_8041, // S=1 (bit[29]==1) is unallocated
+            0x1E82_8041, // ftype=10 is unallocated
+            0x1E04_8041, // rmode=00 opcode=100 (no fixed-point FCVTAS) is unallocated
+            0x1E00_8041, // rmode=00 opcode=000 (no fixed-point FCVTNS) is unallocated
+        ]
+        for word in unallocatedCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("scalar_fp_fixed_point"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 3776)
+        #expect(mismatches.isEmpty, "Group 12 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

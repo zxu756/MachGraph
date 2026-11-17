@@ -3052,6 +3052,11 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
+        // 2b. Scalar FP <-> Fixed-Point Conversions (C4.1.95.25): (word & 0x5F20_0000) == 0x1E00_0000
+        if (word & 0x5F20_0000) == 0x1E00_0000 {
+            return decodeScalarFPFixedPointConversion(word: word, at: address)
+        }
+
         // 3. AdvSIMD Scalar Three-Register Same (integer, saturating/shift, FP32/FP64, FP16, RDMA):
         //    (word & 0xDF00_0400) == 0x5E00_0400
         if (word & 0xDF00_0400) == 0x5E00_0400 {
@@ -4569,6 +4574,80 @@ public struct A64InstructionDecoder: Sendable {
         case 0b11111 where sizeIdx >= 1:
             return emitScalarShift(mnemonic: u ? .fcvtzu : .fcvtzs, text: u ? "fcvtzu" : "fcvtzs", dstIdx: sizeIdx, srcIdx: sizeIdx, immVal: rightAmt)
 
+        default:
+            return nil
+        }
+    }
+
+    private func decodeScalarFPFixedPointConversion(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let sf = A64BitUtils.flag(word, 31)
+        let sBit = A64BitUtils.flag(word, 29)
+        guard !sBit else { return nil }
+
+        let ftype = A64BitUtils.extract(word, 23, 22)
+        let rmode = A64BitUtils.extract(word, 20, 19)
+        let opcode = A64BitUtils.extract(word, 18, 16)
+        let scale = A64BitUtils.extract(word, 15, 10)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        guard sf || scale >= 32,
+              let fpRd = scalarFPRegister(index: rd, ftype: ftype),
+              let fpRn = scalarFPRegister(index: rn, ftype: ftype)
+        else {
+            return nil
+        }
+
+        let gpRd = A64Register.gp(rd, is64Bit: sf)
+        let gpRn = A64Register.gp(rn, is64Bit: sf)
+        let fbits = 64 - scale
+        let fbitsHex = String(format: "#0x%x", fbits)
+
+        switch (rmode, opcode) {
+        case (0b00, 0b010): // SCVTF <FPd>, <GPn>, #<fbits>
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .scvtf,
+                operands: [.register(fpRd), .register(gpRn), .unsignedImmediate(UInt64(fbits))],
+                operandText: "\(fpRd.canonicalName), \(gpRn.canonicalName), \(fbitsHex)",
+                group: .simdAndFP,
+                readsRegisters: activeRegs([gpRn]),
+                writesRegisters: [fpRd]
+            )
+        case (0b00, 0b011): // UCVTF <FPd>, <GPn>, #<fbits>
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .ucvtf,
+                operands: [.register(fpRd), .register(gpRn), .unsignedImmediate(UInt64(fbits))],
+                operandText: "\(fpRd.canonicalName), \(gpRn.canonicalName), \(fbitsHex)",
+                group: .simdAndFP,
+                readsRegisters: activeRegs([gpRn]),
+                writesRegisters: [fpRd]
+            )
+        case (0b11, 0b000): // FCVTZS <GPd>, <FPn>, #<fbits>
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .fcvtzs,
+                operands: [.register(gpRd), .register(fpRn), .unsignedImmediate(UInt64(fbits))],
+                operandText: "\(gpRd.canonicalName), \(fpRn.canonicalName), \(fbitsHex)",
+                group: .simdAndFP,
+                readsRegisters: [fpRn],
+                writesRegisters: activeRegs([gpRd])
+            )
+        case (0b11, 0b001): // FCVTZU <GPd>, <FPn>, #<fbits>
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .fcvtzu,
+                operands: [.register(gpRd), .register(fpRn), .unsignedImmediate(UInt64(fbits))],
+                operandText: "\(gpRd.canonicalName), \(fpRn.canonicalName), \(fbitsHex)",
+                group: .simdAndFP,
+                readsRegisters: [fpRn],
+                writesRegisters: activeRegs([gpRd])
+            )
         default:
             return nil
         }

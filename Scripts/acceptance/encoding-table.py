@@ -647,6 +647,57 @@ def _make_advsimd_scalar_shift_imm_words_generator(u_bit: int) -> Callable[[], L
     return _gen
 
 
+def _generate_scalar_fp_fixed_point_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.25 Floating-point<->fixed-point conversions: (word & 0x5f200000) == 0x1e000000.
+    1) Enumerates all 2 x 2 x 4 x 4 x 8 = 512 combinations of sf=0..1, S=0..1 (including S=1 unallocated),
+       ftype=0..3 (S, D, unallocated 10, H), rmode=0..3, opcode=0..7 across 7 scale samples
+       {0, 1, 16, 31, 32, 48, 63} (covering 0, 1, midpoints 16 & 48, exact sf=0 boundary 31 vs 32, and max 63)
+       with distinct (Rd, Rn) = (1, 2): 512 x 7 = 3,584 rows.
+    2) Plus zero-register boundary rows (Rd, Rn) in {(1, 31), (31, 2)} across sf=0..1, S=0,
+       ftype in {0, 1, 3}, rmode in {0, 3}, opcode in {0, 1, 2, 3}, scale in {32, 63}: 192 rows.
+    Total = 3,776 rows (<= 4,096).
+    """
+    words: List[int] = []
+    scale_samples = (0, 1, 16, 31, 32, 48, 63)
+    for sf in (0, 1):
+        for s_bit in (0, 1):
+            for ftype in range(4):
+                for rmode in range(4):
+                    for opcode in range(8):
+                        for scale in scale_samples:
+                            word = (
+                                (sf << 31)
+                                | (s_bit << 29)
+                                | (0b11110 << 24)
+                                | (ftype << 22)
+                                | (rmode << 19)
+                                | (opcode << 16)
+                                | (scale << 10)
+                                | (2 << 5)
+                                | 1
+                            )
+                            words.append(word)
+
+    for sf in (0, 1):
+        for ftype in (0, 1, 3):
+            for rmode in (0, 3):
+                for opcode in (0, 1, 2, 3):
+                    for scale in (32, 63):
+                        for rd, rn in ((1, 31), (31, 2)):
+                            word = (
+                                (sf << 31)
+                                | (0b11110 << 24)
+                                | (ftype << 22)
+                                | (rmode << 19)
+                                | (opcode << 16)
+                                | (scale << 10)
+                                | (rn << 5)
+                                | rd
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -881,6 +932,18 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
         )
         for u_bit in (0, 1)
     },
+    "scalar_fp_fixed_point": EncodingGroupSpec(
+        name="scalar_fp_fixed_point",
+        title="Scalar floating-point <-> fixed-point conversions — SCVTF, UCVTF, FCVTZS, FCVTZU with #fbits",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.25 Floating-point<->fixed-point conversions: (word & 0x5f200000) == 0x1e000000.",
+            "Enumerates all 2 x 2 x 4 x 4 x 8 = 512 combinations of sf=0..1, S=0..1, ftype=0..3 (S/D/unallocated/H),",
+            "rmode=0..3, opcode=0..7 across scale in {0, 1, 16, 31, 32, 48, 63} (covering #fbits=64, 63, 48, sf=0 boundary 33/32, 16, 1)",
+            "with distinct (Rd, Rn) = (1, 2) (3,584 rows), plus 192 zero-register rows (Rd, Rn) in {(1,31), (31,2)} (wzr/xzr vs s31/d31/h31),",
+            "totaling 3,776 rows.",
+        ),
+        generate_words=_generate_scalar_fp_fixed_point_words,
+    ),
 }
 
 

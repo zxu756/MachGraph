@@ -1852,6 +1852,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0F401041), "AdvSIMD vector indexed element")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5F6454A6), "AdvSIMD scalar shift by immediate")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5F49D380), "AdvSIMD scalar indexed element")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1E02C000), "Scalar FP <-> fixed-point conversions")
 
         g3_slices = (
             "advsimd_vec_shift_imm_q0_u0",
@@ -1893,6 +1894,14 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         for w in all_g30_words[::128]:
             self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD scalar shift by immediate")
 
+        self.assertIn("scalar_fp_fixed_point", enc_table.ENCODING_GROUPS)
+        g12_words = enc_table.ENCODING_GROUPS["scalar_fp_fixed_point"].generate_words()
+        self.assertEqual(len(g12_words), 3776)
+        self.assertLessEqual(len(g12_words), 4096)
+        self.assertEqual(len(set(g12_words)), len(g12_words), "duplicate words in scalar_fp_fixed_point")
+        for w in g12_words[::64]:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "Scalar FP <-> fixed-point conversions")
+
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
@@ -1902,6 +1911,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                     "advsimd_vec_shift_imm_q1_u1",
                     "advsimd_scalar_shift_imm_u0",
                     "advsimd_scalar_shift_imm_u1",
+                    "scalar_fp_fixed_point",
                     "--out-dir",
                     tmp,
                 ],
@@ -1934,6 +1944,12 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             sm1 = {m for _, m, _ in sr1}
             for expected_mnem in ("ushr", "usra", "urshr", "ursra", "sri", "sli", "sqshlu", "uqshl", "sqshrun", "sqrshrun", "uqshrn", "uqrshrn", "ucvtf", "fcvtzu", ".long"):
                 self.assertIn(expected_mnem, sm1)
+
+            fc, fr = enc_table.load_reference_table(os.path.join(tmp, "scalar_fp_fixed_point.tsv"))
+            self.assertEqual(len(fr), 3776)
+            self.assertTrue(any("encoding-table.py generate scalar_fp_fixed_point" in c for c in fc))
+            fm = {m for _, m, _ in fr}
+            self.assertEqual(fm, {"scvtf", "ucvtf", "fcvtzs", "fcvtzu", ".long"})
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
