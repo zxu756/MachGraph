@@ -960,6 +960,42 @@ def _generate_advsimd_scalar_copy_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_modified_imm_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.14 Advanced SIMD modified immediate:
+    0|Q(1)|op(1)|0111100000|a|b|c|cmode(4)|o2(1)|1|d|e|f|g|h|Rd(5), i.e. (word & 0x9ff80400) == 0x0f000400.
+    Enumerates all 2 x 2 x 16 x 2 = 128 combinations of Q=0..1, op=0..1, cmode=0..15, o2=0..1:
+      - With Rd=1: imm8 in {0x00, 0x01, 0x80, 0xff} for cmode=0..14 (480 rows), and all 256 values
+        imm8=0..255 for cmode=0b1111 (FMOV vector forms 2s/4s/2d/4h/8h plus unallocated Q=0,op=1,o2=0
+        and op=1,o2=1 counterexamples; 2,048 rows);
+      - With Rd=31: imm8 in {0x00, 0x01, 0x80, 0xff} across all cmode=0..15 (512 rows, covering d31/v31),
+    totaling 3,040 unique rows (<= 4,096).
+    """
+    sampled_imm8 = (0x00, 0x01, 0x80, 0xFF)
+    words: List[int] = []
+    for rd in (1, 31):
+        for q_bit in (0, 1):
+            for op_bit in (0, 1):
+                for cmode in range(16):
+                    for o2 in (0, 1):
+                        imm8_values = range(256) if (rd == 1 and cmode == 0b1111) else sampled_imm8
+                        for imm8 in imm8_values:
+                            abc = (imm8 >> 5) & 0x7
+                            defgh = imm8 & 0x1F
+                            word = (
+                                (q_bit << 30)
+                                | (op_bit << 29)
+                                | (0b0111100000 << 19)
+                                | (abc << 16)
+                                | (cmode << 12)
+                                | (o2 << 11)
+                                | (1 << 10)
+                                | (defgh << 5)
+                                | rd
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1287,6 +1323,18 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "across (Rd, Rn) in {(1, 2), (31, 31)} (covering MOV <B|H|S|D><d>, v<n>.<b|h|s|d>[index] and .long space).",
         ),
         generate_words=_generate_advsimd_scalar_copy_words,
+    ),
+    "advsimd_modified_imm": EncodingGroupSpec(
+        name="advsimd_modified_imm",
+        title="Advanced SIMD modified immediate — MOVI, MVNI, ORR, BIC, FMOV vector forms, and o2/cmode unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.14 Advanced SIMD modified immediate: (word & 0x9ff80400) == 0x0f000400.",
+            "Enumerates all 2 x 2 x 16 x 2 = 128 combinations of Q=0..1, op=0..1, cmode=0..15, o2=0..1:",
+            "imm8 in {0x00, 0x01, 0x80, 0xff} for cmode=0..14 with Rd=1 (480 rows), all 256 imm8=0..255 values",
+            "for cmode=0b1111 FMOV/unallocated space with Rd=1 (2,048 rows), plus Rd=31 across cmode=0..15",
+            "with imm8 in {0x00, 0x01, 0x80, 0xff} (512 rows), totaling 3,040 rows.",
+        ),
+        generate_words=_generate_advsimd_modified_imm_words,
     ),
 }
 

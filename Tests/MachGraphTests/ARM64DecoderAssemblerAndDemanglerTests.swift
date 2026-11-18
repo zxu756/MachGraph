@@ -1917,13 +1917,17 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
             0x0F08_6441, // U=0 slot of SQSHLU (opcode=01100) is unallocated
             0x0F08_E441, // vector fixed-point SCVTF with immh=1 (8-bit) is unallocated
             0x0F40_1041, // bit[23]==0, bit[10]==0 is Group 13 indexed element (not shift by immediate)
-            0x0F01_C7E1, // immh==0 is Group 11 modified immediate (not Group 3)
+            0x0F01_CFE1, // immh==0, o2==1 is unallocated in Group 11 modified immediate (not Group 3)
         ]
         for word in unallocatedOrOtherGroupCases {
             let decoded = decoder.decode(word: word, at: pc)
             #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
             #expect(decoded.mnemonicText == ".inst", "word=0x\(String(word, radix: 16))")
         }
+        // immh==0 allocated encoding routes to Group 11 modified immediate (MOVI msl #8), never Group 3:
+        let group11Boundary = decoder.decode(word: 0x0F01_C7E1, at: pc)
+        #expect(group11Boundary.mnemonic == .movi)
+        #expect(group11Boundary.formattedDisassembly == "movi v1.2s, #0x3f, msl #8")
 
         let slices = [
             "advsimd_vec_shift_imm_q0_u0",
@@ -2719,5 +2723,79 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         }
         #expect(rowCount == 2048)
         #expect(mismatches.isEmpty, "Group 15 advsimd_scalar_copy mismatches: \(mismatches.joined(separator: "; "))")
+    }
+
+    @Test("Stage 11a Group 11: AdvSIMD modified immediate (MOVI, MVNI, ORR, BIC, FMOV vector) matches all 3,040 rows of advsimd_modified_imm.tsv")
+    func advsimdModifiedImmediateDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x0F01_C7E1, "movi v1.2s, #0x3f, msl #8", [], [.v(1, arrangement: "2s")]),       // /bin/dd baseline example (msl #8)
+            (0x4F07_D7E1, "movi v1.4s, #0xff, msl #16", [], [.v(1, arrangement: "4s")]),      // 32-bit MOVI msl #16
+            (0x6F04_C401, "mvni v1.4s, #0x80, msl #8", [], [.v(1, arrangement: "4s")]),       // 32-bit MVNI msl #8
+            (0x6F01_0634, "mvni v20.4s, #0x31", [], [.v(20, arrangement: "4s")]),             // seed 17 random fuzz example
+            (0x0F00_8421, "movi v1.4h, #0x1", [], [.v(1, arrangement: "4h")]),                // 16-bit MOVI lsl #0 (#0x1 hex format)
+            (0x4F07_A7E1, "movi v1.8h, #0xff, lsl #8", [], [.v(1, arrangement: "8h")]),       // 16-bit MOVI lsl #8
+            (0x0F05_169B, "orr v27.2s, #0xb4", [.v(27, arrangement: "2s")], [.v(27, arrangement: "2s")]), // seed 20261117 ORR (read-modify-write)
+            (0x4F00_3421, "orr v1.4s, #0x1, lsl #8", [.v(1, arrangement: "4s")], [.v(1, arrangement: "4s")]),
+            (0x6F07_B7FF, "bic v31.8h, #0xff, lsl #8", [.v(31, arrangement: "8h")], [.v(31, arrangement: "8h")]),
+            (0x2F00_E401, "movi d1, #0000000000000000", [], [.d(1)]),                         // 64-bit scalar D-reg zero mask
+            (0x6F00_E401, "movi v1.2d, #0000000000000000", [], [.v(1, arrangement: "2d")]),   // 128-bit 2d zero mask
+            (0x2F00_E421, "movi d1, #0x000000000000ff", [], [.d(1)]),                         // 64-bit mask < 2^56 (#0x + 14 hex digits)
+            (0x6F04_E401, "movi v1.2d, #0xff00000000000000", [], [.v(1, arrangement: "2d")]), // 64-bit mask >= 2^56 (#0x + 16 hex digits)
+            (0x2F00_E41F, "movi d31, #0000000000000000", [], [.d(31)]),                       // Rd=31 stays d31, never xzr
+            (0x0F00_F401, "fmov v1.2s, #2.00000000", [], [.v(1, arrangement: "2s")]),         // FP32 2s FMOV
+            (0x4F04_F401, "fmov v1.4s, #-2.00000000", [], [.v(1, arrangement: "4s")]),        // negative FP32 4s FMOV
+            (0x6F02_F421, "fmov v1.2d, #0.13281250", [], [.v(1, arrangement: "2d")]),         // G47 full precision 17/128 FP64 2d FMOV
+            (0x0F00_FC01, "fmov v1.4h, #2.00000000", [], [.v(1, arrangement: "4h")]),         // FP16 4h FMOV (o2=1)
+            (0x4F02_FC21, "fmov v1.8h, #0.13281250", [], [.v(1, arrangement: "8h")]),         // FP16 8h FMOV (o2=1)
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples (Q=0,op=1,cmode=1111,o2=0; op=1,cmode=1111,o2=1; o2=1 with cmode!=1111) must stay .inst:
+        for badWord: UInt32 in [0x2F00_F401, 0x2F00_FC01, 0x6F00_FC01, 0x0F00_0C01, 0x4F00_EC01, 0x6F00_EC01] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_modified_imm"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 3040)
+        #expect(mismatches.isEmpty, "Group 11 advsimd_modified_imm mismatches: \(mismatches.joined(separator: "; "))")
     }
 }

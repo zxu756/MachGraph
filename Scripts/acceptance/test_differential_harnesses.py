@@ -2154,6 +2154,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
 
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x6E1C6401), "AdvSIMD vector copy")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5E0C044A), "AdvSIMD scalar copy")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0F01C7E1), "AdvSIMD vector modified immediate")
 
         self.assertIn("advsimd_scalar_copy", enc_table.ENCODING_GROUPS)
         sc_words = enc_table.ENCODING_GROUPS["advsimd_scalar_copy"].generate_words()
@@ -2163,12 +2164,20 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         for w in sc_words[::64]:
             self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD scalar copy")
 
+        self.assertIn("advsimd_modified_imm", enc_table.ENCODING_GROUPS)
+        mi_words = enc_table.ENCODING_GROUPS["advsimd_modified_imm"].generate_words()
+        self.assertEqual(len(mi_words), 3040)
+        self.assertLessEqual(len(mi_words), 4096)
+        self.assertEqual(len(set(mi_words)), 3040, "duplicate words in advsimd_modified_imm")
+        for w in mi_words[::64]:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector modified immediate")
+
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "advsimd_scalar_copy", "--out-dir", tmp],
+                ["generate", "advsimd_scalar_copy", "advsimd_modified_imm", "--out-dir", tmp],
             )
-            self.assertEqual(rc, 0, f"generate advsimd_scalar_copy failed: {stdout_txt}\n{stderr_txt}")
+            self.assertEqual(rc, 0, f"generate stage11a groups failed: {stdout_txt}\n{stderr_txt}")
             sc_comments, sc_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_copy.tsv"))
             self.assertEqual(len(sc_rows), 2048)
             self.assertTrue(any("encoding-table.py generate advsimd_scalar_copy" in c for c in sc_comments))
@@ -2179,6 +2188,20 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             self.assertIn("b1, v2.b[0]", valid_ops)
             self.assertIn("s1, v2.s[1]", valid_ops)
             self.assertIn("d31, v31.d[1]", valid_ops)
+
+            mi_comments, mi_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_modified_imm.tsv"))
+            self.assertEqual(len(mi_rows), 3040)
+            self.assertTrue(any("encoding-table.py generate advsimd_modified_imm" in c for c in mi_comments))
+            mi_mnems = {m for _, m, _ in mi_rows}
+            self.assertEqual(mi_mnems, {"movi", "mvni", "orr", "bic", "fmov", ".long"})
+            mi_pairs = {(m, ops) for _, m, ops in mi_rows}
+            self.assertIn(("movi", "v1.2s, #0x80, msl #8"), mi_pairs)
+            self.assertIn(("movi", "v1.2d, #0000000000000000"), mi_pairs)
+            self.assertIn(("movi", "d31, #0000000000000000"), mi_pairs)
+            self.assertIn(("orr", "v1.4s, #0x1, lsl #8"), mi_pairs)
+            self.assertIn(("bic", "v1.8h, #0xff, lsl #8"), mi_pairs)
+            self.assertIn(("fmov", "v1.4h, #2.00000000"), mi_pairs)
+            self.assertIn(("fmov", "v1.2d, #0.13281250"), mi_pairs)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

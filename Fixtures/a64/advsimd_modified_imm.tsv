@@ -1,0 +1,3052 @@
+# A64 encoding reference table: advsimd_modified_imm
+# ARM DDI 0487 C4.1.95.14 Advanced SIMD modified immediate: (word & 0x9ff80400) == 0x0f000400.
+# Enumerates all 2 x 2 x 16 x 2 = 128 combinations of Q=0..1, op=0..1, cmode=0..15, o2=0..1:
+# imm8 in {0x00, 0x01, 0x80, 0xff} for cmode=0..14 with Rd=1 (480 rows), all 256 imm8=0..255 values
+# for cmode=0b1111 FMOV/unallocated space with Rd=1 (2,048 rows), plus Rd=31 across cmode=0..15
+# with imm8 in {0x00, 0x01, 0x80, 0xff} (512 rows), totaling 3,040 rows.
+# Rows: 3040 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e advsimd_modified_imm.s -o advsimd_modified_imm.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text advsimd_modified_imm.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate advsimd_modified_imm
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x0f000401	movi	v1.2s, #0x0
+0x0f000421	movi	v1.2s, #0x1
+0x0f040401	movi	v1.2s, #0x80
+0x0f0707e1	movi	v1.2s, #0xff
+0x0f000c01	.long	0x0f000c01
+0x0f000c21	.long	0x0f000c21
+0x0f040c01	.long	0x0f040c01
+0x0f070fe1	.long	0x0f070fe1
+0x0f001401	orr	v1.2s, #0x0
+0x0f001421	orr	v1.2s, #0x1
+0x0f041401	orr	v1.2s, #0x80
+0x0f0717e1	orr	v1.2s, #0xff
+0x0f001c01	.long	0x0f001c01
+0x0f001c21	.long	0x0f001c21
+0x0f041c01	.long	0x0f041c01
+0x0f071fe1	.long	0x0f071fe1
+0x0f002401	movi	v1.2s, #0x0, lsl #8
+0x0f002421	movi	v1.2s, #0x1, lsl #8
+0x0f042401	movi	v1.2s, #0x80, lsl #8
+0x0f0727e1	movi	v1.2s, #0xff, lsl #8
+0x0f002c01	.long	0x0f002c01
+0x0f002c21	.long	0x0f002c21
+0x0f042c01	.long	0x0f042c01
+0x0f072fe1	.long	0x0f072fe1
+0x0f003401	orr	v1.2s, #0x0, lsl #8
+0x0f003421	orr	v1.2s, #0x1, lsl #8
+0x0f043401	orr	v1.2s, #0x80, lsl #8
+0x0f0737e1	orr	v1.2s, #0xff, lsl #8
+0x0f003c01	.long	0x0f003c01
+0x0f003c21	.long	0x0f003c21
+0x0f043c01	.long	0x0f043c01
+0x0f073fe1	.long	0x0f073fe1
+0x0f004401	movi	v1.2s, #0x0, lsl #16
+0x0f004421	movi	v1.2s, #0x1, lsl #16
+0x0f044401	movi	v1.2s, #0x80, lsl #16
+0x0f0747e1	movi	v1.2s, #0xff, lsl #16
+0x0f004c01	.long	0x0f004c01
+0x0f004c21	.long	0x0f004c21
+0x0f044c01	.long	0x0f044c01
+0x0f074fe1	.long	0x0f074fe1
+0x0f005401	orr	v1.2s, #0x0, lsl #16
+0x0f005421	orr	v1.2s, #0x1, lsl #16
+0x0f045401	orr	v1.2s, #0x80, lsl #16
+0x0f0757e1	orr	v1.2s, #0xff, lsl #16
+0x0f005c01	.long	0x0f005c01
+0x0f005c21	.long	0x0f005c21
+0x0f045c01	.long	0x0f045c01
+0x0f075fe1	.long	0x0f075fe1
+0x0f006401	movi	v1.2s, #0x0, lsl #24
+0x0f006421	movi	v1.2s, #0x1, lsl #24
+0x0f046401	movi	v1.2s, #0x80, lsl #24
+0x0f0767e1	movi	v1.2s, #0xff, lsl #24
+0x0f006c01	.long	0x0f006c01
+0x0f006c21	.long	0x0f006c21
+0x0f046c01	.long	0x0f046c01
+0x0f076fe1	.long	0x0f076fe1
+0x0f007401	orr	v1.2s, #0x0, lsl #24
+0x0f007421	orr	v1.2s, #0x1, lsl #24
+0x0f047401	orr	v1.2s, #0x80, lsl #24
+0x0f0777e1	orr	v1.2s, #0xff, lsl #24
+0x0f007c01	.long	0x0f007c01
+0x0f007c21	.long	0x0f007c21
+0x0f047c01	.long	0x0f047c01
+0x0f077fe1	.long	0x0f077fe1
+0x0f008401	movi	v1.4h, #0x0
+0x0f008421	movi	v1.4h, #0x1
+0x0f048401	movi	v1.4h, #0x80
+0x0f0787e1	movi	v1.4h, #0xff
+0x0f008c01	.long	0x0f008c01
+0x0f008c21	.long	0x0f008c21
+0x0f048c01	.long	0x0f048c01
+0x0f078fe1	.long	0x0f078fe1
+0x0f009401	orr	v1.4h, #0x0
+0x0f009421	orr	v1.4h, #0x1
+0x0f049401	orr	v1.4h, #0x80
+0x0f0797e1	orr	v1.4h, #0xff
+0x0f009c01	.long	0x0f009c01
+0x0f009c21	.long	0x0f009c21
+0x0f049c01	.long	0x0f049c01
+0x0f079fe1	.long	0x0f079fe1
+0x0f00a401	movi	v1.4h, #0x0, lsl #8
+0x0f00a421	movi	v1.4h, #0x1, lsl #8
+0x0f04a401	movi	v1.4h, #0x80, lsl #8
+0x0f07a7e1	movi	v1.4h, #0xff, lsl #8
+0x0f00ac01	.long	0x0f00ac01
+0x0f00ac21	.long	0x0f00ac21
+0x0f04ac01	.long	0x0f04ac01
+0x0f07afe1	.long	0x0f07afe1
+0x0f00b401	orr	v1.4h, #0x0, lsl #8
+0x0f00b421	orr	v1.4h, #0x1, lsl #8
+0x0f04b401	orr	v1.4h, #0x80, lsl #8
+0x0f07b7e1	orr	v1.4h, #0xff, lsl #8
+0x0f00bc01	.long	0x0f00bc01
+0x0f00bc21	.long	0x0f00bc21
+0x0f04bc01	.long	0x0f04bc01
+0x0f07bfe1	.long	0x0f07bfe1
+0x0f00c401	movi	v1.2s, #0x0, msl #8
+0x0f00c421	movi	v1.2s, #0x1, msl #8
+0x0f04c401	movi	v1.2s, #0x80, msl #8
+0x0f07c7e1	movi	v1.2s, #0xff, msl #8
+0x0f00cc01	.long	0x0f00cc01
+0x0f00cc21	.long	0x0f00cc21
+0x0f04cc01	.long	0x0f04cc01
+0x0f07cfe1	.long	0x0f07cfe1
+0x0f00d401	movi	v1.2s, #0x0, msl #16
+0x0f00d421	movi	v1.2s, #0x1, msl #16
+0x0f04d401	movi	v1.2s, #0x80, msl #16
+0x0f07d7e1	movi	v1.2s, #0xff, msl #16
+0x0f00dc01	.long	0x0f00dc01
+0x0f00dc21	.long	0x0f00dc21
+0x0f04dc01	.long	0x0f04dc01
+0x0f07dfe1	.long	0x0f07dfe1
+0x0f00e401	movi	v1.8b, #0x0
+0x0f00e421	movi	v1.8b, #0x1
+0x0f04e401	movi	v1.8b, #0x80
+0x0f07e7e1	movi	v1.8b, #0xff
+0x0f00ec01	.long	0x0f00ec01
+0x0f00ec21	.long	0x0f00ec21
+0x0f04ec01	.long	0x0f04ec01
+0x0f07efe1	.long	0x0f07efe1
+0x0f00f401	fmov	v1.2s, #2.00000000
+0x0f00f421	fmov	v1.2s, #2.12500000
+0x0f00f441	fmov	v1.2s, #2.25000000
+0x0f00f461	fmov	v1.2s, #2.37500000
+0x0f00f481	fmov	v1.2s, #2.50000000
+0x0f00f4a1	fmov	v1.2s, #2.62500000
+0x0f00f4c1	fmov	v1.2s, #2.75000000
+0x0f00f4e1	fmov	v1.2s, #2.87500000
+0x0f00f501	fmov	v1.2s, #3.00000000
+0x0f00f521	fmov	v1.2s, #3.12500000
+0x0f00f541	fmov	v1.2s, #3.25000000
+0x0f00f561	fmov	v1.2s, #3.37500000
+0x0f00f581	fmov	v1.2s, #3.50000000
+0x0f00f5a1	fmov	v1.2s, #3.62500000
+0x0f00f5c1	fmov	v1.2s, #3.75000000
+0x0f00f5e1	fmov	v1.2s, #3.87500000
+0x0f00f601	fmov	v1.2s, #4.00000000
+0x0f00f621	fmov	v1.2s, #4.25000000
+0x0f00f641	fmov	v1.2s, #4.50000000
+0x0f00f661	fmov	v1.2s, #4.75000000
+0x0f00f681	fmov	v1.2s, #5.00000000
+0x0f00f6a1	fmov	v1.2s, #5.25000000
+0x0f00f6c1	fmov	v1.2s, #5.50000000
+0x0f00f6e1	fmov	v1.2s, #5.75000000
+0x0f00f701	fmov	v1.2s, #6.00000000
+0x0f00f721	fmov	v1.2s, #6.25000000
+0x0f00f741	fmov	v1.2s, #6.50000000
+0x0f00f761	fmov	v1.2s, #6.75000000
+0x0f00f781	fmov	v1.2s, #7.00000000
+0x0f00f7a1	fmov	v1.2s, #7.25000000
+0x0f00f7c1	fmov	v1.2s, #7.50000000
+0x0f00f7e1	fmov	v1.2s, #7.75000000
+0x0f01f401	fmov	v1.2s, #8.00000000
+0x0f01f421	fmov	v1.2s, #8.50000000
+0x0f01f441	fmov	v1.2s, #9.00000000
+0x0f01f461	fmov	v1.2s, #9.50000000
+0x0f01f481	fmov	v1.2s, #10.00000000
+0x0f01f4a1	fmov	v1.2s, #10.50000000
+0x0f01f4c1	fmov	v1.2s, #11.00000000
+0x0f01f4e1	fmov	v1.2s, #11.50000000
+0x0f01f501	fmov	v1.2s, #12.00000000
+0x0f01f521	fmov	v1.2s, #12.50000000
+0x0f01f541	fmov	v1.2s, #13.00000000
+0x0f01f561	fmov	v1.2s, #13.50000000
+0x0f01f581	fmov	v1.2s, #14.00000000
+0x0f01f5a1	fmov	v1.2s, #14.50000000
+0x0f01f5c1	fmov	v1.2s, #15.00000000
+0x0f01f5e1	fmov	v1.2s, #15.50000000
+0x0f01f601	fmov	v1.2s, #16.00000000
+0x0f01f621	fmov	v1.2s, #17.00000000
+0x0f01f641	fmov	v1.2s, #18.00000000
+0x0f01f661	fmov	v1.2s, #19.00000000
+0x0f01f681	fmov	v1.2s, #20.00000000
+0x0f01f6a1	fmov	v1.2s, #21.00000000
+0x0f01f6c1	fmov	v1.2s, #22.00000000
+0x0f01f6e1	fmov	v1.2s, #23.00000000
+0x0f01f701	fmov	v1.2s, #24.00000000
+0x0f01f721	fmov	v1.2s, #25.00000000
+0x0f01f741	fmov	v1.2s, #26.00000000
+0x0f01f761	fmov	v1.2s, #27.00000000
+0x0f01f781	fmov	v1.2s, #28.00000000
+0x0f01f7a1	fmov	v1.2s, #29.00000000
+0x0f01f7c1	fmov	v1.2s, #30.00000000
+0x0f01f7e1	fmov	v1.2s, #31.00000000
+0x0f02f401	fmov	v1.2s, #0.12500000
+0x0f02f421	fmov	v1.2s, #0.13281250
+0x0f02f441	fmov	v1.2s, #0.14062500
+0x0f02f461	fmov	v1.2s, #0.14843750
+0x0f02f481	fmov	v1.2s, #0.15625000
+0x0f02f4a1	fmov	v1.2s, #0.16406250
+0x0f02f4c1	fmov	v1.2s, #0.17187500
+0x0f02f4e1	fmov	v1.2s, #0.17968750
+0x0f02f501	fmov	v1.2s, #0.18750000
+0x0f02f521	fmov	v1.2s, #0.19531250
+0x0f02f541	fmov	v1.2s, #0.20312500
+0x0f02f561	fmov	v1.2s, #0.21093750
+0x0f02f581	fmov	v1.2s, #0.21875000
+0x0f02f5a1	fmov	v1.2s, #0.22656250
+0x0f02f5c1	fmov	v1.2s, #0.23437500
+0x0f02f5e1	fmov	v1.2s, #0.24218750
+0x0f02f601	fmov	v1.2s, #0.25000000
+0x0f02f621	fmov	v1.2s, #0.26562500
+0x0f02f641	fmov	v1.2s, #0.28125000
+0x0f02f661	fmov	v1.2s, #0.29687500
+0x0f02f681	fmov	v1.2s, #0.31250000
+0x0f02f6a1	fmov	v1.2s, #0.32812500
+0x0f02f6c1	fmov	v1.2s, #0.34375000
+0x0f02f6e1	fmov	v1.2s, #0.35937500
+0x0f02f701	fmov	v1.2s, #0.37500000
+0x0f02f721	fmov	v1.2s, #0.39062500
+0x0f02f741	fmov	v1.2s, #0.40625000
+0x0f02f761	fmov	v1.2s, #0.42187500
+0x0f02f781	fmov	v1.2s, #0.43750000
+0x0f02f7a1	fmov	v1.2s, #0.45312500
+0x0f02f7c1	fmov	v1.2s, #0.46875000
+0x0f02f7e1	fmov	v1.2s, #0.48437500
+0x0f03f401	fmov	v1.2s, #0.50000000
+0x0f03f421	fmov	v1.2s, #0.53125000
+0x0f03f441	fmov	v1.2s, #0.56250000
+0x0f03f461	fmov	v1.2s, #0.59375000
+0x0f03f481	fmov	v1.2s, #0.62500000
+0x0f03f4a1	fmov	v1.2s, #0.65625000
+0x0f03f4c1	fmov	v1.2s, #0.68750000
+0x0f03f4e1	fmov	v1.2s, #0.71875000
+0x0f03f501	fmov	v1.2s, #0.75000000
+0x0f03f521	fmov	v1.2s, #0.78125000
+0x0f03f541	fmov	v1.2s, #0.81250000
+0x0f03f561	fmov	v1.2s, #0.84375000
+0x0f03f581	fmov	v1.2s, #0.87500000
+0x0f03f5a1	fmov	v1.2s, #0.90625000
+0x0f03f5c1	fmov	v1.2s, #0.93750000
+0x0f03f5e1	fmov	v1.2s, #0.96875000
+0x0f03f601	fmov	v1.2s, #1.00000000
+0x0f03f621	fmov	v1.2s, #1.06250000
+0x0f03f641	fmov	v1.2s, #1.12500000
+0x0f03f661	fmov	v1.2s, #1.18750000
+0x0f03f681	fmov	v1.2s, #1.25000000
+0x0f03f6a1	fmov	v1.2s, #1.31250000
+0x0f03f6c1	fmov	v1.2s, #1.37500000
+0x0f03f6e1	fmov	v1.2s, #1.43750000
+0x0f03f701	fmov	v1.2s, #1.50000000
+0x0f03f721	fmov	v1.2s, #1.56250000
+0x0f03f741	fmov	v1.2s, #1.62500000
+0x0f03f761	fmov	v1.2s, #1.68750000
+0x0f03f781	fmov	v1.2s, #1.75000000
+0x0f03f7a1	fmov	v1.2s, #1.81250000
+0x0f03f7c1	fmov	v1.2s, #1.87500000
+0x0f03f7e1	fmov	v1.2s, #1.93750000
+0x0f04f401	fmov	v1.2s, #-2.00000000
+0x0f04f421	fmov	v1.2s, #-2.12500000
+0x0f04f441	fmov	v1.2s, #-2.25000000
+0x0f04f461	fmov	v1.2s, #-2.37500000
+0x0f04f481	fmov	v1.2s, #-2.50000000
+0x0f04f4a1	fmov	v1.2s, #-2.62500000
+0x0f04f4c1	fmov	v1.2s, #-2.75000000
+0x0f04f4e1	fmov	v1.2s, #-2.87500000
+0x0f04f501	fmov	v1.2s, #-3.00000000
+0x0f04f521	fmov	v1.2s, #-3.12500000
+0x0f04f541	fmov	v1.2s, #-3.25000000
+0x0f04f561	fmov	v1.2s, #-3.37500000
+0x0f04f581	fmov	v1.2s, #-3.50000000
+0x0f04f5a1	fmov	v1.2s, #-3.62500000
+0x0f04f5c1	fmov	v1.2s, #-3.75000000
+0x0f04f5e1	fmov	v1.2s, #-3.87500000
+0x0f04f601	fmov	v1.2s, #-4.00000000
+0x0f04f621	fmov	v1.2s, #-4.25000000
+0x0f04f641	fmov	v1.2s, #-4.50000000
+0x0f04f661	fmov	v1.2s, #-4.75000000
+0x0f04f681	fmov	v1.2s, #-5.00000000
+0x0f04f6a1	fmov	v1.2s, #-5.25000000
+0x0f04f6c1	fmov	v1.2s, #-5.50000000
+0x0f04f6e1	fmov	v1.2s, #-5.75000000
+0x0f04f701	fmov	v1.2s, #-6.00000000
+0x0f04f721	fmov	v1.2s, #-6.25000000
+0x0f04f741	fmov	v1.2s, #-6.50000000
+0x0f04f761	fmov	v1.2s, #-6.75000000
+0x0f04f781	fmov	v1.2s, #-7.00000000
+0x0f04f7a1	fmov	v1.2s, #-7.25000000
+0x0f04f7c1	fmov	v1.2s, #-7.50000000
+0x0f04f7e1	fmov	v1.2s, #-7.75000000
+0x0f05f401	fmov	v1.2s, #-8.00000000
+0x0f05f421	fmov	v1.2s, #-8.50000000
+0x0f05f441	fmov	v1.2s, #-9.00000000
+0x0f05f461	fmov	v1.2s, #-9.50000000
+0x0f05f481	fmov	v1.2s, #-10.00000000
+0x0f05f4a1	fmov	v1.2s, #-10.50000000
+0x0f05f4c1	fmov	v1.2s, #-11.00000000
+0x0f05f4e1	fmov	v1.2s, #-11.50000000
+0x0f05f501	fmov	v1.2s, #-12.00000000
+0x0f05f521	fmov	v1.2s, #-12.50000000
+0x0f05f541	fmov	v1.2s, #-13.00000000
+0x0f05f561	fmov	v1.2s, #-13.50000000
+0x0f05f581	fmov	v1.2s, #-14.00000000
+0x0f05f5a1	fmov	v1.2s, #-14.50000000
+0x0f05f5c1	fmov	v1.2s, #-15.00000000
+0x0f05f5e1	fmov	v1.2s, #-15.50000000
+0x0f05f601	fmov	v1.2s, #-16.00000000
+0x0f05f621	fmov	v1.2s, #-17.00000000
+0x0f05f641	fmov	v1.2s, #-18.00000000
+0x0f05f661	fmov	v1.2s, #-19.00000000
+0x0f05f681	fmov	v1.2s, #-20.00000000
+0x0f05f6a1	fmov	v1.2s, #-21.00000000
+0x0f05f6c1	fmov	v1.2s, #-22.00000000
+0x0f05f6e1	fmov	v1.2s, #-23.00000000
+0x0f05f701	fmov	v1.2s, #-24.00000000
+0x0f05f721	fmov	v1.2s, #-25.00000000
+0x0f05f741	fmov	v1.2s, #-26.00000000
+0x0f05f761	fmov	v1.2s, #-27.00000000
+0x0f05f781	fmov	v1.2s, #-28.00000000
+0x0f05f7a1	fmov	v1.2s, #-29.00000000
+0x0f05f7c1	fmov	v1.2s, #-30.00000000
+0x0f05f7e1	fmov	v1.2s, #-31.00000000
+0x0f06f401	fmov	v1.2s, #-0.12500000
+0x0f06f421	fmov	v1.2s, #-0.13281250
+0x0f06f441	fmov	v1.2s, #-0.14062500
+0x0f06f461	fmov	v1.2s, #-0.14843750
+0x0f06f481	fmov	v1.2s, #-0.15625000
+0x0f06f4a1	fmov	v1.2s, #-0.16406250
+0x0f06f4c1	fmov	v1.2s, #-0.17187500
+0x0f06f4e1	fmov	v1.2s, #-0.17968750
+0x0f06f501	fmov	v1.2s, #-0.18750000
+0x0f06f521	fmov	v1.2s, #-0.19531250
+0x0f06f541	fmov	v1.2s, #-0.20312500
+0x0f06f561	fmov	v1.2s, #-0.21093750
+0x0f06f581	fmov	v1.2s, #-0.21875000
+0x0f06f5a1	fmov	v1.2s, #-0.22656250
+0x0f06f5c1	fmov	v1.2s, #-0.23437500
+0x0f06f5e1	fmov	v1.2s, #-0.24218750
+0x0f06f601	fmov	v1.2s, #-0.25000000
+0x0f06f621	fmov	v1.2s, #-0.26562500
+0x0f06f641	fmov	v1.2s, #-0.28125000
+0x0f06f661	fmov	v1.2s, #-0.29687500
+0x0f06f681	fmov	v1.2s, #-0.31250000
+0x0f06f6a1	fmov	v1.2s, #-0.32812500
+0x0f06f6c1	fmov	v1.2s, #-0.34375000
+0x0f06f6e1	fmov	v1.2s, #-0.35937500
+0x0f06f701	fmov	v1.2s, #-0.37500000
+0x0f06f721	fmov	v1.2s, #-0.39062500
+0x0f06f741	fmov	v1.2s, #-0.40625000
+0x0f06f761	fmov	v1.2s, #-0.42187500
+0x0f06f781	fmov	v1.2s, #-0.43750000
+0x0f06f7a1	fmov	v1.2s, #-0.45312500
+0x0f06f7c1	fmov	v1.2s, #-0.46875000
+0x0f06f7e1	fmov	v1.2s, #-0.48437500
+0x0f07f401	fmov	v1.2s, #-0.50000000
+0x0f07f421	fmov	v1.2s, #-0.53125000
+0x0f07f441	fmov	v1.2s, #-0.56250000
+0x0f07f461	fmov	v1.2s, #-0.59375000
+0x0f07f481	fmov	v1.2s, #-0.62500000
+0x0f07f4a1	fmov	v1.2s, #-0.65625000
+0x0f07f4c1	fmov	v1.2s, #-0.68750000
+0x0f07f4e1	fmov	v1.2s, #-0.71875000
+0x0f07f501	fmov	v1.2s, #-0.75000000
+0x0f07f521	fmov	v1.2s, #-0.78125000
+0x0f07f541	fmov	v1.2s, #-0.81250000
+0x0f07f561	fmov	v1.2s, #-0.84375000
+0x0f07f581	fmov	v1.2s, #-0.87500000
+0x0f07f5a1	fmov	v1.2s, #-0.90625000
+0x0f07f5c1	fmov	v1.2s, #-0.93750000
+0x0f07f5e1	fmov	v1.2s, #-0.96875000
+0x0f07f601	fmov	v1.2s, #-1.00000000
+0x0f07f621	fmov	v1.2s, #-1.06250000
+0x0f07f641	fmov	v1.2s, #-1.12500000
+0x0f07f661	fmov	v1.2s, #-1.18750000
+0x0f07f681	fmov	v1.2s, #-1.25000000
+0x0f07f6a1	fmov	v1.2s, #-1.31250000
+0x0f07f6c1	fmov	v1.2s, #-1.37500000
+0x0f07f6e1	fmov	v1.2s, #-1.43750000
+0x0f07f701	fmov	v1.2s, #-1.50000000
+0x0f07f721	fmov	v1.2s, #-1.56250000
+0x0f07f741	fmov	v1.2s, #-1.62500000
+0x0f07f761	fmov	v1.2s, #-1.68750000
+0x0f07f781	fmov	v1.2s, #-1.75000000
+0x0f07f7a1	fmov	v1.2s, #-1.81250000
+0x0f07f7c1	fmov	v1.2s, #-1.87500000
+0x0f07f7e1	fmov	v1.2s, #-1.93750000
+0x0f00fc01	fmov	v1.4h, #2.00000000
+0x0f00fc21	fmov	v1.4h, #2.12500000
+0x0f00fc41	fmov	v1.4h, #2.25000000
+0x0f00fc61	fmov	v1.4h, #2.37500000
+0x0f00fc81	fmov	v1.4h, #2.50000000
+0x0f00fca1	fmov	v1.4h, #2.62500000
+0x0f00fcc1	fmov	v1.4h, #2.75000000
+0x0f00fce1	fmov	v1.4h, #2.87500000
+0x0f00fd01	fmov	v1.4h, #3.00000000
+0x0f00fd21	fmov	v1.4h, #3.12500000
+0x0f00fd41	fmov	v1.4h, #3.25000000
+0x0f00fd61	fmov	v1.4h, #3.37500000
+0x0f00fd81	fmov	v1.4h, #3.50000000
+0x0f00fda1	fmov	v1.4h, #3.62500000
+0x0f00fdc1	fmov	v1.4h, #3.75000000
+0x0f00fde1	fmov	v1.4h, #3.87500000
+0x0f00fe01	fmov	v1.4h, #4.00000000
+0x0f00fe21	fmov	v1.4h, #4.25000000
+0x0f00fe41	fmov	v1.4h, #4.50000000
+0x0f00fe61	fmov	v1.4h, #4.75000000
+0x0f00fe81	fmov	v1.4h, #5.00000000
+0x0f00fea1	fmov	v1.4h, #5.25000000
+0x0f00fec1	fmov	v1.4h, #5.50000000
+0x0f00fee1	fmov	v1.4h, #5.75000000
+0x0f00ff01	fmov	v1.4h, #6.00000000
+0x0f00ff21	fmov	v1.4h, #6.25000000
+0x0f00ff41	fmov	v1.4h, #6.50000000
+0x0f00ff61	fmov	v1.4h, #6.75000000
+0x0f00ff81	fmov	v1.4h, #7.00000000
+0x0f00ffa1	fmov	v1.4h, #7.25000000
+0x0f00ffc1	fmov	v1.4h, #7.50000000
+0x0f00ffe1	fmov	v1.4h, #7.75000000
+0x0f01fc01	fmov	v1.4h, #8.00000000
+0x0f01fc21	fmov	v1.4h, #8.50000000
+0x0f01fc41	fmov	v1.4h, #9.00000000
+0x0f01fc61	fmov	v1.4h, #9.50000000
+0x0f01fc81	fmov	v1.4h, #10.00000000
+0x0f01fca1	fmov	v1.4h, #10.50000000
+0x0f01fcc1	fmov	v1.4h, #11.00000000
+0x0f01fce1	fmov	v1.4h, #11.50000000
+0x0f01fd01	fmov	v1.4h, #12.00000000
+0x0f01fd21	fmov	v1.4h, #12.50000000
+0x0f01fd41	fmov	v1.4h, #13.00000000
+0x0f01fd61	fmov	v1.4h, #13.50000000
+0x0f01fd81	fmov	v1.4h, #14.00000000
+0x0f01fda1	fmov	v1.4h, #14.50000000
+0x0f01fdc1	fmov	v1.4h, #15.00000000
+0x0f01fde1	fmov	v1.4h, #15.50000000
+0x0f01fe01	fmov	v1.4h, #16.00000000
+0x0f01fe21	fmov	v1.4h, #17.00000000
+0x0f01fe41	fmov	v1.4h, #18.00000000
+0x0f01fe61	fmov	v1.4h, #19.00000000
+0x0f01fe81	fmov	v1.4h, #20.00000000
+0x0f01fea1	fmov	v1.4h, #21.00000000
+0x0f01fec1	fmov	v1.4h, #22.00000000
+0x0f01fee1	fmov	v1.4h, #23.00000000
+0x0f01ff01	fmov	v1.4h, #24.00000000
+0x0f01ff21	fmov	v1.4h, #25.00000000
+0x0f01ff41	fmov	v1.4h, #26.00000000
+0x0f01ff61	fmov	v1.4h, #27.00000000
+0x0f01ff81	fmov	v1.4h, #28.00000000
+0x0f01ffa1	fmov	v1.4h, #29.00000000
+0x0f01ffc1	fmov	v1.4h, #30.00000000
+0x0f01ffe1	fmov	v1.4h, #31.00000000
+0x0f02fc01	fmov	v1.4h, #0.12500000
+0x0f02fc21	fmov	v1.4h, #0.13281250
+0x0f02fc41	fmov	v1.4h, #0.14062500
+0x0f02fc61	fmov	v1.4h, #0.14843750
+0x0f02fc81	fmov	v1.4h, #0.15625000
+0x0f02fca1	fmov	v1.4h, #0.16406250
+0x0f02fcc1	fmov	v1.4h, #0.17187500
+0x0f02fce1	fmov	v1.4h, #0.17968750
+0x0f02fd01	fmov	v1.4h, #0.18750000
+0x0f02fd21	fmov	v1.4h, #0.19531250
+0x0f02fd41	fmov	v1.4h, #0.20312500
+0x0f02fd61	fmov	v1.4h, #0.21093750
+0x0f02fd81	fmov	v1.4h, #0.21875000
+0x0f02fda1	fmov	v1.4h, #0.22656250
+0x0f02fdc1	fmov	v1.4h, #0.23437500
+0x0f02fde1	fmov	v1.4h, #0.24218750
+0x0f02fe01	fmov	v1.4h, #0.25000000
+0x0f02fe21	fmov	v1.4h, #0.26562500
+0x0f02fe41	fmov	v1.4h, #0.28125000
+0x0f02fe61	fmov	v1.4h, #0.29687500
+0x0f02fe81	fmov	v1.4h, #0.31250000
+0x0f02fea1	fmov	v1.4h, #0.32812500
+0x0f02fec1	fmov	v1.4h, #0.34375000
+0x0f02fee1	fmov	v1.4h, #0.35937500
+0x0f02ff01	fmov	v1.4h, #0.37500000
+0x0f02ff21	fmov	v1.4h, #0.39062500
+0x0f02ff41	fmov	v1.4h, #0.40625000
+0x0f02ff61	fmov	v1.4h, #0.42187500
+0x0f02ff81	fmov	v1.4h, #0.43750000
+0x0f02ffa1	fmov	v1.4h, #0.45312500
+0x0f02ffc1	fmov	v1.4h, #0.46875000
+0x0f02ffe1	fmov	v1.4h, #0.48437500
+0x0f03fc01	fmov	v1.4h, #0.50000000
+0x0f03fc21	fmov	v1.4h, #0.53125000
+0x0f03fc41	fmov	v1.4h, #0.56250000
+0x0f03fc61	fmov	v1.4h, #0.59375000
+0x0f03fc81	fmov	v1.4h, #0.62500000
+0x0f03fca1	fmov	v1.4h, #0.65625000
+0x0f03fcc1	fmov	v1.4h, #0.68750000
+0x0f03fce1	fmov	v1.4h, #0.71875000
+0x0f03fd01	fmov	v1.4h, #0.75000000
+0x0f03fd21	fmov	v1.4h, #0.78125000
+0x0f03fd41	fmov	v1.4h, #0.81250000
+0x0f03fd61	fmov	v1.4h, #0.84375000
+0x0f03fd81	fmov	v1.4h, #0.87500000
+0x0f03fda1	fmov	v1.4h, #0.90625000
+0x0f03fdc1	fmov	v1.4h, #0.93750000
+0x0f03fde1	fmov	v1.4h, #0.96875000
+0x0f03fe01	fmov	v1.4h, #1.00000000
+0x0f03fe21	fmov	v1.4h, #1.06250000
+0x0f03fe41	fmov	v1.4h, #1.12500000
+0x0f03fe61	fmov	v1.4h, #1.18750000
+0x0f03fe81	fmov	v1.4h, #1.25000000
+0x0f03fea1	fmov	v1.4h, #1.31250000
+0x0f03fec1	fmov	v1.4h, #1.37500000
+0x0f03fee1	fmov	v1.4h, #1.43750000
+0x0f03ff01	fmov	v1.4h, #1.50000000
+0x0f03ff21	fmov	v1.4h, #1.56250000
+0x0f03ff41	fmov	v1.4h, #1.62500000
+0x0f03ff61	fmov	v1.4h, #1.68750000
+0x0f03ff81	fmov	v1.4h, #1.75000000
+0x0f03ffa1	fmov	v1.4h, #1.81250000
+0x0f03ffc1	fmov	v1.4h, #1.87500000
+0x0f03ffe1	fmov	v1.4h, #1.93750000
+0x0f04fc01	fmov	v1.4h, #-2.00000000
+0x0f04fc21	fmov	v1.4h, #-2.12500000
+0x0f04fc41	fmov	v1.4h, #-2.25000000
+0x0f04fc61	fmov	v1.4h, #-2.37500000
+0x0f04fc81	fmov	v1.4h, #-2.50000000
+0x0f04fca1	fmov	v1.4h, #-2.62500000
+0x0f04fcc1	fmov	v1.4h, #-2.75000000
+0x0f04fce1	fmov	v1.4h, #-2.87500000
+0x0f04fd01	fmov	v1.4h, #-3.00000000
+0x0f04fd21	fmov	v1.4h, #-3.12500000
+0x0f04fd41	fmov	v1.4h, #-3.25000000
+0x0f04fd61	fmov	v1.4h, #-3.37500000
+0x0f04fd81	fmov	v1.4h, #-3.50000000
+0x0f04fda1	fmov	v1.4h, #-3.62500000
+0x0f04fdc1	fmov	v1.4h, #-3.75000000
+0x0f04fde1	fmov	v1.4h, #-3.87500000
+0x0f04fe01	fmov	v1.4h, #-4.00000000
+0x0f04fe21	fmov	v1.4h, #-4.25000000
+0x0f04fe41	fmov	v1.4h, #-4.50000000
+0x0f04fe61	fmov	v1.4h, #-4.75000000
+0x0f04fe81	fmov	v1.4h, #-5.00000000
+0x0f04fea1	fmov	v1.4h, #-5.25000000
+0x0f04fec1	fmov	v1.4h, #-5.50000000
+0x0f04fee1	fmov	v1.4h, #-5.75000000
+0x0f04ff01	fmov	v1.4h, #-6.00000000
+0x0f04ff21	fmov	v1.4h, #-6.25000000
+0x0f04ff41	fmov	v1.4h, #-6.50000000
+0x0f04ff61	fmov	v1.4h, #-6.75000000
+0x0f04ff81	fmov	v1.4h, #-7.00000000
+0x0f04ffa1	fmov	v1.4h, #-7.25000000
+0x0f04ffc1	fmov	v1.4h, #-7.50000000
+0x0f04ffe1	fmov	v1.4h, #-7.75000000
+0x0f05fc01	fmov	v1.4h, #-8.00000000
+0x0f05fc21	fmov	v1.4h, #-8.50000000
+0x0f05fc41	fmov	v1.4h, #-9.00000000
+0x0f05fc61	fmov	v1.4h, #-9.50000000
+0x0f05fc81	fmov	v1.4h, #-10.00000000
+0x0f05fca1	fmov	v1.4h, #-10.50000000
+0x0f05fcc1	fmov	v1.4h, #-11.00000000
+0x0f05fce1	fmov	v1.4h, #-11.50000000
+0x0f05fd01	fmov	v1.4h, #-12.00000000
+0x0f05fd21	fmov	v1.4h, #-12.50000000
+0x0f05fd41	fmov	v1.4h, #-13.00000000
+0x0f05fd61	fmov	v1.4h, #-13.50000000
+0x0f05fd81	fmov	v1.4h, #-14.00000000
+0x0f05fda1	fmov	v1.4h, #-14.50000000
+0x0f05fdc1	fmov	v1.4h, #-15.00000000
+0x0f05fde1	fmov	v1.4h, #-15.50000000
+0x0f05fe01	fmov	v1.4h, #-16.00000000
+0x0f05fe21	fmov	v1.4h, #-17.00000000
+0x0f05fe41	fmov	v1.4h, #-18.00000000
+0x0f05fe61	fmov	v1.4h, #-19.00000000
+0x0f05fe81	fmov	v1.4h, #-20.00000000
+0x0f05fea1	fmov	v1.4h, #-21.00000000
+0x0f05fec1	fmov	v1.4h, #-22.00000000
+0x0f05fee1	fmov	v1.4h, #-23.00000000
+0x0f05ff01	fmov	v1.4h, #-24.00000000
+0x0f05ff21	fmov	v1.4h, #-25.00000000
+0x0f05ff41	fmov	v1.4h, #-26.00000000
+0x0f05ff61	fmov	v1.4h, #-27.00000000
+0x0f05ff81	fmov	v1.4h, #-28.00000000
+0x0f05ffa1	fmov	v1.4h, #-29.00000000
+0x0f05ffc1	fmov	v1.4h, #-30.00000000
+0x0f05ffe1	fmov	v1.4h, #-31.00000000
+0x0f06fc01	fmov	v1.4h, #-0.12500000
+0x0f06fc21	fmov	v1.4h, #-0.13281250
+0x0f06fc41	fmov	v1.4h, #-0.14062500
+0x0f06fc61	fmov	v1.4h, #-0.14843750
+0x0f06fc81	fmov	v1.4h, #-0.15625000
+0x0f06fca1	fmov	v1.4h, #-0.16406250
+0x0f06fcc1	fmov	v1.4h, #-0.17187500
+0x0f06fce1	fmov	v1.4h, #-0.17968750
+0x0f06fd01	fmov	v1.4h, #-0.18750000
+0x0f06fd21	fmov	v1.4h, #-0.19531250
+0x0f06fd41	fmov	v1.4h, #-0.20312500
+0x0f06fd61	fmov	v1.4h, #-0.21093750
+0x0f06fd81	fmov	v1.4h, #-0.21875000
+0x0f06fda1	fmov	v1.4h, #-0.22656250
+0x0f06fdc1	fmov	v1.4h, #-0.23437500
+0x0f06fde1	fmov	v1.4h, #-0.24218750
+0x0f06fe01	fmov	v1.4h, #-0.25000000
+0x0f06fe21	fmov	v1.4h, #-0.26562500
+0x0f06fe41	fmov	v1.4h, #-0.28125000
+0x0f06fe61	fmov	v1.4h, #-0.29687500
+0x0f06fe81	fmov	v1.4h, #-0.31250000
+0x0f06fea1	fmov	v1.4h, #-0.32812500
+0x0f06fec1	fmov	v1.4h, #-0.34375000
+0x0f06fee1	fmov	v1.4h, #-0.35937500
+0x0f06ff01	fmov	v1.4h, #-0.37500000
+0x0f06ff21	fmov	v1.4h, #-0.39062500
+0x0f06ff41	fmov	v1.4h, #-0.40625000
+0x0f06ff61	fmov	v1.4h, #-0.42187500
+0x0f06ff81	fmov	v1.4h, #-0.43750000
+0x0f06ffa1	fmov	v1.4h, #-0.45312500
+0x0f06ffc1	fmov	v1.4h, #-0.46875000
+0x0f06ffe1	fmov	v1.4h, #-0.48437500
+0x0f07fc01	fmov	v1.4h, #-0.50000000
+0x0f07fc21	fmov	v1.4h, #-0.53125000
+0x0f07fc41	fmov	v1.4h, #-0.56250000
+0x0f07fc61	fmov	v1.4h, #-0.59375000
+0x0f07fc81	fmov	v1.4h, #-0.62500000
+0x0f07fca1	fmov	v1.4h, #-0.65625000
+0x0f07fcc1	fmov	v1.4h, #-0.68750000
+0x0f07fce1	fmov	v1.4h, #-0.71875000
+0x0f07fd01	fmov	v1.4h, #-0.75000000
+0x0f07fd21	fmov	v1.4h, #-0.78125000
+0x0f07fd41	fmov	v1.4h, #-0.81250000
+0x0f07fd61	fmov	v1.4h, #-0.84375000
+0x0f07fd81	fmov	v1.4h, #-0.87500000
+0x0f07fda1	fmov	v1.4h, #-0.90625000
+0x0f07fdc1	fmov	v1.4h, #-0.93750000
+0x0f07fde1	fmov	v1.4h, #-0.96875000
+0x0f07fe01	fmov	v1.4h, #-1.00000000
+0x0f07fe21	fmov	v1.4h, #-1.06250000
+0x0f07fe41	fmov	v1.4h, #-1.12500000
+0x0f07fe61	fmov	v1.4h, #-1.18750000
+0x0f07fe81	fmov	v1.4h, #-1.25000000
+0x0f07fea1	fmov	v1.4h, #-1.31250000
+0x0f07fec1	fmov	v1.4h, #-1.37500000
+0x0f07fee1	fmov	v1.4h, #-1.43750000
+0x0f07ff01	fmov	v1.4h, #-1.50000000
+0x0f07ff21	fmov	v1.4h, #-1.56250000
+0x0f07ff41	fmov	v1.4h, #-1.62500000
+0x0f07ff61	fmov	v1.4h, #-1.68750000
+0x0f07ff81	fmov	v1.4h, #-1.75000000
+0x0f07ffa1	fmov	v1.4h, #-1.81250000
+0x0f07ffc1	fmov	v1.4h, #-1.87500000
+0x0f07ffe1	fmov	v1.4h, #-1.93750000
+0x2f000401	mvni	v1.2s, #0x0
+0x2f000421	mvni	v1.2s, #0x1
+0x2f040401	mvni	v1.2s, #0x80
+0x2f0707e1	mvni	v1.2s, #0xff
+0x2f000c01	.long	0x2f000c01
+0x2f000c21	.long	0x2f000c21
+0x2f040c01	.long	0x2f040c01
+0x2f070fe1	.long	0x2f070fe1
+0x2f001401	bic	v1.2s, #0x0
+0x2f001421	bic	v1.2s, #0x1
+0x2f041401	bic	v1.2s, #0x80
+0x2f0717e1	bic	v1.2s, #0xff
+0x2f001c01	.long	0x2f001c01
+0x2f001c21	.long	0x2f001c21
+0x2f041c01	.long	0x2f041c01
+0x2f071fe1	.long	0x2f071fe1
+0x2f002401	mvni	v1.2s, #0x0, lsl #8
+0x2f002421	mvni	v1.2s, #0x1, lsl #8
+0x2f042401	mvni	v1.2s, #0x80, lsl #8
+0x2f0727e1	mvni	v1.2s, #0xff, lsl #8
+0x2f002c01	.long	0x2f002c01
+0x2f002c21	.long	0x2f002c21
+0x2f042c01	.long	0x2f042c01
+0x2f072fe1	.long	0x2f072fe1
+0x2f003401	bic	v1.2s, #0x0, lsl #8
+0x2f003421	bic	v1.2s, #0x1, lsl #8
+0x2f043401	bic	v1.2s, #0x80, lsl #8
+0x2f0737e1	bic	v1.2s, #0xff, lsl #8
+0x2f003c01	.long	0x2f003c01
+0x2f003c21	.long	0x2f003c21
+0x2f043c01	.long	0x2f043c01
+0x2f073fe1	.long	0x2f073fe1
+0x2f004401	mvni	v1.2s, #0x0, lsl #16
+0x2f004421	mvni	v1.2s, #0x1, lsl #16
+0x2f044401	mvni	v1.2s, #0x80, lsl #16
+0x2f0747e1	mvni	v1.2s, #0xff, lsl #16
+0x2f004c01	.long	0x2f004c01
+0x2f004c21	.long	0x2f004c21
+0x2f044c01	.long	0x2f044c01
+0x2f074fe1	.long	0x2f074fe1
+0x2f005401	bic	v1.2s, #0x0, lsl #16
+0x2f005421	bic	v1.2s, #0x1, lsl #16
+0x2f045401	bic	v1.2s, #0x80, lsl #16
+0x2f0757e1	bic	v1.2s, #0xff, lsl #16
+0x2f005c01	.long	0x2f005c01
+0x2f005c21	.long	0x2f005c21
+0x2f045c01	.long	0x2f045c01
+0x2f075fe1	.long	0x2f075fe1
+0x2f006401	mvni	v1.2s, #0x0, lsl #24
+0x2f006421	mvni	v1.2s, #0x1, lsl #24
+0x2f046401	mvni	v1.2s, #0x80, lsl #24
+0x2f0767e1	mvni	v1.2s, #0xff, lsl #24
+0x2f006c01	.long	0x2f006c01
+0x2f006c21	.long	0x2f006c21
+0x2f046c01	.long	0x2f046c01
+0x2f076fe1	.long	0x2f076fe1
+0x2f007401	bic	v1.2s, #0x0, lsl #24
+0x2f007421	bic	v1.2s, #0x1, lsl #24
+0x2f047401	bic	v1.2s, #0x80, lsl #24
+0x2f0777e1	bic	v1.2s, #0xff, lsl #24
+0x2f007c01	.long	0x2f007c01
+0x2f007c21	.long	0x2f007c21
+0x2f047c01	.long	0x2f047c01
+0x2f077fe1	.long	0x2f077fe1
+0x2f008401	mvni	v1.4h, #0x0
+0x2f008421	mvni	v1.4h, #0x1
+0x2f048401	mvni	v1.4h, #0x80
+0x2f0787e1	mvni	v1.4h, #0xff
+0x2f008c01	.long	0x2f008c01
+0x2f008c21	.long	0x2f008c21
+0x2f048c01	.long	0x2f048c01
+0x2f078fe1	.long	0x2f078fe1
+0x2f009401	bic	v1.4h, #0x0
+0x2f009421	bic	v1.4h, #0x1
+0x2f049401	bic	v1.4h, #0x80
+0x2f0797e1	bic	v1.4h, #0xff
+0x2f009c01	.long	0x2f009c01
+0x2f009c21	.long	0x2f009c21
+0x2f049c01	.long	0x2f049c01
+0x2f079fe1	.long	0x2f079fe1
+0x2f00a401	mvni	v1.4h, #0x0, lsl #8
+0x2f00a421	mvni	v1.4h, #0x1, lsl #8
+0x2f04a401	mvni	v1.4h, #0x80, lsl #8
+0x2f07a7e1	mvni	v1.4h, #0xff, lsl #8
+0x2f00ac01	.long	0x2f00ac01
+0x2f00ac21	.long	0x2f00ac21
+0x2f04ac01	.long	0x2f04ac01
+0x2f07afe1	.long	0x2f07afe1
+0x2f00b401	bic	v1.4h, #0x0, lsl #8
+0x2f00b421	bic	v1.4h, #0x1, lsl #8
+0x2f04b401	bic	v1.4h, #0x80, lsl #8
+0x2f07b7e1	bic	v1.4h, #0xff, lsl #8
+0x2f00bc01	.long	0x2f00bc01
+0x2f00bc21	.long	0x2f00bc21
+0x2f04bc01	.long	0x2f04bc01
+0x2f07bfe1	.long	0x2f07bfe1
+0x2f00c401	mvni	v1.2s, #0x0, msl #8
+0x2f00c421	mvni	v1.2s, #0x1, msl #8
+0x2f04c401	mvni	v1.2s, #0x80, msl #8
+0x2f07c7e1	mvni	v1.2s, #0xff, msl #8
+0x2f00cc01	.long	0x2f00cc01
+0x2f00cc21	.long	0x2f00cc21
+0x2f04cc01	.long	0x2f04cc01
+0x2f07cfe1	.long	0x2f07cfe1
+0x2f00d401	mvni	v1.2s, #0x0, msl #16
+0x2f00d421	mvni	v1.2s, #0x1, msl #16
+0x2f04d401	mvni	v1.2s, #0x80, msl #16
+0x2f07d7e1	mvni	v1.2s, #0xff, msl #16
+0x2f00dc01	.long	0x2f00dc01
+0x2f00dc21	.long	0x2f00dc21
+0x2f04dc01	.long	0x2f04dc01
+0x2f07dfe1	.long	0x2f07dfe1
+0x2f00e401	movi	d1, #0000000000000000
+0x2f00e421	movi	d1, #0x000000000000ff
+0x2f04e401	movi	d1, #0xff00000000000000
+0x2f07e7e1	movi	d1, #0xffffffffffffffff
+0x2f00ec01	.long	0x2f00ec01
+0x2f00ec21	.long	0x2f00ec21
+0x2f04ec01	.long	0x2f04ec01
+0x2f07efe1	.long	0x2f07efe1
+0x2f00f401	.long	0x2f00f401
+0x2f00f421	.long	0x2f00f421
+0x2f00f441	.long	0x2f00f441
+0x2f00f461	.long	0x2f00f461
+0x2f00f481	.long	0x2f00f481
+0x2f00f4a1	.long	0x2f00f4a1
+0x2f00f4c1	.long	0x2f00f4c1
+0x2f00f4e1	.long	0x2f00f4e1
+0x2f00f501	.long	0x2f00f501
+0x2f00f521	.long	0x2f00f521
+0x2f00f541	.long	0x2f00f541
+0x2f00f561	.long	0x2f00f561
+0x2f00f581	.long	0x2f00f581
+0x2f00f5a1	.long	0x2f00f5a1
+0x2f00f5c1	.long	0x2f00f5c1
+0x2f00f5e1	.long	0x2f00f5e1
+0x2f00f601	.long	0x2f00f601
+0x2f00f621	.long	0x2f00f621
+0x2f00f641	.long	0x2f00f641
+0x2f00f661	.long	0x2f00f661
+0x2f00f681	.long	0x2f00f681
+0x2f00f6a1	.long	0x2f00f6a1
+0x2f00f6c1	.long	0x2f00f6c1
+0x2f00f6e1	.long	0x2f00f6e1
+0x2f00f701	.long	0x2f00f701
+0x2f00f721	.long	0x2f00f721
+0x2f00f741	.long	0x2f00f741
+0x2f00f761	.long	0x2f00f761
+0x2f00f781	.long	0x2f00f781
+0x2f00f7a1	.long	0x2f00f7a1
+0x2f00f7c1	.long	0x2f00f7c1
+0x2f00f7e1	.long	0x2f00f7e1
+0x2f01f401	.long	0x2f01f401
+0x2f01f421	.long	0x2f01f421
+0x2f01f441	.long	0x2f01f441
+0x2f01f461	.long	0x2f01f461
+0x2f01f481	.long	0x2f01f481
+0x2f01f4a1	.long	0x2f01f4a1
+0x2f01f4c1	.long	0x2f01f4c1
+0x2f01f4e1	.long	0x2f01f4e1
+0x2f01f501	.long	0x2f01f501
+0x2f01f521	.long	0x2f01f521
+0x2f01f541	.long	0x2f01f541
+0x2f01f561	.long	0x2f01f561
+0x2f01f581	.long	0x2f01f581
+0x2f01f5a1	.long	0x2f01f5a1
+0x2f01f5c1	.long	0x2f01f5c1
+0x2f01f5e1	.long	0x2f01f5e1
+0x2f01f601	.long	0x2f01f601
+0x2f01f621	.long	0x2f01f621
+0x2f01f641	.long	0x2f01f641
+0x2f01f661	.long	0x2f01f661
+0x2f01f681	.long	0x2f01f681
+0x2f01f6a1	.long	0x2f01f6a1
+0x2f01f6c1	.long	0x2f01f6c1
+0x2f01f6e1	.long	0x2f01f6e1
+0x2f01f701	.long	0x2f01f701
+0x2f01f721	.long	0x2f01f721
+0x2f01f741	.long	0x2f01f741
+0x2f01f761	.long	0x2f01f761
+0x2f01f781	.long	0x2f01f781
+0x2f01f7a1	.long	0x2f01f7a1
+0x2f01f7c1	.long	0x2f01f7c1
+0x2f01f7e1	.long	0x2f01f7e1
+0x2f02f401	.long	0x2f02f401
+0x2f02f421	.long	0x2f02f421
+0x2f02f441	.long	0x2f02f441
+0x2f02f461	.long	0x2f02f461
+0x2f02f481	.long	0x2f02f481
+0x2f02f4a1	.long	0x2f02f4a1
+0x2f02f4c1	.long	0x2f02f4c1
+0x2f02f4e1	.long	0x2f02f4e1
+0x2f02f501	.long	0x2f02f501
+0x2f02f521	.long	0x2f02f521
+0x2f02f541	.long	0x2f02f541
+0x2f02f561	.long	0x2f02f561
+0x2f02f581	.long	0x2f02f581
+0x2f02f5a1	.long	0x2f02f5a1
+0x2f02f5c1	.long	0x2f02f5c1
+0x2f02f5e1	.long	0x2f02f5e1
+0x2f02f601	.long	0x2f02f601
+0x2f02f621	.long	0x2f02f621
+0x2f02f641	.long	0x2f02f641
+0x2f02f661	.long	0x2f02f661
+0x2f02f681	.long	0x2f02f681
+0x2f02f6a1	.long	0x2f02f6a1
+0x2f02f6c1	.long	0x2f02f6c1
+0x2f02f6e1	.long	0x2f02f6e1
+0x2f02f701	.long	0x2f02f701
+0x2f02f721	.long	0x2f02f721
+0x2f02f741	.long	0x2f02f741
+0x2f02f761	.long	0x2f02f761
+0x2f02f781	.long	0x2f02f781
+0x2f02f7a1	.long	0x2f02f7a1
+0x2f02f7c1	.long	0x2f02f7c1
+0x2f02f7e1	.long	0x2f02f7e1
+0x2f03f401	.long	0x2f03f401
+0x2f03f421	.long	0x2f03f421
+0x2f03f441	.long	0x2f03f441
+0x2f03f461	.long	0x2f03f461
+0x2f03f481	.long	0x2f03f481
+0x2f03f4a1	.long	0x2f03f4a1
+0x2f03f4c1	.long	0x2f03f4c1
+0x2f03f4e1	.long	0x2f03f4e1
+0x2f03f501	.long	0x2f03f501
+0x2f03f521	.long	0x2f03f521
+0x2f03f541	.long	0x2f03f541
+0x2f03f561	.long	0x2f03f561
+0x2f03f581	.long	0x2f03f581
+0x2f03f5a1	.long	0x2f03f5a1
+0x2f03f5c1	.long	0x2f03f5c1
+0x2f03f5e1	.long	0x2f03f5e1
+0x2f03f601	.long	0x2f03f601
+0x2f03f621	.long	0x2f03f621
+0x2f03f641	.long	0x2f03f641
+0x2f03f661	.long	0x2f03f661
+0x2f03f681	.long	0x2f03f681
+0x2f03f6a1	.long	0x2f03f6a1
+0x2f03f6c1	.long	0x2f03f6c1
+0x2f03f6e1	.long	0x2f03f6e1
+0x2f03f701	.long	0x2f03f701
+0x2f03f721	.long	0x2f03f721
+0x2f03f741	.long	0x2f03f741
+0x2f03f761	.long	0x2f03f761
+0x2f03f781	.long	0x2f03f781
+0x2f03f7a1	.long	0x2f03f7a1
+0x2f03f7c1	.long	0x2f03f7c1
+0x2f03f7e1	.long	0x2f03f7e1
+0x2f04f401	.long	0x2f04f401
+0x2f04f421	.long	0x2f04f421
+0x2f04f441	.long	0x2f04f441
+0x2f04f461	.long	0x2f04f461
+0x2f04f481	.long	0x2f04f481
+0x2f04f4a1	.long	0x2f04f4a1
+0x2f04f4c1	.long	0x2f04f4c1
+0x2f04f4e1	.long	0x2f04f4e1
+0x2f04f501	.long	0x2f04f501
+0x2f04f521	.long	0x2f04f521
+0x2f04f541	.long	0x2f04f541
+0x2f04f561	.long	0x2f04f561
+0x2f04f581	.long	0x2f04f581
+0x2f04f5a1	.long	0x2f04f5a1
+0x2f04f5c1	.long	0x2f04f5c1
+0x2f04f5e1	.long	0x2f04f5e1
+0x2f04f601	.long	0x2f04f601
+0x2f04f621	.long	0x2f04f621
+0x2f04f641	.long	0x2f04f641
+0x2f04f661	.long	0x2f04f661
+0x2f04f681	.long	0x2f04f681
+0x2f04f6a1	.long	0x2f04f6a1
+0x2f04f6c1	.long	0x2f04f6c1
+0x2f04f6e1	.long	0x2f04f6e1
+0x2f04f701	.long	0x2f04f701
+0x2f04f721	.long	0x2f04f721
+0x2f04f741	.long	0x2f04f741
+0x2f04f761	.long	0x2f04f761
+0x2f04f781	.long	0x2f04f781
+0x2f04f7a1	.long	0x2f04f7a1
+0x2f04f7c1	.long	0x2f04f7c1
+0x2f04f7e1	.long	0x2f04f7e1
+0x2f05f401	.long	0x2f05f401
+0x2f05f421	.long	0x2f05f421
+0x2f05f441	.long	0x2f05f441
+0x2f05f461	.long	0x2f05f461
+0x2f05f481	.long	0x2f05f481
+0x2f05f4a1	.long	0x2f05f4a1
+0x2f05f4c1	.long	0x2f05f4c1
+0x2f05f4e1	.long	0x2f05f4e1
+0x2f05f501	.long	0x2f05f501
+0x2f05f521	.long	0x2f05f521
+0x2f05f541	.long	0x2f05f541
+0x2f05f561	.long	0x2f05f561
+0x2f05f581	.long	0x2f05f581
+0x2f05f5a1	.long	0x2f05f5a1
+0x2f05f5c1	.long	0x2f05f5c1
+0x2f05f5e1	.long	0x2f05f5e1
+0x2f05f601	.long	0x2f05f601
+0x2f05f621	.long	0x2f05f621
+0x2f05f641	.long	0x2f05f641
+0x2f05f661	.long	0x2f05f661
+0x2f05f681	.long	0x2f05f681
+0x2f05f6a1	.long	0x2f05f6a1
+0x2f05f6c1	.long	0x2f05f6c1
+0x2f05f6e1	.long	0x2f05f6e1
+0x2f05f701	.long	0x2f05f701
+0x2f05f721	.long	0x2f05f721
+0x2f05f741	.long	0x2f05f741
+0x2f05f761	.long	0x2f05f761
+0x2f05f781	.long	0x2f05f781
+0x2f05f7a1	.long	0x2f05f7a1
+0x2f05f7c1	.long	0x2f05f7c1
+0x2f05f7e1	.long	0x2f05f7e1
+0x2f06f401	.long	0x2f06f401
+0x2f06f421	.long	0x2f06f421
+0x2f06f441	.long	0x2f06f441
+0x2f06f461	.long	0x2f06f461
+0x2f06f481	.long	0x2f06f481
+0x2f06f4a1	.long	0x2f06f4a1
+0x2f06f4c1	.long	0x2f06f4c1
+0x2f06f4e1	.long	0x2f06f4e1
+0x2f06f501	.long	0x2f06f501
+0x2f06f521	.long	0x2f06f521
+0x2f06f541	.long	0x2f06f541
+0x2f06f561	.long	0x2f06f561
+0x2f06f581	.long	0x2f06f581
+0x2f06f5a1	.long	0x2f06f5a1
+0x2f06f5c1	.long	0x2f06f5c1
+0x2f06f5e1	.long	0x2f06f5e1
+0x2f06f601	.long	0x2f06f601
+0x2f06f621	.long	0x2f06f621
+0x2f06f641	.long	0x2f06f641
+0x2f06f661	.long	0x2f06f661
+0x2f06f681	.long	0x2f06f681
+0x2f06f6a1	.long	0x2f06f6a1
+0x2f06f6c1	.long	0x2f06f6c1
+0x2f06f6e1	.long	0x2f06f6e1
+0x2f06f701	.long	0x2f06f701
+0x2f06f721	.long	0x2f06f721
+0x2f06f741	.long	0x2f06f741
+0x2f06f761	.long	0x2f06f761
+0x2f06f781	.long	0x2f06f781
+0x2f06f7a1	.long	0x2f06f7a1
+0x2f06f7c1	.long	0x2f06f7c1
+0x2f06f7e1	.long	0x2f06f7e1
+0x2f07f401	.long	0x2f07f401
+0x2f07f421	.long	0x2f07f421
+0x2f07f441	.long	0x2f07f441
+0x2f07f461	.long	0x2f07f461
+0x2f07f481	.long	0x2f07f481
+0x2f07f4a1	.long	0x2f07f4a1
+0x2f07f4c1	.long	0x2f07f4c1
+0x2f07f4e1	.long	0x2f07f4e1
+0x2f07f501	.long	0x2f07f501
+0x2f07f521	.long	0x2f07f521
+0x2f07f541	.long	0x2f07f541
+0x2f07f561	.long	0x2f07f561
+0x2f07f581	.long	0x2f07f581
+0x2f07f5a1	.long	0x2f07f5a1
+0x2f07f5c1	.long	0x2f07f5c1
+0x2f07f5e1	.long	0x2f07f5e1
+0x2f07f601	.long	0x2f07f601
+0x2f07f621	.long	0x2f07f621
+0x2f07f641	.long	0x2f07f641
+0x2f07f661	.long	0x2f07f661
+0x2f07f681	.long	0x2f07f681
+0x2f07f6a1	.long	0x2f07f6a1
+0x2f07f6c1	.long	0x2f07f6c1
+0x2f07f6e1	.long	0x2f07f6e1
+0x2f07f701	.long	0x2f07f701
+0x2f07f721	.long	0x2f07f721
+0x2f07f741	.long	0x2f07f741
+0x2f07f761	.long	0x2f07f761
+0x2f07f781	.long	0x2f07f781
+0x2f07f7a1	.long	0x2f07f7a1
+0x2f07f7c1	.long	0x2f07f7c1
+0x2f07f7e1	.long	0x2f07f7e1
+0x2f00fc01	.long	0x2f00fc01
+0x2f00fc21	.long	0x2f00fc21
+0x2f00fc41	.long	0x2f00fc41
+0x2f00fc61	.long	0x2f00fc61
+0x2f00fc81	.long	0x2f00fc81
+0x2f00fca1	.long	0x2f00fca1
+0x2f00fcc1	.long	0x2f00fcc1
+0x2f00fce1	.long	0x2f00fce1
+0x2f00fd01	.long	0x2f00fd01
+0x2f00fd21	.long	0x2f00fd21
+0x2f00fd41	.long	0x2f00fd41
+0x2f00fd61	.long	0x2f00fd61
+0x2f00fd81	.long	0x2f00fd81
+0x2f00fda1	.long	0x2f00fda1
+0x2f00fdc1	.long	0x2f00fdc1
+0x2f00fde1	.long	0x2f00fde1
+0x2f00fe01	.long	0x2f00fe01
+0x2f00fe21	.long	0x2f00fe21
+0x2f00fe41	.long	0x2f00fe41
+0x2f00fe61	.long	0x2f00fe61
+0x2f00fe81	.long	0x2f00fe81
+0x2f00fea1	.long	0x2f00fea1
+0x2f00fec1	.long	0x2f00fec1
+0x2f00fee1	.long	0x2f00fee1
+0x2f00ff01	.long	0x2f00ff01
+0x2f00ff21	.long	0x2f00ff21
+0x2f00ff41	.long	0x2f00ff41
+0x2f00ff61	.long	0x2f00ff61
+0x2f00ff81	.long	0x2f00ff81
+0x2f00ffa1	.long	0x2f00ffa1
+0x2f00ffc1	.long	0x2f00ffc1
+0x2f00ffe1	.long	0x2f00ffe1
+0x2f01fc01	.long	0x2f01fc01
+0x2f01fc21	.long	0x2f01fc21
+0x2f01fc41	.long	0x2f01fc41
+0x2f01fc61	.long	0x2f01fc61
+0x2f01fc81	.long	0x2f01fc81
+0x2f01fca1	.long	0x2f01fca1
+0x2f01fcc1	.long	0x2f01fcc1
+0x2f01fce1	.long	0x2f01fce1
+0x2f01fd01	.long	0x2f01fd01
+0x2f01fd21	.long	0x2f01fd21
+0x2f01fd41	.long	0x2f01fd41
+0x2f01fd61	.long	0x2f01fd61
+0x2f01fd81	.long	0x2f01fd81
+0x2f01fda1	.long	0x2f01fda1
+0x2f01fdc1	.long	0x2f01fdc1
+0x2f01fde1	.long	0x2f01fde1
+0x2f01fe01	.long	0x2f01fe01
+0x2f01fe21	.long	0x2f01fe21
+0x2f01fe41	.long	0x2f01fe41
+0x2f01fe61	.long	0x2f01fe61
+0x2f01fe81	.long	0x2f01fe81
+0x2f01fea1	.long	0x2f01fea1
+0x2f01fec1	.long	0x2f01fec1
+0x2f01fee1	.long	0x2f01fee1
+0x2f01ff01	.long	0x2f01ff01
+0x2f01ff21	.long	0x2f01ff21
+0x2f01ff41	.long	0x2f01ff41
+0x2f01ff61	.long	0x2f01ff61
+0x2f01ff81	.long	0x2f01ff81
+0x2f01ffa1	.long	0x2f01ffa1
+0x2f01ffc1	.long	0x2f01ffc1
+0x2f01ffe1	.long	0x2f01ffe1
+0x2f02fc01	.long	0x2f02fc01
+0x2f02fc21	.long	0x2f02fc21
+0x2f02fc41	.long	0x2f02fc41
+0x2f02fc61	.long	0x2f02fc61
+0x2f02fc81	.long	0x2f02fc81
+0x2f02fca1	.long	0x2f02fca1
+0x2f02fcc1	.long	0x2f02fcc1
+0x2f02fce1	.long	0x2f02fce1
+0x2f02fd01	.long	0x2f02fd01
+0x2f02fd21	.long	0x2f02fd21
+0x2f02fd41	.long	0x2f02fd41
+0x2f02fd61	.long	0x2f02fd61
+0x2f02fd81	.long	0x2f02fd81
+0x2f02fda1	.long	0x2f02fda1
+0x2f02fdc1	.long	0x2f02fdc1
+0x2f02fde1	.long	0x2f02fde1
+0x2f02fe01	.long	0x2f02fe01
+0x2f02fe21	.long	0x2f02fe21
+0x2f02fe41	.long	0x2f02fe41
+0x2f02fe61	.long	0x2f02fe61
+0x2f02fe81	.long	0x2f02fe81
+0x2f02fea1	.long	0x2f02fea1
+0x2f02fec1	.long	0x2f02fec1
+0x2f02fee1	.long	0x2f02fee1
+0x2f02ff01	.long	0x2f02ff01
+0x2f02ff21	.long	0x2f02ff21
+0x2f02ff41	.long	0x2f02ff41
+0x2f02ff61	.long	0x2f02ff61
+0x2f02ff81	.long	0x2f02ff81
+0x2f02ffa1	.long	0x2f02ffa1
+0x2f02ffc1	.long	0x2f02ffc1
+0x2f02ffe1	.long	0x2f02ffe1
+0x2f03fc01	.long	0x2f03fc01
+0x2f03fc21	.long	0x2f03fc21
+0x2f03fc41	.long	0x2f03fc41
+0x2f03fc61	.long	0x2f03fc61
+0x2f03fc81	.long	0x2f03fc81
+0x2f03fca1	.long	0x2f03fca1
+0x2f03fcc1	.long	0x2f03fcc1
+0x2f03fce1	.long	0x2f03fce1
+0x2f03fd01	.long	0x2f03fd01
+0x2f03fd21	.long	0x2f03fd21
+0x2f03fd41	.long	0x2f03fd41
+0x2f03fd61	.long	0x2f03fd61
+0x2f03fd81	.long	0x2f03fd81
+0x2f03fda1	.long	0x2f03fda1
+0x2f03fdc1	.long	0x2f03fdc1
+0x2f03fde1	.long	0x2f03fde1
+0x2f03fe01	.long	0x2f03fe01
+0x2f03fe21	.long	0x2f03fe21
+0x2f03fe41	.long	0x2f03fe41
+0x2f03fe61	.long	0x2f03fe61
+0x2f03fe81	.long	0x2f03fe81
+0x2f03fea1	.long	0x2f03fea1
+0x2f03fec1	.long	0x2f03fec1
+0x2f03fee1	.long	0x2f03fee1
+0x2f03ff01	.long	0x2f03ff01
+0x2f03ff21	.long	0x2f03ff21
+0x2f03ff41	.long	0x2f03ff41
+0x2f03ff61	.long	0x2f03ff61
+0x2f03ff81	.long	0x2f03ff81
+0x2f03ffa1	.long	0x2f03ffa1
+0x2f03ffc1	.long	0x2f03ffc1
+0x2f03ffe1	.long	0x2f03ffe1
+0x2f04fc01	.long	0x2f04fc01
+0x2f04fc21	.long	0x2f04fc21
+0x2f04fc41	.long	0x2f04fc41
+0x2f04fc61	.long	0x2f04fc61
+0x2f04fc81	.long	0x2f04fc81
+0x2f04fca1	.long	0x2f04fca1
+0x2f04fcc1	.long	0x2f04fcc1
+0x2f04fce1	.long	0x2f04fce1
+0x2f04fd01	.long	0x2f04fd01
+0x2f04fd21	.long	0x2f04fd21
+0x2f04fd41	.long	0x2f04fd41
+0x2f04fd61	.long	0x2f04fd61
+0x2f04fd81	.long	0x2f04fd81
+0x2f04fda1	.long	0x2f04fda1
+0x2f04fdc1	.long	0x2f04fdc1
+0x2f04fde1	.long	0x2f04fde1
+0x2f04fe01	.long	0x2f04fe01
+0x2f04fe21	.long	0x2f04fe21
+0x2f04fe41	.long	0x2f04fe41
+0x2f04fe61	.long	0x2f04fe61
+0x2f04fe81	.long	0x2f04fe81
+0x2f04fea1	.long	0x2f04fea1
+0x2f04fec1	.long	0x2f04fec1
+0x2f04fee1	.long	0x2f04fee1
+0x2f04ff01	.long	0x2f04ff01
+0x2f04ff21	.long	0x2f04ff21
+0x2f04ff41	.long	0x2f04ff41
+0x2f04ff61	.long	0x2f04ff61
+0x2f04ff81	.long	0x2f04ff81
+0x2f04ffa1	.long	0x2f04ffa1
+0x2f04ffc1	.long	0x2f04ffc1
+0x2f04ffe1	.long	0x2f04ffe1
+0x2f05fc01	.long	0x2f05fc01
+0x2f05fc21	.long	0x2f05fc21
+0x2f05fc41	.long	0x2f05fc41
+0x2f05fc61	.long	0x2f05fc61
+0x2f05fc81	.long	0x2f05fc81
+0x2f05fca1	.long	0x2f05fca1
+0x2f05fcc1	.long	0x2f05fcc1
+0x2f05fce1	.long	0x2f05fce1
+0x2f05fd01	.long	0x2f05fd01
+0x2f05fd21	.long	0x2f05fd21
+0x2f05fd41	.long	0x2f05fd41
+0x2f05fd61	.long	0x2f05fd61
+0x2f05fd81	.long	0x2f05fd81
+0x2f05fda1	.long	0x2f05fda1
+0x2f05fdc1	.long	0x2f05fdc1
+0x2f05fde1	.long	0x2f05fde1
+0x2f05fe01	.long	0x2f05fe01
+0x2f05fe21	.long	0x2f05fe21
+0x2f05fe41	.long	0x2f05fe41
+0x2f05fe61	.long	0x2f05fe61
+0x2f05fe81	.long	0x2f05fe81
+0x2f05fea1	.long	0x2f05fea1
+0x2f05fec1	.long	0x2f05fec1
+0x2f05fee1	.long	0x2f05fee1
+0x2f05ff01	.long	0x2f05ff01
+0x2f05ff21	.long	0x2f05ff21
+0x2f05ff41	.long	0x2f05ff41
+0x2f05ff61	.long	0x2f05ff61
+0x2f05ff81	.long	0x2f05ff81
+0x2f05ffa1	.long	0x2f05ffa1
+0x2f05ffc1	.long	0x2f05ffc1
+0x2f05ffe1	.long	0x2f05ffe1
+0x2f06fc01	.long	0x2f06fc01
+0x2f06fc21	.long	0x2f06fc21
+0x2f06fc41	.long	0x2f06fc41
+0x2f06fc61	.long	0x2f06fc61
+0x2f06fc81	.long	0x2f06fc81
+0x2f06fca1	.long	0x2f06fca1
+0x2f06fcc1	.long	0x2f06fcc1
+0x2f06fce1	.long	0x2f06fce1
+0x2f06fd01	.long	0x2f06fd01
+0x2f06fd21	.long	0x2f06fd21
+0x2f06fd41	.long	0x2f06fd41
+0x2f06fd61	.long	0x2f06fd61
+0x2f06fd81	.long	0x2f06fd81
+0x2f06fda1	.long	0x2f06fda1
+0x2f06fdc1	.long	0x2f06fdc1
+0x2f06fde1	.long	0x2f06fde1
+0x2f06fe01	.long	0x2f06fe01
+0x2f06fe21	.long	0x2f06fe21
+0x2f06fe41	.long	0x2f06fe41
+0x2f06fe61	.long	0x2f06fe61
+0x2f06fe81	.long	0x2f06fe81
+0x2f06fea1	.long	0x2f06fea1
+0x2f06fec1	.long	0x2f06fec1
+0x2f06fee1	.long	0x2f06fee1
+0x2f06ff01	.long	0x2f06ff01
+0x2f06ff21	.long	0x2f06ff21
+0x2f06ff41	.long	0x2f06ff41
+0x2f06ff61	.long	0x2f06ff61
+0x2f06ff81	.long	0x2f06ff81
+0x2f06ffa1	.long	0x2f06ffa1
+0x2f06ffc1	.long	0x2f06ffc1
+0x2f06ffe1	.long	0x2f06ffe1
+0x2f07fc01	.long	0x2f07fc01
+0x2f07fc21	.long	0x2f07fc21
+0x2f07fc41	.long	0x2f07fc41
+0x2f07fc61	.long	0x2f07fc61
+0x2f07fc81	.long	0x2f07fc81
+0x2f07fca1	.long	0x2f07fca1
+0x2f07fcc1	.long	0x2f07fcc1
+0x2f07fce1	.long	0x2f07fce1
+0x2f07fd01	.long	0x2f07fd01
+0x2f07fd21	.long	0x2f07fd21
+0x2f07fd41	.long	0x2f07fd41
+0x2f07fd61	.long	0x2f07fd61
+0x2f07fd81	.long	0x2f07fd81
+0x2f07fda1	.long	0x2f07fda1
+0x2f07fdc1	.long	0x2f07fdc1
+0x2f07fde1	.long	0x2f07fde1
+0x2f07fe01	.long	0x2f07fe01
+0x2f07fe21	.long	0x2f07fe21
+0x2f07fe41	.long	0x2f07fe41
+0x2f07fe61	.long	0x2f07fe61
+0x2f07fe81	.long	0x2f07fe81
+0x2f07fea1	.long	0x2f07fea1
+0x2f07fec1	.long	0x2f07fec1
+0x2f07fee1	.long	0x2f07fee1
+0x2f07ff01	.long	0x2f07ff01
+0x2f07ff21	.long	0x2f07ff21
+0x2f07ff41	.long	0x2f07ff41
+0x2f07ff61	.long	0x2f07ff61
+0x2f07ff81	.long	0x2f07ff81
+0x2f07ffa1	.long	0x2f07ffa1
+0x2f07ffc1	.long	0x2f07ffc1
+0x2f07ffe1	.long	0x2f07ffe1
+0x4f000401	movi	v1.4s, #0x0
+0x4f000421	movi	v1.4s, #0x1
+0x4f040401	movi	v1.4s, #0x80
+0x4f0707e1	movi	v1.4s, #0xff
+0x4f000c01	.long	0x4f000c01
+0x4f000c21	.long	0x4f000c21
+0x4f040c01	.long	0x4f040c01
+0x4f070fe1	.long	0x4f070fe1
+0x4f001401	orr	v1.4s, #0x0
+0x4f001421	orr	v1.4s, #0x1
+0x4f041401	orr	v1.4s, #0x80
+0x4f0717e1	orr	v1.4s, #0xff
+0x4f001c01	.long	0x4f001c01
+0x4f001c21	.long	0x4f001c21
+0x4f041c01	.long	0x4f041c01
+0x4f071fe1	.long	0x4f071fe1
+0x4f002401	movi	v1.4s, #0x0, lsl #8
+0x4f002421	movi	v1.4s, #0x1, lsl #8
+0x4f042401	movi	v1.4s, #0x80, lsl #8
+0x4f0727e1	movi	v1.4s, #0xff, lsl #8
+0x4f002c01	.long	0x4f002c01
+0x4f002c21	.long	0x4f002c21
+0x4f042c01	.long	0x4f042c01
+0x4f072fe1	.long	0x4f072fe1
+0x4f003401	orr	v1.4s, #0x0, lsl #8
+0x4f003421	orr	v1.4s, #0x1, lsl #8
+0x4f043401	orr	v1.4s, #0x80, lsl #8
+0x4f0737e1	orr	v1.4s, #0xff, lsl #8
+0x4f003c01	.long	0x4f003c01
+0x4f003c21	.long	0x4f003c21
+0x4f043c01	.long	0x4f043c01
+0x4f073fe1	.long	0x4f073fe1
+0x4f004401	movi	v1.4s, #0x0, lsl #16
+0x4f004421	movi	v1.4s, #0x1, lsl #16
+0x4f044401	movi	v1.4s, #0x80, lsl #16
+0x4f0747e1	movi	v1.4s, #0xff, lsl #16
+0x4f004c01	.long	0x4f004c01
+0x4f004c21	.long	0x4f004c21
+0x4f044c01	.long	0x4f044c01
+0x4f074fe1	.long	0x4f074fe1
+0x4f005401	orr	v1.4s, #0x0, lsl #16
+0x4f005421	orr	v1.4s, #0x1, lsl #16
+0x4f045401	orr	v1.4s, #0x80, lsl #16
+0x4f0757e1	orr	v1.4s, #0xff, lsl #16
+0x4f005c01	.long	0x4f005c01
+0x4f005c21	.long	0x4f005c21
+0x4f045c01	.long	0x4f045c01
+0x4f075fe1	.long	0x4f075fe1
+0x4f006401	movi	v1.4s, #0x0, lsl #24
+0x4f006421	movi	v1.4s, #0x1, lsl #24
+0x4f046401	movi	v1.4s, #0x80, lsl #24
+0x4f0767e1	movi	v1.4s, #0xff, lsl #24
+0x4f006c01	.long	0x4f006c01
+0x4f006c21	.long	0x4f006c21
+0x4f046c01	.long	0x4f046c01
+0x4f076fe1	.long	0x4f076fe1
+0x4f007401	orr	v1.4s, #0x0, lsl #24
+0x4f007421	orr	v1.4s, #0x1, lsl #24
+0x4f047401	orr	v1.4s, #0x80, lsl #24
+0x4f0777e1	orr	v1.4s, #0xff, lsl #24
+0x4f007c01	.long	0x4f007c01
+0x4f007c21	.long	0x4f007c21
+0x4f047c01	.long	0x4f047c01
+0x4f077fe1	.long	0x4f077fe1
+0x4f008401	movi	v1.8h, #0x0
+0x4f008421	movi	v1.8h, #0x1
+0x4f048401	movi	v1.8h, #0x80
+0x4f0787e1	movi	v1.8h, #0xff
+0x4f008c01	.long	0x4f008c01
+0x4f008c21	.long	0x4f008c21
+0x4f048c01	.long	0x4f048c01
+0x4f078fe1	.long	0x4f078fe1
+0x4f009401	orr	v1.8h, #0x0
+0x4f009421	orr	v1.8h, #0x1
+0x4f049401	orr	v1.8h, #0x80
+0x4f0797e1	orr	v1.8h, #0xff
+0x4f009c01	.long	0x4f009c01
+0x4f009c21	.long	0x4f009c21
+0x4f049c01	.long	0x4f049c01
+0x4f079fe1	.long	0x4f079fe1
+0x4f00a401	movi	v1.8h, #0x0, lsl #8
+0x4f00a421	movi	v1.8h, #0x1, lsl #8
+0x4f04a401	movi	v1.8h, #0x80, lsl #8
+0x4f07a7e1	movi	v1.8h, #0xff, lsl #8
+0x4f00ac01	.long	0x4f00ac01
+0x4f00ac21	.long	0x4f00ac21
+0x4f04ac01	.long	0x4f04ac01
+0x4f07afe1	.long	0x4f07afe1
+0x4f00b401	orr	v1.8h, #0x0, lsl #8
+0x4f00b421	orr	v1.8h, #0x1, lsl #8
+0x4f04b401	orr	v1.8h, #0x80, lsl #8
+0x4f07b7e1	orr	v1.8h, #0xff, lsl #8
+0x4f00bc01	.long	0x4f00bc01
+0x4f00bc21	.long	0x4f00bc21
+0x4f04bc01	.long	0x4f04bc01
+0x4f07bfe1	.long	0x4f07bfe1
+0x4f00c401	movi	v1.4s, #0x0, msl #8
+0x4f00c421	movi	v1.4s, #0x1, msl #8
+0x4f04c401	movi	v1.4s, #0x80, msl #8
+0x4f07c7e1	movi	v1.4s, #0xff, msl #8
+0x4f00cc01	.long	0x4f00cc01
+0x4f00cc21	.long	0x4f00cc21
+0x4f04cc01	.long	0x4f04cc01
+0x4f07cfe1	.long	0x4f07cfe1
+0x4f00d401	movi	v1.4s, #0x0, msl #16
+0x4f00d421	movi	v1.4s, #0x1, msl #16
+0x4f04d401	movi	v1.4s, #0x80, msl #16
+0x4f07d7e1	movi	v1.4s, #0xff, msl #16
+0x4f00dc01	.long	0x4f00dc01
+0x4f00dc21	.long	0x4f00dc21
+0x4f04dc01	.long	0x4f04dc01
+0x4f07dfe1	.long	0x4f07dfe1
+0x4f00e401	movi	v1.16b, #0x0
+0x4f00e421	movi	v1.16b, #0x1
+0x4f04e401	movi	v1.16b, #0x80
+0x4f07e7e1	movi	v1.16b, #0xff
+0x4f00ec01	.long	0x4f00ec01
+0x4f00ec21	.long	0x4f00ec21
+0x4f04ec01	.long	0x4f04ec01
+0x4f07efe1	.long	0x4f07efe1
+0x4f00f401	fmov	v1.4s, #2.00000000
+0x4f00f421	fmov	v1.4s, #2.12500000
+0x4f00f441	fmov	v1.4s, #2.25000000
+0x4f00f461	fmov	v1.4s, #2.37500000
+0x4f00f481	fmov	v1.4s, #2.50000000
+0x4f00f4a1	fmov	v1.4s, #2.62500000
+0x4f00f4c1	fmov	v1.4s, #2.75000000
+0x4f00f4e1	fmov	v1.4s, #2.87500000
+0x4f00f501	fmov	v1.4s, #3.00000000
+0x4f00f521	fmov	v1.4s, #3.12500000
+0x4f00f541	fmov	v1.4s, #3.25000000
+0x4f00f561	fmov	v1.4s, #3.37500000
+0x4f00f581	fmov	v1.4s, #3.50000000
+0x4f00f5a1	fmov	v1.4s, #3.62500000
+0x4f00f5c1	fmov	v1.4s, #3.75000000
+0x4f00f5e1	fmov	v1.4s, #3.87500000
+0x4f00f601	fmov	v1.4s, #4.00000000
+0x4f00f621	fmov	v1.4s, #4.25000000
+0x4f00f641	fmov	v1.4s, #4.50000000
+0x4f00f661	fmov	v1.4s, #4.75000000
+0x4f00f681	fmov	v1.4s, #5.00000000
+0x4f00f6a1	fmov	v1.4s, #5.25000000
+0x4f00f6c1	fmov	v1.4s, #5.50000000
+0x4f00f6e1	fmov	v1.4s, #5.75000000
+0x4f00f701	fmov	v1.4s, #6.00000000
+0x4f00f721	fmov	v1.4s, #6.25000000
+0x4f00f741	fmov	v1.4s, #6.50000000
+0x4f00f761	fmov	v1.4s, #6.75000000
+0x4f00f781	fmov	v1.4s, #7.00000000
+0x4f00f7a1	fmov	v1.4s, #7.25000000
+0x4f00f7c1	fmov	v1.4s, #7.50000000
+0x4f00f7e1	fmov	v1.4s, #7.75000000
+0x4f01f401	fmov	v1.4s, #8.00000000
+0x4f01f421	fmov	v1.4s, #8.50000000
+0x4f01f441	fmov	v1.4s, #9.00000000
+0x4f01f461	fmov	v1.4s, #9.50000000
+0x4f01f481	fmov	v1.4s, #10.00000000
+0x4f01f4a1	fmov	v1.4s, #10.50000000
+0x4f01f4c1	fmov	v1.4s, #11.00000000
+0x4f01f4e1	fmov	v1.4s, #11.50000000
+0x4f01f501	fmov	v1.4s, #12.00000000
+0x4f01f521	fmov	v1.4s, #12.50000000
+0x4f01f541	fmov	v1.4s, #13.00000000
+0x4f01f561	fmov	v1.4s, #13.50000000
+0x4f01f581	fmov	v1.4s, #14.00000000
+0x4f01f5a1	fmov	v1.4s, #14.50000000
+0x4f01f5c1	fmov	v1.4s, #15.00000000
+0x4f01f5e1	fmov	v1.4s, #15.50000000
+0x4f01f601	fmov	v1.4s, #16.00000000
+0x4f01f621	fmov	v1.4s, #17.00000000
+0x4f01f641	fmov	v1.4s, #18.00000000
+0x4f01f661	fmov	v1.4s, #19.00000000
+0x4f01f681	fmov	v1.4s, #20.00000000
+0x4f01f6a1	fmov	v1.4s, #21.00000000
+0x4f01f6c1	fmov	v1.4s, #22.00000000
+0x4f01f6e1	fmov	v1.4s, #23.00000000
+0x4f01f701	fmov	v1.4s, #24.00000000
+0x4f01f721	fmov	v1.4s, #25.00000000
+0x4f01f741	fmov	v1.4s, #26.00000000
+0x4f01f761	fmov	v1.4s, #27.00000000
+0x4f01f781	fmov	v1.4s, #28.00000000
+0x4f01f7a1	fmov	v1.4s, #29.00000000
+0x4f01f7c1	fmov	v1.4s, #30.00000000
+0x4f01f7e1	fmov	v1.4s, #31.00000000
+0x4f02f401	fmov	v1.4s, #0.12500000
+0x4f02f421	fmov	v1.4s, #0.13281250
+0x4f02f441	fmov	v1.4s, #0.14062500
+0x4f02f461	fmov	v1.4s, #0.14843750
+0x4f02f481	fmov	v1.4s, #0.15625000
+0x4f02f4a1	fmov	v1.4s, #0.16406250
+0x4f02f4c1	fmov	v1.4s, #0.17187500
+0x4f02f4e1	fmov	v1.4s, #0.17968750
+0x4f02f501	fmov	v1.4s, #0.18750000
+0x4f02f521	fmov	v1.4s, #0.19531250
+0x4f02f541	fmov	v1.4s, #0.20312500
+0x4f02f561	fmov	v1.4s, #0.21093750
+0x4f02f581	fmov	v1.4s, #0.21875000
+0x4f02f5a1	fmov	v1.4s, #0.22656250
+0x4f02f5c1	fmov	v1.4s, #0.23437500
+0x4f02f5e1	fmov	v1.4s, #0.24218750
+0x4f02f601	fmov	v1.4s, #0.25000000
+0x4f02f621	fmov	v1.4s, #0.26562500
+0x4f02f641	fmov	v1.4s, #0.28125000
+0x4f02f661	fmov	v1.4s, #0.29687500
+0x4f02f681	fmov	v1.4s, #0.31250000
+0x4f02f6a1	fmov	v1.4s, #0.32812500
+0x4f02f6c1	fmov	v1.4s, #0.34375000
+0x4f02f6e1	fmov	v1.4s, #0.35937500
+0x4f02f701	fmov	v1.4s, #0.37500000
+0x4f02f721	fmov	v1.4s, #0.39062500
+0x4f02f741	fmov	v1.4s, #0.40625000
+0x4f02f761	fmov	v1.4s, #0.42187500
+0x4f02f781	fmov	v1.4s, #0.43750000
+0x4f02f7a1	fmov	v1.4s, #0.45312500
+0x4f02f7c1	fmov	v1.4s, #0.46875000
+0x4f02f7e1	fmov	v1.4s, #0.48437500
+0x4f03f401	fmov	v1.4s, #0.50000000
+0x4f03f421	fmov	v1.4s, #0.53125000
+0x4f03f441	fmov	v1.4s, #0.56250000
+0x4f03f461	fmov	v1.4s, #0.59375000
+0x4f03f481	fmov	v1.4s, #0.62500000
+0x4f03f4a1	fmov	v1.4s, #0.65625000
+0x4f03f4c1	fmov	v1.4s, #0.68750000
+0x4f03f4e1	fmov	v1.4s, #0.71875000
+0x4f03f501	fmov	v1.4s, #0.75000000
+0x4f03f521	fmov	v1.4s, #0.78125000
+0x4f03f541	fmov	v1.4s, #0.81250000
+0x4f03f561	fmov	v1.4s, #0.84375000
+0x4f03f581	fmov	v1.4s, #0.87500000
+0x4f03f5a1	fmov	v1.4s, #0.90625000
+0x4f03f5c1	fmov	v1.4s, #0.93750000
+0x4f03f5e1	fmov	v1.4s, #0.96875000
+0x4f03f601	fmov	v1.4s, #1.00000000
+0x4f03f621	fmov	v1.4s, #1.06250000
+0x4f03f641	fmov	v1.4s, #1.12500000
+0x4f03f661	fmov	v1.4s, #1.18750000
+0x4f03f681	fmov	v1.4s, #1.25000000
+0x4f03f6a1	fmov	v1.4s, #1.31250000
+0x4f03f6c1	fmov	v1.4s, #1.37500000
+0x4f03f6e1	fmov	v1.4s, #1.43750000
+0x4f03f701	fmov	v1.4s, #1.50000000
+0x4f03f721	fmov	v1.4s, #1.56250000
+0x4f03f741	fmov	v1.4s, #1.62500000
+0x4f03f761	fmov	v1.4s, #1.68750000
+0x4f03f781	fmov	v1.4s, #1.75000000
+0x4f03f7a1	fmov	v1.4s, #1.81250000
+0x4f03f7c1	fmov	v1.4s, #1.87500000
+0x4f03f7e1	fmov	v1.4s, #1.93750000
+0x4f04f401	fmov	v1.4s, #-2.00000000
+0x4f04f421	fmov	v1.4s, #-2.12500000
+0x4f04f441	fmov	v1.4s, #-2.25000000
+0x4f04f461	fmov	v1.4s, #-2.37500000
+0x4f04f481	fmov	v1.4s, #-2.50000000
+0x4f04f4a1	fmov	v1.4s, #-2.62500000
+0x4f04f4c1	fmov	v1.4s, #-2.75000000
+0x4f04f4e1	fmov	v1.4s, #-2.87500000
+0x4f04f501	fmov	v1.4s, #-3.00000000
+0x4f04f521	fmov	v1.4s, #-3.12500000
+0x4f04f541	fmov	v1.4s, #-3.25000000
+0x4f04f561	fmov	v1.4s, #-3.37500000
+0x4f04f581	fmov	v1.4s, #-3.50000000
+0x4f04f5a1	fmov	v1.4s, #-3.62500000
+0x4f04f5c1	fmov	v1.4s, #-3.75000000
+0x4f04f5e1	fmov	v1.4s, #-3.87500000
+0x4f04f601	fmov	v1.4s, #-4.00000000
+0x4f04f621	fmov	v1.4s, #-4.25000000
+0x4f04f641	fmov	v1.4s, #-4.50000000
+0x4f04f661	fmov	v1.4s, #-4.75000000
+0x4f04f681	fmov	v1.4s, #-5.00000000
+0x4f04f6a1	fmov	v1.4s, #-5.25000000
+0x4f04f6c1	fmov	v1.4s, #-5.50000000
+0x4f04f6e1	fmov	v1.4s, #-5.75000000
+0x4f04f701	fmov	v1.4s, #-6.00000000
+0x4f04f721	fmov	v1.4s, #-6.25000000
+0x4f04f741	fmov	v1.4s, #-6.50000000
+0x4f04f761	fmov	v1.4s, #-6.75000000
+0x4f04f781	fmov	v1.4s, #-7.00000000
+0x4f04f7a1	fmov	v1.4s, #-7.25000000
+0x4f04f7c1	fmov	v1.4s, #-7.50000000
+0x4f04f7e1	fmov	v1.4s, #-7.75000000
+0x4f05f401	fmov	v1.4s, #-8.00000000
+0x4f05f421	fmov	v1.4s, #-8.50000000
+0x4f05f441	fmov	v1.4s, #-9.00000000
+0x4f05f461	fmov	v1.4s, #-9.50000000
+0x4f05f481	fmov	v1.4s, #-10.00000000
+0x4f05f4a1	fmov	v1.4s, #-10.50000000
+0x4f05f4c1	fmov	v1.4s, #-11.00000000
+0x4f05f4e1	fmov	v1.4s, #-11.50000000
+0x4f05f501	fmov	v1.4s, #-12.00000000
+0x4f05f521	fmov	v1.4s, #-12.50000000
+0x4f05f541	fmov	v1.4s, #-13.00000000
+0x4f05f561	fmov	v1.4s, #-13.50000000
+0x4f05f581	fmov	v1.4s, #-14.00000000
+0x4f05f5a1	fmov	v1.4s, #-14.50000000
+0x4f05f5c1	fmov	v1.4s, #-15.00000000
+0x4f05f5e1	fmov	v1.4s, #-15.50000000
+0x4f05f601	fmov	v1.4s, #-16.00000000
+0x4f05f621	fmov	v1.4s, #-17.00000000
+0x4f05f641	fmov	v1.4s, #-18.00000000
+0x4f05f661	fmov	v1.4s, #-19.00000000
+0x4f05f681	fmov	v1.4s, #-20.00000000
+0x4f05f6a1	fmov	v1.4s, #-21.00000000
+0x4f05f6c1	fmov	v1.4s, #-22.00000000
+0x4f05f6e1	fmov	v1.4s, #-23.00000000
+0x4f05f701	fmov	v1.4s, #-24.00000000
+0x4f05f721	fmov	v1.4s, #-25.00000000
+0x4f05f741	fmov	v1.4s, #-26.00000000
+0x4f05f761	fmov	v1.4s, #-27.00000000
+0x4f05f781	fmov	v1.4s, #-28.00000000
+0x4f05f7a1	fmov	v1.4s, #-29.00000000
+0x4f05f7c1	fmov	v1.4s, #-30.00000000
+0x4f05f7e1	fmov	v1.4s, #-31.00000000
+0x4f06f401	fmov	v1.4s, #-0.12500000
+0x4f06f421	fmov	v1.4s, #-0.13281250
+0x4f06f441	fmov	v1.4s, #-0.14062500
+0x4f06f461	fmov	v1.4s, #-0.14843750
+0x4f06f481	fmov	v1.4s, #-0.15625000
+0x4f06f4a1	fmov	v1.4s, #-0.16406250
+0x4f06f4c1	fmov	v1.4s, #-0.17187500
+0x4f06f4e1	fmov	v1.4s, #-0.17968750
+0x4f06f501	fmov	v1.4s, #-0.18750000
+0x4f06f521	fmov	v1.4s, #-0.19531250
+0x4f06f541	fmov	v1.4s, #-0.20312500
+0x4f06f561	fmov	v1.4s, #-0.21093750
+0x4f06f581	fmov	v1.4s, #-0.21875000
+0x4f06f5a1	fmov	v1.4s, #-0.22656250
+0x4f06f5c1	fmov	v1.4s, #-0.23437500
+0x4f06f5e1	fmov	v1.4s, #-0.24218750
+0x4f06f601	fmov	v1.4s, #-0.25000000
+0x4f06f621	fmov	v1.4s, #-0.26562500
+0x4f06f641	fmov	v1.4s, #-0.28125000
+0x4f06f661	fmov	v1.4s, #-0.29687500
+0x4f06f681	fmov	v1.4s, #-0.31250000
+0x4f06f6a1	fmov	v1.4s, #-0.32812500
+0x4f06f6c1	fmov	v1.4s, #-0.34375000
+0x4f06f6e1	fmov	v1.4s, #-0.35937500
+0x4f06f701	fmov	v1.4s, #-0.37500000
+0x4f06f721	fmov	v1.4s, #-0.39062500
+0x4f06f741	fmov	v1.4s, #-0.40625000
+0x4f06f761	fmov	v1.4s, #-0.42187500
+0x4f06f781	fmov	v1.4s, #-0.43750000
+0x4f06f7a1	fmov	v1.4s, #-0.45312500
+0x4f06f7c1	fmov	v1.4s, #-0.46875000
+0x4f06f7e1	fmov	v1.4s, #-0.48437500
+0x4f07f401	fmov	v1.4s, #-0.50000000
+0x4f07f421	fmov	v1.4s, #-0.53125000
+0x4f07f441	fmov	v1.4s, #-0.56250000
+0x4f07f461	fmov	v1.4s, #-0.59375000
+0x4f07f481	fmov	v1.4s, #-0.62500000
+0x4f07f4a1	fmov	v1.4s, #-0.65625000
+0x4f07f4c1	fmov	v1.4s, #-0.68750000
+0x4f07f4e1	fmov	v1.4s, #-0.71875000
+0x4f07f501	fmov	v1.4s, #-0.75000000
+0x4f07f521	fmov	v1.4s, #-0.78125000
+0x4f07f541	fmov	v1.4s, #-0.81250000
+0x4f07f561	fmov	v1.4s, #-0.84375000
+0x4f07f581	fmov	v1.4s, #-0.87500000
+0x4f07f5a1	fmov	v1.4s, #-0.90625000
+0x4f07f5c1	fmov	v1.4s, #-0.93750000
+0x4f07f5e1	fmov	v1.4s, #-0.96875000
+0x4f07f601	fmov	v1.4s, #-1.00000000
+0x4f07f621	fmov	v1.4s, #-1.06250000
+0x4f07f641	fmov	v1.4s, #-1.12500000
+0x4f07f661	fmov	v1.4s, #-1.18750000
+0x4f07f681	fmov	v1.4s, #-1.25000000
+0x4f07f6a1	fmov	v1.4s, #-1.31250000
+0x4f07f6c1	fmov	v1.4s, #-1.37500000
+0x4f07f6e1	fmov	v1.4s, #-1.43750000
+0x4f07f701	fmov	v1.4s, #-1.50000000
+0x4f07f721	fmov	v1.4s, #-1.56250000
+0x4f07f741	fmov	v1.4s, #-1.62500000
+0x4f07f761	fmov	v1.4s, #-1.68750000
+0x4f07f781	fmov	v1.4s, #-1.75000000
+0x4f07f7a1	fmov	v1.4s, #-1.81250000
+0x4f07f7c1	fmov	v1.4s, #-1.87500000
+0x4f07f7e1	fmov	v1.4s, #-1.93750000
+0x4f00fc01	fmov	v1.8h, #2.00000000
+0x4f00fc21	fmov	v1.8h, #2.12500000
+0x4f00fc41	fmov	v1.8h, #2.25000000
+0x4f00fc61	fmov	v1.8h, #2.37500000
+0x4f00fc81	fmov	v1.8h, #2.50000000
+0x4f00fca1	fmov	v1.8h, #2.62500000
+0x4f00fcc1	fmov	v1.8h, #2.75000000
+0x4f00fce1	fmov	v1.8h, #2.87500000
+0x4f00fd01	fmov	v1.8h, #3.00000000
+0x4f00fd21	fmov	v1.8h, #3.12500000
+0x4f00fd41	fmov	v1.8h, #3.25000000
+0x4f00fd61	fmov	v1.8h, #3.37500000
+0x4f00fd81	fmov	v1.8h, #3.50000000
+0x4f00fda1	fmov	v1.8h, #3.62500000
+0x4f00fdc1	fmov	v1.8h, #3.75000000
+0x4f00fde1	fmov	v1.8h, #3.87500000
+0x4f00fe01	fmov	v1.8h, #4.00000000
+0x4f00fe21	fmov	v1.8h, #4.25000000
+0x4f00fe41	fmov	v1.8h, #4.50000000
+0x4f00fe61	fmov	v1.8h, #4.75000000
+0x4f00fe81	fmov	v1.8h, #5.00000000
+0x4f00fea1	fmov	v1.8h, #5.25000000
+0x4f00fec1	fmov	v1.8h, #5.50000000
+0x4f00fee1	fmov	v1.8h, #5.75000000
+0x4f00ff01	fmov	v1.8h, #6.00000000
+0x4f00ff21	fmov	v1.8h, #6.25000000
+0x4f00ff41	fmov	v1.8h, #6.50000000
+0x4f00ff61	fmov	v1.8h, #6.75000000
+0x4f00ff81	fmov	v1.8h, #7.00000000
+0x4f00ffa1	fmov	v1.8h, #7.25000000
+0x4f00ffc1	fmov	v1.8h, #7.50000000
+0x4f00ffe1	fmov	v1.8h, #7.75000000
+0x4f01fc01	fmov	v1.8h, #8.00000000
+0x4f01fc21	fmov	v1.8h, #8.50000000
+0x4f01fc41	fmov	v1.8h, #9.00000000
+0x4f01fc61	fmov	v1.8h, #9.50000000
+0x4f01fc81	fmov	v1.8h, #10.00000000
+0x4f01fca1	fmov	v1.8h, #10.50000000
+0x4f01fcc1	fmov	v1.8h, #11.00000000
+0x4f01fce1	fmov	v1.8h, #11.50000000
+0x4f01fd01	fmov	v1.8h, #12.00000000
+0x4f01fd21	fmov	v1.8h, #12.50000000
+0x4f01fd41	fmov	v1.8h, #13.00000000
+0x4f01fd61	fmov	v1.8h, #13.50000000
+0x4f01fd81	fmov	v1.8h, #14.00000000
+0x4f01fda1	fmov	v1.8h, #14.50000000
+0x4f01fdc1	fmov	v1.8h, #15.00000000
+0x4f01fde1	fmov	v1.8h, #15.50000000
+0x4f01fe01	fmov	v1.8h, #16.00000000
+0x4f01fe21	fmov	v1.8h, #17.00000000
+0x4f01fe41	fmov	v1.8h, #18.00000000
+0x4f01fe61	fmov	v1.8h, #19.00000000
+0x4f01fe81	fmov	v1.8h, #20.00000000
+0x4f01fea1	fmov	v1.8h, #21.00000000
+0x4f01fec1	fmov	v1.8h, #22.00000000
+0x4f01fee1	fmov	v1.8h, #23.00000000
+0x4f01ff01	fmov	v1.8h, #24.00000000
+0x4f01ff21	fmov	v1.8h, #25.00000000
+0x4f01ff41	fmov	v1.8h, #26.00000000
+0x4f01ff61	fmov	v1.8h, #27.00000000
+0x4f01ff81	fmov	v1.8h, #28.00000000
+0x4f01ffa1	fmov	v1.8h, #29.00000000
+0x4f01ffc1	fmov	v1.8h, #30.00000000
+0x4f01ffe1	fmov	v1.8h, #31.00000000
+0x4f02fc01	fmov	v1.8h, #0.12500000
+0x4f02fc21	fmov	v1.8h, #0.13281250
+0x4f02fc41	fmov	v1.8h, #0.14062500
+0x4f02fc61	fmov	v1.8h, #0.14843750
+0x4f02fc81	fmov	v1.8h, #0.15625000
+0x4f02fca1	fmov	v1.8h, #0.16406250
+0x4f02fcc1	fmov	v1.8h, #0.17187500
+0x4f02fce1	fmov	v1.8h, #0.17968750
+0x4f02fd01	fmov	v1.8h, #0.18750000
+0x4f02fd21	fmov	v1.8h, #0.19531250
+0x4f02fd41	fmov	v1.8h, #0.20312500
+0x4f02fd61	fmov	v1.8h, #0.21093750
+0x4f02fd81	fmov	v1.8h, #0.21875000
+0x4f02fda1	fmov	v1.8h, #0.22656250
+0x4f02fdc1	fmov	v1.8h, #0.23437500
+0x4f02fde1	fmov	v1.8h, #0.24218750
+0x4f02fe01	fmov	v1.8h, #0.25000000
+0x4f02fe21	fmov	v1.8h, #0.26562500
+0x4f02fe41	fmov	v1.8h, #0.28125000
+0x4f02fe61	fmov	v1.8h, #0.29687500
+0x4f02fe81	fmov	v1.8h, #0.31250000
+0x4f02fea1	fmov	v1.8h, #0.32812500
+0x4f02fec1	fmov	v1.8h, #0.34375000
+0x4f02fee1	fmov	v1.8h, #0.35937500
+0x4f02ff01	fmov	v1.8h, #0.37500000
+0x4f02ff21	fmov	v1.8h, #0.39062500
+0x4f02ff41	fmov	v1.8h, #0.40625000
+0x4f02ff61	fmov	v1.8h, #0.42187500
+0x4f02ff81	fmov	v1.8h, #0.43750000
+0x4f02ffa1	fmov	v1.8h, #0.45312500
+0x4f02ffc1	fmov	v1.8h, #0.46875000
+0x4f02ffe1	fmov	v1.8h, #0.48437500
+0x4f03fc01	fmov	v1.8h, #0.50000000
+0x4f03fc21	fmov	v1.8h, #0.53125000
+0x4f03fc41	fmov	v1.8h, #0.56250000
+0x4f03fc61	fmov	v1.8h, #0.59375000
+0x4f03fc81	fmov	v1.8h, #0.62500000
+0x4f03fca1	fmov	v1.8h, #0.65625000
+0x4f03fcc1	fmov	v1.8h, #0.68750000
+0x4f03fce1	fmov	v1.8h, #0.71875000
+0x4f03fd01	fmov	v1.8h, #0.75000000
+0x4f03fd21	fmov	v1.8h, #0.78125000
+0x4f03fd41	fmov	v1.8h, #0.81250000
+0x4f03fd61	fmov	v1.8h, #0.84375000
+0x4f03fd81	fmov	v1.8h, #0.87500000
+0x4f03fda1	fmov	v1.8h, #0.90625000
+0x4f03fdc1	fmov	v1.8h, #0.93750000
+0x4f03fde1	fmov	v1.8h, #0.96875000
+0x4f03fe01	fmov	v1.8h, #1.00000000
+0x4f03fe21	fmov	v1.8h, #1.06250000
+0x4f03fe41	fmov	v1.8h, #1.12500000
+0x4f03fe61	fmov	v1.8h, #1.18750000
+0x4f03fe81	fmov	v1.8h, #1.25000000
+0x4f03fea1	fmov	v1.8h, #1.31250000
+0x4f03fec1	fmov	v1.8h, #1.37500000
+0x4f03fee1	fmov	v1.8h, #1.43750000
+0x4f03ff01	fmov	v1.8h, #1.50000000
+0x4f03ff21	fmov	v1.8h, #1.56250000
+0x4f03ff41	fmov	v1.8h, #1.62500000
+0x4f03ff61	fmov	v1.8h, #1.68750000
+0x4f03ff81	fmov	v1.8h, #1.75000000
+0x4f03ffa1	fmov	v1.8h, #1.81250000
+0x4f03ffc1	fmov	v1.8h, #1.87500000
+0x4f03ffe1	fmov	v1.8h, #1.93750000
+0x4f04fc01	fmov	v1.8h, #-2.00000000
+0x4f04fc21	fmov	v1.8h, #-2.12500000
+0x4f04fc41	fmov	v1.8h, #-2.25000000
+0x4f04fc61	fmov	v1.8h, #-2.37500000
+0x4f04fc81	fmov	v1.8h, #-2.50000000
+0x4f04fca1	fmov	v1.8h, #-2.62500000
+0x4f04fcc1	fmov	v1.8h, #-2.75000000
+0x4f04fce1	fmov	v1.8h, #-2.87500000
+0x4f04fd01	fmov	v1.8h, #-3.00000000
+0x4f04fd21	fmov	v1.8h, #-3.12500000
+0x4f04fd41	fmov	v1.8h, #-3.25000000
+0x4f04fd61	fmov	v1.8h, #-3.37500000
+0x4f04fd81	fmov	v1.8h, #-3.50000000
+0x4f04fda1	fmov	v1.8h, #-3.62500000
+0x4f04fdc1	fmov	v1.8h, #-3.75000000
+0x4f04fde1	fmov	v1.8h, #-3.87500000
+0x4f04fe01	fmov	v1.8h, #-4.00000000
+0x4f04fe21	fmov	v1.8h, #-4.25000000
+0x4f04fe41	fmov	v1.8h, #-4.50000000
+0x4f04fe61	fmov	v1.8h, #-4.75000000
+0x4f04fe81	fmov	v1.8h, #-5.00000000
+0x4f04fea1	fmov	v1.8h, #-5.25000000
+0x4f04fec1	fmov	v1.8h, #-5.50000000
+0x4f04fee1	fmov	v1.8h, #-5.75000000
+0x4f04ff01	fmov	v1.8h, #-6.00000000
+0x4f04ff21	fmov	v1.8h, #-6.25000000
+0x4f04ff41	fmov	v1.8h, #-6.50000000
+0x4f04ff61	fmov	v1.8h, #-6.75000000
+0x4f04ff81	fmov	v1.8h, #-7.00000000
+0x4f04ffa1	fmov	v1.8h, #-7.25000000
+0x4f04ffc1	fmov	v1.8h, #-7.50000000
+0x4f04ffe1	fmov	v1.8h, #-7.75000000
+0x4f05fc01	fmov	v1.8h, #-8.00000000
+0x4f05fc21	fmov	v1.8h, #-8.50000000
+0x4f05fc41	fmov	v1.8h, #-9.00000000
+0x4f05fc61	fmov	v1.8h, #-9.50000000
+0x4f05fc81	fmov	v1.8h, #-10.00000000
+0x4f05fca1	fmov	v1.8h, #-10.50000000
+0x4f05fcc1	fmov	v1.8h, #-11.00000000
+0x4f05fce1	fmov	v1.8h, #-11.50000000
+0x4f05fd01	fmov	v1.8h, #-12.00000000
+0x4f05fd21	fmov	v1.8h, #-12.50000000
+0x4f05fd41	fmov	v1.8h, #-13.00000000
+0x4f05fd61	fmov	v1.8h, #-13.50000000
+0x4f05fd81	fmov	v1.8h, #-14.00000000
+0x4f05fda1	fmov	v1.8h, #-14.50000000
+0x4f05fdc1	fmov	v1.8h, #-15.00000000
+0x4f05fde1	fmov	v1.8h, #-15.50000000
+0x4f05fe01	fmov	v1.8h, #-16.00000000
+0x4f05fe21	fmov	v1.8h, #-17.00000000
+0x4f05fe41	fmov	v1.8h, #-18.00000000
+0x4f05fe61	fmov	v1.8h, #-19.00000000
+0x4f05fe81	fmov	v1.8h, #-20.00000000
+0x4f05fea1	fmov	v1.8h, #-21.00000000
+0x4f05fec1	fmov	v1.8h, #-22.00000000
+0x4f05fee1	fmov	v1.8h, #-23.00000000
+0x4f05ff01	fmov	v1.8h, #-24.00000000
+0x4f05ff21	fmov	v1.8h, #-25.00000000
+0x4f05ff41	fmov	v1.8h, #-26.00000000
+0x4f05ff61	fmov	v1.8h, #-27.00000000
+0x4f05ff81	fmov	v1.8h, #-28.00000000
+0x4f05ffa1	fmov	v1.8h, #-29.00000000
+0x4f05ffc1	fmov	v1.8h, #-30.00000000
+0x4f05ffe1	fmov	v1.8h, #-31.00000000
+0x4f06fc01	fmov	v1.8h, #-0.12500000
+0x4f06fc21	fmov	v1.8h, #-0.13281250
+0x4f06fc41	fmov	v1.8h, #-0.14062500
+0x4f06fc61	fmov	v1.8h, #-0.14843750
+0x4f06fc81	fmov	v1.8h, #-0.15625000
+0x4f06fca1	fmov	v1.8h, #-0.16406250
+0x4f06fcc1	fmov	v1.8h, #-0.17187500
+0x4f06fce1	fmov	v1.8h, #-0.17968750
+0x4f06fd01	fmov	v1.8h, #-0.18750000
+0x4f06fd21	fmov	v1.8h, #-0.19531250
+0x4f06fd41	fmov	v1.8h, #-0.20312500
+0x4f06fd61	fmov	v1.8h, #-0.21093750
+0x4f06fd81	fmov	v1.8h, #-0.21875000
+0x4f06fda1	fmov	v1.8h, #-0.22656250
+0x4f06fdc1	fmov	v1.8h, #-0.23437500
+0x4f06fde1	fmov	v1.8h, #-0.24218750
+0x4f06fe01	fmov	v1.8h, #-0.25000000
+0x4f06fe21	fmov	v1.8h, #-0.26562500
+0x4f06fe41	fmov	v1.8h, #-0.28125000
+0x4f06fe61	fmov	v1.8h, #-0.29687500
+0x4f06fe81	fmov	v1.8h, #-0.31250000
+0x4f06fea1	fmov	v1.8h, #-0.32812500
+0x4f06fec1	fmov	v1.8h, #-0.34375000
+0x4f06fee1	fmov	v1.8h, #-0.35937500
+0x4f06ff01	fmov	v1.8h, #-0.37500000
+0x4f06ff21	fmov	v1.8h, #-0.39062500
+0x4f06ff41	fmov	v1.8h, #-0.40625000
+0x4f06ff61	fmov	v1.8h, #-0.42187500
+0x4f06ff81	fmov	v1.8h, #-0.43750000
+0x4f06ffa1	fmov	v1.8h, #-0.45312500
+0x4f06ffc1	fmov	v1.8h, #-0.46875000
+0x4f06ffe1	fmov	v1.8h, #-0.48437500
+0x4f07fc01	fmov	v1.8h, #-0.50000000
+0x4f07fc21	fmov	v1.8h, #-0.53125000
+0x4f07fc41	fmov	v1.8h, #-0.56250000
+0x4f07fc61	fmov	v1.8h, #-0.59375000
+0x4f07fc81	fmov	v1.8h, #-0.62500000
+0x4f07fca1	fmov	v1.8h, #-0.65625000
+0x4f07fcc1	fmov	v1.8h, #-0.68750000
+0x4f07fce1	fmov	v1.8h, #-0.71875000
+0x4f07fd01	fmov	v1.8h, #-0.75000000
+0x4f07fd21	fmov	v1.8h, #-0.78125000
+0x4f07fd41	fmov	v1.8h, #-0.81250000
+0x4f07fd61	fmov	v1.8h, #-0.84375000
+0x4f07fd81	fmov	v1.8h, #-0.87500000
+0x4f07fda1	fmov	v1.8h, #-0.90625000
+0x4f07fdc1	fmov	v1.8h, #-0.93750000
+0x4f07fde1	fmov	v1.8h, #-0.96875000
+0x4f07fe01	fmov	v1.8h, #-1.00000000
+0x4f07fe21	fmov	v1.8h, #-1.06250000
+0x4f07fe41	fmov	v1.8h, #-1.12500000
+0x4f07fe61	fmov	v1.8h, #-1.18750000
+0x4f07fe81	fmov	v1.8h, #-1.25000000
+0x4f07fea1	fmov	v1.8h, #-1.31250000
+0x4f07fec1	fmov	v1.8h, #-1.37500000
+0x4f07fee1	fmov	v1.8h, #-1.43750000
+0x4f07ff01	fmov	v1.8h, #-1.50000000
+0x4f07ff21	fmov	v1.8h, #-1.56250000
+0x4f07ff41	fmov	v1.8h, #-1.62500000
+0x4f07ff61	fmov	v1.8h, #-1.68750000
+0x4f07ff81	fmov	v1.8h, #-1.75000000
+0x4f07ffa1	fmov	v1.8h, #-1.81250000
+0x4f07ffc1	fmov	v1.8h, #-1.87500000
+0x4f07ffe1	fmov	v1.8h, #-1.93750000
+0x6f000401	mvni	v1.4s, #0x0
+0x6f000421	mvni	v1.4s, #0x1
+0x6f040401	mvni	v1.4s, #0x80
+0x6f0707e1	mvni	v1.4s, #0xff
+0x6f000c01	.long	0x6f000c01
+0x6f000c21	.long	0x6f000c21
+0x6f040c01	.long	0x6f040c01
+0x6f070fe1	.long	0x6f070fe1
+0x6f001401	bic	v1.4s, #0x0
+0x6f001421	bic	v1.4s, #0x1
+0x6f041401	bic	v1.4s, #0x80
+0x6f0717e1	bic	v1.4s, #0xff
+0x6f001c01	.long	0x6f001c01
+0x6f001c21	.long	0x6f001c21
+0x6f041c01	.long	0x6f041c01
+0x6f071fe1	.long	0x6f071fe1
+0x6f002401	mvni	v1.4s, #0x0, lsl #8
+0x6f002421	mvni	v1.4s, #0x1, lsl #8
+0x6f042401	mvni	v1.4s, #0x80, lsl #8
+0x6f0727e1	mvni	v1.4s, #0xff, lsl #8
+0x6f002c01	.long	0x6f002c01
+0x6f002c21	.long	0x6f002c21
+0x6f042c01	.long	0x6f042c01
+0x6f072fe1	.long	0x6f072fe1
+0x6f003401	bic	v1.4s, #0x0, lsl #8
+0x6f003421	bic	v1.4s, #0x1, lsl #8
+0x6f043401	bic	v1.4s, #0x80, lsl #8
+0x6f0737e1	bic	v1.4s, #0xff, lsl #8
+0x6f003c01	.long	0x6f003c01
+0x6f003c21	.long	0x6f003c21
+0x6f043c01	.long	0x6f043c01
+0x6f073fe1	.long	0x6f073fe1
+0x6f004401	mvni	v1.4s, #0x0, lsl #16
+0x6f004421	mvni	v1.4s, #0x1, lsl #16
+0x6f044401	mvni	v1.4s, #0x80, lsl #16
+0x6f0747e1	mvni	v1.4s, #0xff, lsl #16
+0x6f004c01	.long	0x6f004c01
+0x6f004c21	.long	0x6f004c21
+0x6f044c01	.long	0x6f044c01
+0x6f074fe1	.long	0x6f074fe1
+0x6f005401	bic	v1.4s, #0x0, lsl #16
+0x6f005421	bic	v1.4s, #0x1, lsl #16
+0x6f045401	bic	v1.4s, #0x80, lsl #16
+0x6f0757e1	bic	v1.4s, #0xff, lsl #16
+0x6f005c01	.long	0x6f005c01
+0x6f005c21	.long	0x6f005c21
+0x6f045c01	.long	0x6f045c01
+0x6f075fe1	.long	0x6f075fe1
+0x6f006401	mvni	v1.4s, #0x0, lsl #24
+0x6f006421	mvni	v1.4s, #0x1, lsl #24
+0x6f046401	mvni	v1.4s, #0x80, lsl #24
+0x6f0767e1	mvni	v1.4s, #0xff, lsl #24
+0x6f006c01	.long	0x6f006c01
+0x6f006c21	.long	0x6f006c21
+0x6f046c01	.long	0x6f046c01
+0x6f076fe1	.long	0x6f076fe1
+0x6f007401	bic	v1.4s, #0x0, lsl #24
+0x6f007421	bic	v1.4s, #0x1, lsl #24
+0x6f047401	bic	v1.4s, #0x80, lsl #24
+0x6f0777e1	bic	v1.4s, #0xff, lsl #24
+0x6f007c01	.long	0x6f007c01
+0x6f007c21	.long	0x6f007c21
+0x6f047c01	.long	0x6f047c01
+0x6f077fe1	.long	0x6f077fe1
+0x6f008401	mvni	v1.8h, #0x0
+0x6f008421	mvni	v1.8h, #0x1
+0x6f048401	mvni	v1.8h, #0x80
+0x6f0787e1	mvni	v1.8h, #0xff
+0x6f008c01	.long	0x6f008c01
+0x6f008c21	.long	0x6f008c21
+0x6f048c01	.long	0x6f048c01
+0x6f078fe1	.long	0x6f078fe1
+0x6f009401	bic	v1.8h, #0x0
+0x6f009421	bic	v1.8h, #0x1
+0x6f049401	bic	v1.8h, #0x80
+0x6f0797e1	bic	v1.8h, #0xff
+0x6f009c01	.long	0x6f009c01
+0x6f009c21	.long	0x6f009c21
+0x6f049c01	.long	0x6f049c01
+0x6f079fe1	.long	0x6f079fe1
+0x6f00a401	mvni	v1.8h, #0x0, lsl #8
+0x6f00a421	mvni	v1.8h, #0x1, lsl #8
+0x6f04a401	mvni	v1.8h, #0x80, lsl #8
+0x6f07a7e1	mvni	v1.8h, #0xff, lsl #8
+0x6f00ac01	.long	0x6f00ac01
+0x6f00ac21	.long	0x6f00ac21
+0x6f04ac01	.long	0x6f04ac01
+0x6f07afe1	.long	0x6f07afe1
+0x6f00b401	bic	v1.8h, #0x0, lsl #8
+0x6f00b421	bic	v1.8h, #0x1, lsl #8
+0x6f04b401	bic	v1.8h, #0x80, lsl #8
+0x6f07b7e1	bic	v1.8h, #0xff, lsl #8
+0x6f00bc01	.long	0x6f00bc01
+0x6f00bc21	.long	0x6f00bc21
+0x6f04bc01	.long	0x6f04bc01
+0x6f07bfe1	.long	0x6f07bfe1
+0x6f00c401	mvni	v1.4s, #0x0, msl #8
+0x6f00c421	mvni	v1.4s, #0x1, msl #8
+0x6f04c401	mvni	v1.4s, #0x80, msl #8
+0x6f07c7e1	mvni	v1.4s, #0xff, msl #8
+0x6f00cc01	.long	0x6f00cc01
+0x6f00cc21	.long	0x6f00cc21
+0x6f04cc01	.long	0x6f04cc01
+0x6f07cfe1	.long	0x6f07cfe1
+0x6f00d401	mvni	v1.4s, #0x0, msl #16
+0x6f00d421	mvni	v1.4s, #0x1, msl #16
+0x6f04d401	mvni	v1.4s, #0x80, msl #16
+0x6f07d7e1	mvni	v1.4s, #0xff, msl #16
+0x6f00dc01	.long	0x6f00dc01
+0x6f00dc21	.long	0x6f00dc21
+0x6f04dc01	.long	0x6f04dc01
+0x6f07dfe1	.long	0x6f07dfe1
+0x6f00e401	movi	v1.2d, #0000000000000000
+0x6f00e421	movi	v1.2d, #0x000000000000ff
+0x6f04e401	movi	v1.2d, #0xff00000000000000
+0x6f07e7e1	movi	v1.2d, #0xffffffffffffffff
+0x6f00ec01	.long	0x6f00ec01
+0x6f00ec21	.long	0x6f00ec21
+0x6f04ec01	.long	0x6f04ec01
+0x6f07efe1	.long	0x6f07efe1
+0x6f00f401	fmov	v1.2d, #2.00000000
+0x6f00f421	fmov	v1.2d, #2.12500000
+0x6f00f441	fmov	v1.2d, #2.25000000
+0x6f00f461	fmov	v1.2d, #2.37500000
+0x6f00f481	fmov	v1.2d, #2.50000000
+0x6f00f4a1	fmov	v1.2d, #2.62500000
+0x6f00f4c1	fmov	v1.2d, #2.75000000
+0x6f00f4e1	fmov	v1.2d, #2.87500000
+0x6f00f501	fmov	v1.2d, #3.00000000
+0x6f00f521	fmov	v1.2d, #3.12500000
+0x6f00f541	fmov	v1.2d, #3.25000000
+0x6f00f561	fmov	v1.2d, #3.37500000
+0x6f00f581	fmov	v1.2d, #3.50000000
+0x6f00f5a1	fmov	v1.2d, #3.62500000
+0x6f00f5c1	fmov	v1.2d, #3.75000000
+0x6f00f5e1	fmov	v1.2d, #3.87500000
+0x6f00f601	fmov	v1.2d, #4.00000000
+0x6f00f621	fmov	v1.2d, #4.25000000
+0x6f00f641	fmov	v1.2d, #4.50000000
+0x6f00f661	fmov	v1.2d, #4.75000000
+0x6f00f681	fmov	v1.2d, #5.00000000
+0x6f00f6a1	fmov	v1.2d, #5.25000000
+0x6f00f6c1	fmov	v1.2d, #5.50000000
+0x6f00f6e1	fmov	v1.2d, #5.75000000
+0x6f00f701	fmov	v1.2d, #6.00000000
+0x6f00f721	fmov	v1.2d, #6.25000000
+0x6f00f741	fmov	v1.2d, #6.50000000
+0x6f00f761	fmov	v1.2d, #6.75000000
+0x6f00f781	fmov	v1.2d, #7.00000000
+0x6f00f7a1	fmov	v1.2d, #7.25000000
+0x6f00f7c1	fmov	v1.2d, #7.50000000
+0x6f00f7e1	fmov	v1.2d, #7.75000000
+0x6f01f401	fmov	v1.2d, #8.00000000
+0x6f01f421	fmov	v1.2d, #8.50000000
+0x6f01f441	fmov	v1.2d, #9.00000000
+0x6f01f461	fmov	v1.2d, #9.50000000
+0x6f01f481	fmov	v1.2d, #10.00000000
+0x6f01f4a1	fmov	v1.2d, #10.50000000
+0x6f01f4c1	fmov	v1.2d, #11.00000000
+0x6f01f4e1	fmov	v1.2d, #11.50000000
+0x6f01f501	fmov	v1.2d, #12.00000000
+0x6f01f521	fmov	v1.2d, #12.50000000
+0x6f01f541	fmov	v1.2d, #13.00000000
+0x6f01f561	fmov	v1.2d, #13.50000000
+0x6f01f581	fmov	v1.2d, #14.00000000
+0x6f01f5a1	fmov	v1.2d, #14.50000000
+0x6f01f5c1	fmov	v1.2d, #15.00000000
+0x6f01f5e1	fmov	v1.2d, #15.50000000
+0x6f01f601	fmov	v1.2d, #16.00000000
+0x6f01f621	fmov	v1.2d, #17.00000000
+0x6f01f641	fmov	v1.2d, #18.00000000
+0x6f01f661	fmov	v1.2d, #19.00000000
+0x6f01f681	fmov	v1.2d, #20.00000000
+0x6f01f6a1	fmov	v1.2d, #21.00000000
+0x6f01f6c1	fmov	v1.2d, #22.00000000
+0x6f01f6e1	fmov	v1.2d, #23.00000000
+0x6f01f701	fmov	v1.2d, #24.00000000
+0x6f01f721	fmov	v1.2d, #25.00000000
+0x6f01f741	fmov	v1.2d, #26.00000000
+0x6f01f761	fmov	v1.2d, #27.00000000
+0x6f01f781	fmov	v1.2d, #28.00000000
+0x6f01f7a1	fmov	v1.2d, #29.00000000
+0x6f01f7c1	fmov	v1.2d, #30.00000000
+0x6f01f7e1	fmov	v1.2d, #31.00000000
+0x6f02f401	fmov	v1.2d, #0.12500000
+0x6f02f421	fmov	v1.2d, #0.13281250
+0x6f02f441	fmov	v1.2d, #0.14062500
+0x6f02f461	fmov	v1.2d, #0.14843750
+0x6f02f481	fmov	v1.2d, #0.15625000
+0x6f02f4a1	fmov	v1.2d, #0.16406250
+0x6f02f4c1	fmov	v1.2d, #0.17187500
+0x6f02f4e1	fmov	v1.2d, #0.17968750
+0x6f02f501	fmov	v1.2d, #0.18750000
+0x6f02f521	fmov	v1.2d, #0.19531250
+0x6f02f541	fmov	v1.2d, #0.20312500
+0x6f02f561	fmov	v1.2d, #0.21093750
+0x6f02f581	fmov	v1.2d, #0.21875000
+0x6f02f5a1	fmov	v1.2d, #0.22656250
+0x6f02f5c1	fmov	v1.2d, #0.23437500
+0x6f02f5e1	fmov	v1.2d, #0.24218750
+0x6f02f601	fmov	v1.2d, #0.25000000
+0x6f02f621	fmov	v1.2d, #0.26562500
+0x6f02f641	fmov	v1.2d, #0.28125000
+0x6f02f661	fmov	v1.2d, #0.29687500
+0x6f02f681	fmov	v1.2d, #0.31250000
+0x6f02f6a1	fmov	v1.2d, #0.32812500
+0x6f02f6c1	fmov	v1.2d, #0.34375000
+0x6f02f6e1	fmov	v1.2d, #0.35937500
+0x6f02f701	fmov	v1.2d, #0.37500000
+0x6f02f721	fmov	v1.2d, #0.39062500
+0x6f02f741	fmov	v1.2d, #0.40625000
+0x6f02f761	fmov	v1.2d, #0.42187500
+0x6f02f781	fmov	v1.2d, #0.43750000
+0x6f02f7a1	fmov	v1.2d, #0.45312500
+0x6f02f7c1	fmov	v1.2d, #0.46875000
+0x6f02f7e1	fmov	v1.2d, #0.48437500
+0x6f03f401	fmov	v1.2d, #0.50000000
+0x6f03f421	fmov	v1.2d, #0.53125000
+0x6f03f441	fmov	v1.2d, #0.56250000
+0x6f03f461	fmov	v1.2d, #0.59375000
+0x6f03f481	fmov	v1.2d, #0.62500000
+0x6f03f4a1	fmov	v1.2d, #0.65625000
+0x6f03f4c1	fmov	v1.2d, #0.68750000
+0x6f03f4e1	fmov	v1.2d, #0.71875000
+0x6f03f501	fmov	v1.2d, #0.75000000
+0x6f03f521	fmov	v1.2d, #0.78125000
+0x6f03f541	fmov	v1.2d, #0.81250000
+0x6f03f561	fmov	v1.2d, #0.84375000
+0x6f03f581	fmov	v1.2d, #0.87500000
+0x6f03f5a1	fmov	v1.2d, #0.90625000
+0x6f03f5c1	fmov	v1.2d, #0.93750000
+0x6f03f5e1	fmov	v1.2d, #0.96875000
+0x6f03f601	fmov	v1.2d, #1.00000000
+0x6f03f621	fmov	v1.2d, #1.06250000
+0x6f03f641	fmov	v1.2d, #1.12500000
+0x6f03f661	fmov	v1.2d, #1.18750000
+0x6f03f681	fmov	v1.2d, #1.25000000
+0x6f03f6a1	fmov	v1.2d, #1.31250000
+0x6f03f6c1	fmov	v1.2d, #1.37500000
+0x6f03f6e1	fmov	v1.2d, #1.43750000
+0x6f03f701	fmov	v1.2d, #1.50000000
+0x6f03f721	fmov	v1.2d, #1.56250000
+0x6f03f741	fmov	v1.2d, #1.62500000
+0x6f03f761	fmov	v1.2d, #1.68750000
+0x6f03f781	fmov	v1.2d, #1.75000000
+0x6f03f7a1	fmov	v1.2d, #1.81250000
+0x6f03f7c1	fmov	v1.2d, #1.87500000
+0x6f03f7e1	fmov	v1.2d, #1.93750000
+0x6f04f401	fmov	v1.2d, #-2.00000000
+0x6f04f421	fmov	v1.2d, #-2.12500000
+0x6f04f441	fmov	v1.2d, #-2.25000000
+0x6f04f461	fmov	v1.2d, #-2.37500000
+0x6f04f481	fmov	v1.2d, #-2.50000000
+0x6f04f4a1	fmov	v1.2d, #-2.62500000
+0x6f04f4c1	fmov	v1.2d, #-2.75000000
+0x6f04f4e1	fmov	v1.2d, #-2.87500000
+0x6f04f501	fmov	v1.2d, #-3.00000000
+0x6f04f521	fmov	v1.2d, #-3.12500000
+0x6f04f541	fmov	v1.2d, #-3.25000000
+0x6f04f561	fmov	v1.2d, #-3.37500000
+0x6f04f581	fmov	v1.2d, #-3.50000000
+0x6f04f5a1	fmov	v1.2d, #-3.62500000
+0x6f04f5c1	fmov	v1.2d, #-3.75000000
+0x6f04f5e1	fmov	v1.2d, #-3.87500000
+0x6f04f601	fmov	v1.2d, #-4.00000000
+0x6f04f621	fmov	v1.2d, #-4.25000000
+0x6f04f641	fmov	v1.2d, #-4.50000000
+0x6f04f661	fmov	v1.2d, #-4.75000000
+0x6f04f681	fmov	v1.2d, #-5.00000000
+0x6f04f6a1	fmov	v1.2d, #-5.25000000
+0x6f04f6c1	fmov	v1.2d, #-5.50000000
+0x6f04f6e1	fmov	v1.2d, #-5.75000000
+0x6f04f701	fmov	v1.2d, #-6.00000000
+0x6f04f721	fmov	v1.2d, #-6.25000000
+0x6f04f741	fmov	v1.2d, #-6.50000000
+0x6f04f761	fmov	v1.2d, #-6.75000000
+0x6f04f781	fmov	v1.2d, #-7.00000000
+0x6f04f7a1	fmov	v1.2d, #-7.25000000
+0x6f04f7c1	fmov	v1.2d, #-7.50000000
+0x6f04f7e1	fmov	v1.2d, #-7.75000000
+0x6f05f401	fmov	v1.2d, #-8.00000000
+0x6f05f421	fmov	v1.2d, #-8.50000000
+0x6f05f441	fmov	v1.2d, #-9.00000000
+0x6f05f461	fmov	v1.2d, #-9.50000000
+0x6f05f481	fmov	v1.2d, #-10.00000000
+0x6f05f4a1	fmov	v1.2d, #-10.50000000
+0x6f05f4c1	fmov	v1.2d, #-11.00000000
+0x6f05f4e1	fmov	v1.2d, #-11.50000000
+0x6f05f501	fmov	v1.2d, #-12.00000000
+0x6f05f521	fmov	v1.2d, #-12.50000000
+0x6f05f541	fmov	v1.2d, #-13.00000000
+0x6f05f561	fmov	v1.2d, #-13.50000000
+0x6f05f581	fmov	v1.2d, #-14.00000000
+0x6f05f5a1	fmov	v1.2d, #-14.50000000
+0x6f05f5c1	fmov	v1.2d, #-15.00000000
+0x6f05f5e1	fmov	v1.2d, #-15.50000000
+0x6f05f601	fmov	v1.2d, #-16.00000000
+0x6f05f621	fmov	v1.2d, #-17.00000000
+0x6f05f641	fmov	v1.2d, #-18.00000000
+0x6f05f661	fmov	v1.2d, #-19.00000000
+0x6f05f681	fmov	v1.2d, #-20.00000000
+0x6f05f6a1	fmov	v1.2d, #-21.00000000
+0x6f05f6c1	fmov	v1.2d, #-22.00000000
+0x6f05f6e1	fmov	v1.2d, #-23.00000000
+0x6f05f701	fmov	v1.2d, #-24.00000000
+0x6f05f721	fmov	v1.2d, #-25.00000000
+0x6f05f741	fmov	v1.2d, #-26.00000000
+0x6f05f761	fmov	v1.2d, #-27.00000000
+0x6f05f781	fmov	v1.2d, #-28.00000000
+0x6f05f7a1	fmov	v1.2d, #-29.00000000
+0x6f05f7c1	fmov	v1.2d, #-30.00000000
+0x6f05f7e1	fmov	v1.2d, #-31.00000000
+0x6f06f401	fmov	v1.2d, #-0.12500000
+0x6f06f421	fmov	v1.2d, #-0.13281250
+0x6f06f441	fmov	v1.2d, #-0.14062500
+0x6f06f461	fmov	v1.2d, #-0.14843750
+0x6f06f481	fmov	v1.2d, #-0.15625000
+0x6f06f4a1	fmov	v1.2d, #-0.16406250
+0x6f06f4c1	fmov	v1.2d, #-0.17187500
+0x6f06f4e1	fmov	v1.2d, #-0.17968750
+0x6f06f501	fmov	v1.2d, #-0.18750000
+0x6f06f521	fmov	v1.2d, #-0.19531250
+0x6f06f541	fmov	v1.2d, #-0.20312500
+0x6f06f561	fmov	v1.2d, #-0.21093750
+0x6f06f581	fmov	v1.2d, #-0.21875000
+0x6f06f5a1	fmov	v1.2d, #-0.22656250
+0x6f06f5c1	fmov	v1.2d, #-0.23437500
+0x6f06f5e1	fmov	v1.2d, #-0.24218750
+0x6f06f601	fmov	v1.2d, #-0.25000000
+0x6f06f621	fmov	v1.2d, #-0.26562500
+0x6f06f641	fmov	v1.2d, #-0.28125000
+0x6f06f661	fmov	v1.2d, #-0.29687500
+0x6f06f681	fmov	v1.2d, #-0.31250000
+0x6f06f6a1	fmov	v1.2d, #-0.32812500
+0x6f06f6c1	fmov	v1.2d, #-0.34375000
+0x6f06f6e1	fmov	v1.2d, #-0.35937500
+0x6f06f701	fmov	v1.2d, #-0.37500000
+0x6f06f721	fmov	v1.2d, #-0.39062500
+0x6f06f741	fmov	v1.2d, #-0.40625000
+0x6f06f761	fmov	v1.2d, #-0.42187500
+0x6f06f781	fmov	v1.2d, #-0.43750000
+0x6f06f7a1	fmov	v1.2d, #-0.45312500
+0x6f06f7c1	fmov	v1.2d, #-0.46875000
+0x6f06f7e1	fmov	v1.2d, #-0.48437500
+0x6f07f401	fmov	v1.2d, #-0.50000000
+0x6f07f421	fmov	v1.2d, #-0.53125000
+0x6f07f441	fmov	v1.2d, #-0.56250000
+0x6f07f461	fmov	v1.2d, #-0.59375000
+0x6f07f481	fmov	v1.2d, #-0.62500000
+0x6f07f4a1	fmov	v1.2d, #-0.65625000
+0x6f07f4c1	fmov	v1.2d, #-0.68750000
+0x6f07f4e1	fmov	v1.2d, #-0.71875000
+0x6f07f501	fmov	v1.2d, #-0.75000000
+0x6f07f521	fmov	v1.2d, #-0.78125000
+0x6f07f541	fmov	v1.2d, #-0.81250000
+0x6f07f561	fmov	v1.2d, #-0.84375000
+0x6f07f581	fmov	v1.2d, #-0.87500000
+0x6f07f5a1	fmov	v1.2d, #-0.90625000
+0x6f07f5c1	fmov	v1.2d, #-0.93750000
+0x6f07f5e1	fmov	v1.2d, #-0.96875000
+0x6f07f601	fmov	v1.2d, #-1.00000000
+0x6f07f621	fmov	v1.2d, #-1.06250000
+0x6f07f641	fmov	v1.2d, #-1.12500000
+0x6f07f661	fmov	v1.2d, #-1.18750000
+0x6f07f681	fmov	v1.2d, #-1.25000000
+0x6f07f6a1	fmov	v1.2d, #-1.31250000
+0x6f07f6c1	fmov	v1.2d, #-1.37500000
+0x6f07f6e1	fmov	v1.2d, #-1.43750000
+0x6f07f701	fmov	v1.2d, #-1.50000000
+0x6f07f721	fmov	v1.2d, #-1.56250000
+0x6f07f741	fmov	v1.2d, #-1.62500000
+0x6f07f761	fmov	v1.2d, #-1.68750000
+0x6f07f781	fmov	v1.2d, #-1.75000000
+0x6f07f7a1	fmov	v1.2d, #-1.81250000
+0x6f07f7c1	fmov	v1.2d, #-1.87500000
+0x6f07f7e1	fmov	v1.2d, #-1.93750000
+0x6f00fc01	.long	0x6f00fc01
+0x6f00fc21	.long	0x6f00fc21
+0x6f00fc41	.long	0x6f00fc41
+0x6f00fc61	.long	0x6f00fc61
+0x6f00fc81	.long	0x6f00fc81
+0x6f00fca1	.long	0x6f00fca1
+0x6f00fcc1	.long	0x6f00fcc1
+0x6f00fce1	.long	0x6f00fce1
+0x6f00fd01	.long	0x6f00fd01
+0x6f00fd21	.long	0x6f00fd21
+0x6f00fd41	.long	0x6f00fd41
+0x6f00fd61	.long	0x6f00fd61
+0x6f00fd81	.long	0x6f00fd81
+0x6f00fda1	.long	0x6f00fda1
+0x6f00fdc1	.long	0x6f00fdc1
+0x6f00fde1	.long	0x6f00fde1
+0x6f00fe01	.long	0x6f00fe01
+0x6f00fe21	.long	0x6f00fe21
+0x6f00fe41	.long	0x6f00fe41
+0x6f00fe61	.long	0x6f00fe61
+0x6f00fe81	.long	0x6f00fe81
+0x6f00fea1	.long	0x6f00fea1
+0x6f00fec1	.long	0x6f00fec1
+0x6f00fee1	.long	0x6f00fee1
+0x6f00ff01	.long	0x6f00ff01
+0x6f00ff21	.long	0x6f00ff21
+0x6f00ff41	.long	0x6f00ff41
+0x6f00ff61	.long	0x6f00ff61
+0x6f00ff81	.long	0x6f00ff81
+0x6f00ffa1	.long	0x6f00ffa1
+0x6f00ffc1	.long	0x6f00ffc1
+0x6f00ffe1	.long	0x6f00ffe1
+0x6f01fc01	.long	0x6f01fc01
+0x6f01fc21	.long	0x6f01fc21
+0x6f01fc41	.long	0x6f01fc41
+0x6f01fc61	.long	0x6f01fc61
+0x6f01fc81	.long	0x6f01fc81
+0x6f01fca1	.long	0x6f01fca1
+0x6f01fcc1	.long	0x6f01fcc1
+0x6f01fce1	.long	0x6f01fce1
+0x6f01fd01	.long	0x6f01fd01
+0x6f01fd21	.long	0x6f01fd21
+0x6f01fd41	.long	0x6f01fd41
+0x6f01fd61	.long	0x6f01fd61
+0x6f01fd81	.long	0x6f01fd81
+0x6f01fda1	.long	0x6f01fda1
+0x6f01fdc1	.long	0x6f01fdc1
+0x6f01fde1	.long	0x6f01fde1
+0x6f01fe01	.long	0x6f01fe01
+0x6f01fe21	.long	0x6f01fe21
+0x6f01fe41	.long	0x6f01fe41
+0x6f01fe61	.long	0x6f01fe61
+0x6f01fe81	.long	0x6f01fe81
+0x6f01fea1	.long	0x6f01fea1
+0x6f01fec1	.long	0x6f01fec1
+0x6f01fee1	.long	0x6f01fee1
+0x6f01ff01	.long	0x6f01ff01
+0x6f01ff21	.long	0x6f01ff21
+0x6f01ff41	.long	0x6f01ff41
+0x6f01ff61	.long	0x6f01ff61
+0x6f01ff81	.long	0x6f01ff81
+0x6f01ffa1	.long	0x6f01ffa1
+0x6f01ffc1	.long	0x6f01ffc1
+0x6f01ffe1	.long	0x6f01ffe1
+0x6f02fc01	.long	0x6f02fc01
+0x6f02fc21	.long	0x6f02fc21
+0x6f02fc41	.long	0x6f02fc41
+0x6f02fc61	.long	0x6f02fc61
+0x6f02fc81	.long	0x6f02fc81
+0x6f02fca1	.long	0x6f02fca1
+0x6f02fcc1	.long	0x6f02fcc1
+0x6f02fce1	.long	0x6f02fce1
+0x6f02fd01	.long	0x6f02fd01
+0x6f02fd21	.long	0x6f02fd21
+0x6f02fd41	.long	0x6f02fd41
+0x6f02fd61	.long	0x6f02fd61
+0x6f02fd81	.long	0x6f02fd81
+0x6f02fda1	.long	0x6f02fda1
+0x6f02fdc1	.long	0x6f02fdc1
+0x6f02fde1	.long	0x6f02fde1
+0x6f02fe01	.long	0x6f02fe01
+0x6f02fe21	.long	0x6f02fe21
+0x6f02fe41	.long	0x6f02fe41
+0x6f02fe61	.long	0x6f02fe61
+0x6f02fe81	.long	0x6f02fe81
+0x6f02fea1	.long	0x6f02fea1
+0x6f02fec1	.long	0x6f02fec1
+0x6f02fee1	.long	0x6f02fee1
+0x6f02ff01	.long	0x6f02ff01
+0x6f02ff21	.long	0x6f02ff21
+0x6f02ff41	.long	0x6f02ff41
+0x6f02ff61	.long	0x6f02ff61
+0x6f02ff81	.long	0x6f02ff81
+0x6f02ffa1	.long	0x6f02ffa1
+0x6f02ffc1	.long	0x6f02ffc1
+0x6f02ffe1	.long	0x6f02ffe1
+0x6f03fc01	.long	0x6f03fc01
+0x6f03fc21	.long	0x6f03fc21
+0x6f03fc41	.long	0x6f03fc41
+0x6f03fc61	.long	0x6f03fc61
+0x6f03fc81	.long	0x6f03fc81
+0x6f03fca1	.long	0x6f03fca1
+0x6f03fcc1	.long	0x6f03fcc1
+0x6f03fce1	.long	0x6f03fce1
+0x6f03fd01	.long	0x6f03fd01
+0x6f03fd21	.long	0x6f03fd21
+0x6f03fd41	.long	0x6f03fd41
+0x6f03fd61	.long	0x6f03fd61
+0x6f03fd81	.long	0x6f03fd81
+0x6f03fda1	.long	0x6f03fda1
+0x6f03fdc1	.long	0x6f03fdc1
+0x6f03fde1	.long	0x6f03fde1
+0x6f03fe01	.long	0x6f03fe01
+0x6f03fe21	.long	0x6f03fe21
+0x6f03fe41	.long	0x6f03fe41
+0x6f03fe61	.long	0x6f03fe61
+0x6f03fe81	.long	0x6f03fe81
+0x6f03fea1	.long	0x6f03fea1
+0x6f03fec1	.long	0x6f03fec1
+0x6f03fee1	.long	0x6f03fee1
+0x6f03ff01	.long	0x6f03ff01
+0x6f03ff21	.long	0x6f03ff21
+0x6f03ff41	.long	0x6f03ff41
+0x6f03ff61	.long	0x6f03ff61
+0x6f03ff81	.long	0x6f03ff81
+0x6f03ffa1	.long	0x6f03ffa1
+0x6f03ffc1	.long	0x6f03ffc1
+0x6f03ffe1	.long	0x6f03ffe1
+0x6f04fc01	.long	0x6f04fc01
+0x6f04fc21	.long	0x6f04fc21
+0x6f04fc41	.long	0x6f04fc41
+0x6f04fc61	.long	0x6f04fc61
+0x6f04fc81	.long	0x6f04fc81
+0x6f04fca1	.long	0x6f04fca1
+0x6f04fcc1	.long	0x6f04fcc1
+0x6f04fce1	.long	0x6f04fce1
+0x6f04fd01	.long	0x6f04fd01
+0x6f04fd21	.long	0x6f04fd21
+0x6f04fd41	.long	0x6f04fd41
+0x6f04fd61	.long	0x6f04fd61
+0x6f04fd81	.long	0x6f04fd81
+0x6f04fda1	.long	0x6f04fda1
+0x6f04fdc1	.long	0x6f04fdc1
+0x6f04fde1	.long	0x6f04fde1
+0x6f04fe01	.long	0x6f04fe01
+0x6f04fe21	.long	0x6f04fe21
+0x6f04fe41	.long	0x6f04fe41
+0x6f04fe61	.long	0x6f04fe61
+0x6f04fe81	.long	0x6f04fe81
+0x6f04fea1	.long	0x6f04fea1
+0x6f04fec1	.long	0x6f04fec1
+0x6f04fee1	.long	0x6f04fee1
+0x6f04ff01	.long	0x6f04ff01
+0x6f04ff21	.long	0x6f04ff21
+0x6f04ff41	.long	0x6f04ff41
+0x6f04ff61	.long	0x6f04ff61
+0x6f04ff81	.long	0x6f04ff81
+0x6f04ffa1	.long	0x6f04ffa1
+0x6f04ffc1	.long	0x6f04ffc1
+0x6f04ffe1	.long	0x6f04ffe1
+0x6f05fc01	.long	0x6f05fc01
+0x6f05fc21	.long	0x6f05fc21
+0x6f05fc41	.long	0x6f05fc41
+0x6f05fc61	.long	0x6f05fc61
+0x6f05fc81	.long	0x6f05fc81
+0x6f05fca1	.long	0x6f05fca1
+0x6f05fcc1	.long	0x6f05fcc1
+0x6f05fce1	.long	0x6f05fce1
+0x6f05fd01	.long	0x6f05fd01
+0x6f05fd21	.long	0x6f05fd21
+0x6f05fd41	.long	0x6f05fd41
+0x6f05fd61	.long	0x6f05fd61
+0x6f05fd81	.long	0x6f05fd81
+0x6f05fda1	.long	0x6f05fda1
+0x6f05fdc1	.long	0x6f05fdc1
+0x6f05fde1	.long	0x6f05fde1
+0x6f05fe01	.long	0x6f05fe01
+0x6f05fe21	.long	0x6f05fe21
+0x6f05fe41	.long	0x6f05fe41
+0x6f05fe61	.long	0x6f05fe61
+0x6f05fe81	.long	0x6f05fe81
+0x6f05fea1	.long	0x6f05fea1
+0x6f05fec1	.long	0x6f05fec1
+0x6f05fee1	.long	0x6f05fee1
+0x6f05ff01	.long	0x6f05ff01
+0x6f05ff21	.long	0x6f05ff21
+0x6f05ff41	.long	0x6f05ff41
+0x6f05ff61	.long	0x6f05ff61
+0x6f05ff81	.long	0x6f05ff81
+0x6f05ffa1	.long	0x6f05ffa1
+0x6f05ffc1	.long	0x6f05ffc1
+0x6f05ffe1	.long	0x6f05ffe1
+0x6f06fc01	.long	0x6f06fc01
+0x6f06fc21	.long	0x6f06fc21
+0x6f06fc41	.long	0x6f06fc41
+0x6f06fc61	.long	0x6f06fc61
+0x6f06fc81	.long	0x6f06fc81
+0x6f06fca1	.long	0x6f06fca1
+0x6f06fcc1	.long	0x6f06fcc1
+0x6f06fce1	.long	0x6f06fce1
+0x6f06fd01	.long	0x6f06fd01
+0x6f06fd21	.long	0x6f06fd21
+0x6f06fd41	.long	0x6f06fd41
+0x6f06fd61	.long	0x6f06fd61
+0x6f06fd81	.long	0x6f06fd81
+0x6f06fda1	.long	0x6f06fda1
+0x6f06fdc1	.long	0x6f06fdc1
+0x6f06fde1	.long	0x6f06fde1
+0x6f06fe01	.long	0x6f06fe01
+0x6f06fe21	.long	0x6f06fe21
+0x6f06fe41	.long	0x6f06fe41
+0x6f06fe61	.long	0x6f06fe61
+0x6f06fe81	.long	0x6f06fe81
+0x6f06fea1	.long	0x6f06fea1
+0x6f06fec1	.long	0x6f06fec1
+0x6f06fee1	.long	0x6f06fee1
+0x6f06ff01	.long	0x6f06ff01
+0x6f06ff21	.long	0x6f06ff21
+0x6f06ff41	.long	0x6f06ff41
+0x6f06ff61	.long	0x6f06ff61
+0x6f06ff81	.long	0x6f06ff81
+0x6f06ffa1	.long	0x6f06ffa1
+0x6f06ffc1	.long	0x6f06ffc1
+0x6f06ffe1	.long	0x6f06ffe1
+0x6f07fc01	.long	0x6f07fc01
+0x6f07fc21	.long	0x6f07fc21
+0x6f07fc41	.long	0x6f07fc41
+0x6f07fc61	.long	0x6f07fc61
+0x6f07fc81	.long	0x6f07fc81
+0x6f07fca1	.long	0x6f07fca1
+0x6f07fcc1	.long	0x6f07fcc1
+0x6f07fce1	.long	0x6f07fce1
+0x6f07fd01	.long	0x6f07fd01
+0x6f07fd21	.long	0x6f07fd21
+0x6f07fd41	.long	0x6f07fd41
+0x6f07fd61	.long	0x6f07fd61
+0x6f07fd81	.long	0x6f07fd81
+0x6f07fda1	.long	0x6f07fda1
+0x6f07fdc1	.long	0x6f07fdc1
+0x6f07fde1	.long	0x6f07fde1
+0x6f07fe01	.long	0x6f07fe01
+0x6f07fe21	.long	0x6f07fe21
+0x6f07fe41	.long	0x6f07fe41
+0x6f07fe61	.long	0x6f07fe61
+0x6f07fe81	.long	0x6f07fe81
+0x6f07fea1	.long	0x6f07fea1
+0x6f07fec1	.long	0x6f07fec1
+0x6f07fee1	.long	0x6f07fee1
+0x6f07ff01	.long	0x6f07ff01
+0x6f07ff21	.long	0x6f07ff21
+0x6f07ff41	.long	0x6f07ff41
+0x6f07ff61	.long	0x6f07ff61
+0x6f07ff81	.long	0x6f07ff81
+0x6f07ffa1	.long	0x6f07ffa1
+0x6f07ffc1	.long	0x6f07ffc1
+0x6f07ffe1	.long	0x6f07ffe1
+0x0f00041f	movi	v31.2s, #0x0
+0x0f00043f	movi	v31.2s, #0x1
+0x0f04041f	movi	v31.2s, #0x80
+0x0f0707ff	movi	v31.2s, #0xff
+0x0f000c1f	.long	0x0f000c1f
+0x0f000c3f	.long	0x0f000c3f
+0x0f040c1f	.long	0x0f040c1f
+0x0f070fff	.long	0x0f070fff
+0x0f00141f	orr	v31.2s, #0x0
+0x0f00143f	orr	v31.2s, #0x1
+0x0f04141f	orr	v31.2s, #0x80
+0x0f0717ff	orr	v31.2s, #0xff
+0x0f001c1f	.long	0x0f001c1f
+0x0f001c3f	.long	0x0f001c3f
+0x0f041c1f	.long	0x0f041c1f
+0x0f071fff	.long	0x0f071fff
+0x0f00241f	movi	v31.2s, #0x0, lsl #8
+0x0f00243f	movi	v31.2s, #0x1, lsl #8
+0x0f04241f	movi	v31.2s, #0x80, lsl #8
+0x0f0727ff	movi	v31.2s, #0xff, lsl #8
+0x0f002c1f	.long	0x0f002c1f
+0x0f002c3f	.long	0x0f002c3f
+0x0f042c1f	.long	0x0f042c1f
+0x0f072fff	.long	0x0f072fff
+0x0f00341f	orr	v31.2s, #0x0, lsl #8
+0x0f00343f	orr	v31.2s, #0x1, lsl #8
+0x0f04341f	orr	v31.2s, #0x80, lsl #8
+0x0f0737ff	orr	v31.2s, #0xff, lsl #8
+0x0f003c1f	.long	0x0f003c1f
+0x0f003c3f	.long	0x0f003c3f
+0x0f043c1f	.long	0x0f043c1f
+0x0f073fff	.long	0x0f073fff
+0x0f00441f	movi	v31.2s, #0x0, lsl #16
+0x0f00443f	movi	v31.2s, #0x1, lsl #16
+0x0f04441f	movi	v31.2s, #0x80, lsl #16
+0x0f0747ff	movi	v31.2s, #0xff, lsl #16
+0x0f004c1f	.long	0x0f004c1f
+0x0f004c3f	.long	0x0f004c3f
+0x0f044c1f	.long	0x0f044c1f
+0x0f074fff	.long	0x0f074fff
+0x0f00541f	orr	v31.2s, #0x0, lsl #16
+0x0f00543f	orr	v31.2s, #0x1, lsl #16
+0x0f04541f	orr	v31.2s, #0x80, lsl #16
+0x0f0757ff	orr	v31.2s, #0xff, lsl #16
+0x0f005c1f	.long	0x0f005c1f
+0x0f005c3f	.long	0x0f005c3f
+0x0f045c1f	.long	0x0f045c1f
+0x0f075fff	.long	0x0f075fff
+0x0f00641f	movi	v31.2s, #0x0, lsl #24
+0x0f00643f	movi	v31.2s, #0x1, lsl #24
+0x0f04641f	movi	v31.2s, #0x80, lsl #24
+0x0f0767ff	movi	v31.2s, #0xff, lsl #24
+0x0f006c1f	.long	0x0f006c1f
+0x0f006c3f	.long	0x0f006c3f
+0x0f046c1f	.long	0x0f046c1f
+0x0f076fff	.long	0x0f076fff
+0x0f00741f	orr	v31.2s, #0x0, lsl #24
+0x0f00743f	orr	v31.2s, #0x1, lsl #24
+0x0f04741f	orr	v31.2s, #0x80, lsl #24
+0x0f0777ff	orr	v31.2s, #0xff, lsl #24
+0x0f007c1f	.long	0x0f007c1f
+0x0f007c3f	.long	0x0f007c3f
+0x0f047c1f	.long	0x0f047c1f
+0x0f077fff	.long	0x0f077fff
+0x0f00841f	movi	v31.4h, #0x0
+0x0f00843f	movi	v31.4h, #0x1
+0x0f04841f	movi	v31.4h, #0x80
+0x0f0787ff	movi	v31.4h, #0xff
+0x0f008c1f	.long	0x0f008c1f
+0x0f008c3f	.long	0x0f008c3f
+0x0f048c1f	.long	0x0f048c1f
+0x0f078fff	.long	0x0f078fff
+0x0f00941f	orr	v31.4h, #0x0
+0x0f00943f	orr	v31.4h, #0x1
+0x0f04941f	orr	v31.4h, #0x80
+0x0f0797ff	orr	v31.4h, #0xff
+0x0f009c1f	.long	0x0f009c1f
+0x0f009c3f	.long	0x0f009c3f
+0x0f049c1f	.long	0x0f049c1f
+0x0f079fff	.long	0x0f079fff
+0x0f00a41f	movi	v31.4h, #0x0, lsl #8
+0x0f00a43f	movi	v31.4h, #0x1, lsl #8
+0x0f04a41f	movi	v31.4h, #0x80, lsl #8
+0x0f07a7ff	movi	v31.4h, #0xff, lsl #8
+0x0f00ac1f	.long	0x0f00ac1f
+0x0f00ac3f	.long	0x0f00ac3f
+0x0f04ac1f	.long	0x0f04ac1f
+0x0f07afff	.long	0x0f07afff
+0x0f00b41f	orr	v31.4h, #0x0, lsl #8
+0x0f00b43f	orr	v31.4h, #0x1, lsl #8
+0x0f04b41f	orr	v31.4h, #0x80, lsl #8
+0x0f07b7ff	orr	v31.4h, #0xff, lsl #8
+0x0f00bc1f	.long	0x0f00bc1f
+0x0f00bc3f	.long	0x0f00bc3f
+0x0f04bc1f	.long	0x0f04bc1f
+0x0f07bfff	.long	0x0f07bfff
+0x0f00c41f	movi	v31.2s, #0x0, msl #8
+0x0f00c43f	movi	v31.2s, #0x1, msl #8
+0x0f04c41f	movi	v31.2s, #0x80, msl #8
+0x0f07c7ff	movi	v31.2s, #0xff, msl #8
+0x0f00cc1f	.long	0x0f00cc1f
+0x0f00cc3f	.long	0x0f00cc3f
+0x0f04cc1f	.long	0x0f04cc1f
+0x0f07cfff	.long	0x0f07cfff
+0x0f00d41f	movi	v31.2s, #0x0, msl #16
+0x0f00d43f	movi	v31.2s, #0x1, msl #16
+0x0f04d41f	movi	v31.2s, #0x80, msl #16
+0x0f07d7ff	movi	v31.2s, #0xff, msl #16
+0x0f00dc1f	.long	0x0f00dc1f
+0x0f00dc3f	.long	0x0f00dc3f
+0x0f04dc1f	.long	0x0f04dc1f
+0x0f07dfff	.long	0x0f07dfff
+0x0f00e41f	movi	v31.8b, #0x0
+0x0f00e43f	movi	v31.8b, #0x1
+0x0f04e41f	movi	v31.8b, #0x80
+0x0f07e7ff	movi	v31.8b, #0xff
+0x0f00ec1f	.long	0x0f00ec1f
+0x0f00ec3f	.long	0x0f00ec3f
+0x0f04ec1f	.long	0x0f04ec1f
+0x0f07efff	.long	0x0f07efff
+0x0f00f41f	fmov	v31.2s, #2.00000000
+0x0f00f43f	fmov	v31.2s, #2.12500000
+0x0f04f41f	fmov	v31.2s, #-2.00000000
+0x0f07f7ff	fmov	v31.2s, #-1.93750000
+0x0f00fc1f	fmov	v31.4h, #2.00000000
+0x0f00fc3f	fmov	v31.4h, #2.12500000
+0x0f04fc1f	fmov	v31.4h, #-2.00000000
+0x0f07ffff	fmov	v31.4h, #-1.93750000
+0x2f00041f	mvni	v31.2s, #0x0
+0x2f00043f	mvni	v31.2s, #0x1
+0x2f04041f	mvni	v31.2s, #0x80
+0x2f0707ff	mvni	v31.2s, #0xff
+0x2f000c1f	.long	0x2f000c1f
+0x2f000c3f	.long	0x2f000c3f
+0x2f040c1f	.long	0x2f040c1f
+0x2f070fff	.long	0x2f070fff
+0x2f00141f	bic	v31.2s, #0x0
+0x2f00143f	bic	v31.2s, #0x1
+0x2f04141f	bic	v31.2s, #0x80
+0x2f0717ff	bic	v31.2s, #0xff
+0x2f001c1f	.long	0x2f001c1f
+0x2f001c3f	.long	0x2f001c3f
+0x2f041c1f	.long	0x2f041c1f
+0x2f071fff	.long	0x2f071fff
+0x2f00241f	mvni	v31.2s, #0x0, lsl #8
+0x2f00243f	mvni	v31.2s, #0x1, lsl #8
+0x2f04241f	mvni	v31.2s, #0x80, lsl #8
+0x2f0727ff	mvni	v31.2s, #0xff, lsl #8
+0x2f002c1f	.long	0x2f002c1f
+0x2f002c3f	.long	0x2f002c3f
+0x2f042c1f	.long	0x2f042c1f
+0x2f072fff	.long	0x2f072fff
+0x2f00341f	bic	v31.2s, #0x0, lsl #8
+0x2f00343f	bic	v31.2s, #0x1, lsl #8
+0x2f04341f	bic	v31.2s, #0x80, lsl #8
+0x2f0737ff	bic	v31.2s, #0xff, lsl #8
+0x2f003c1f	.long	0x2f003c1f
+0x2f003c3f	.long	0x2f003c3f
+0x2f043c1f	.long	0x2f043c1f
+0x2f073fff	.long	0x2f073fff
+0x2f00441f	mvni	v31.2s, #0x0, lsl #16
+0x2f00443f	mvni	v31.2s, #0x1, lsl #16
+0x2f04441f	mvni	v31.2s, #0x80, lsl #16
+0x2f0747ff	mvni	v31.2s, #0xff, lsl #16
+0x2f004c1f	.long	0x2f004c1f
+0x2f004c3f	.long	0x2f004c3f
+0x2f044c1f	.long	0x2f044c1f
+0x2f074fff	.long	0x2f074fff
+0x2f00541f	bic	v31.2s, #0x0, lsl #16
+0x2f00543f	bic	v31.2s, #0x1, lsl #16
+0x2f04541f	bic	v31.2s, #0x80, lsl #16
+0x2f0757ff	bic	v31.2s, #0xff, lsl #16
+0x2f005c1f	.long	0x2f005c1f
+0x2f005c3f	.long	0x2f005c3f
+0x2f045c1f	.long	0x2f045c1f
+0x2f075fff	.long	0x2f075fff
+0x2f00641f	mvni	v31.2s, #0x0, lsl #24
+0x2f00643f	mvni	v31.2s, #0x1, lsl #24
+0x2f04641f	mvni	v31.2s, #0x80, lsl #24
+0x2f0767ff	mvni	v31.2s, #0xff, lsl #24
+0x2f006c1f	.long	0x2f006c1f
+0x2f006c3f	.long	0x2f006c3f
+0x2f046c1f	.long	0x2f046c1f
+0x2f076fff	.long	0x2f076fff
+0x2f00741f	bic	v31.2s, #0x0, lsl #24
+0x2f00743f	bic	v31.2s, #0x1, lsl #24
+0x2f04741f	bic	v31.2s, #0x80, lsl #24
+0x2f0777ff	bic	v31.2s, #0xff, lsl #24
+0x2f007c1f	.long	0x2f007c1f
+0x2f007c3f	.long	0x2f007c3f
+0x2f047c1f	.long	0x2f047c1f
+0x2f077fff	.long	0x2f077fff
+0x2f00841f	mvni	v31.4h, #0x0
+0x2f00843f	mvni	v31.4h, #0x1
+0x2f04841f	mvni	v31.4h, #0x80
+0x2f0787ff	mvni	v31.4h, #0xff
+0x2f008c1f	.long	0x2f008c1f
+0x2f008c3f	.long	0x2f008c3f
+0x2f048c1f	.long	0x2f048c1f
+0x2f078fff	.long	0x2f078fff
+0x2f00941f	bic	v31.4h, #0x0
+0x2f00943f	bic	v31.4h, #0x1
+0x2f04941f	bic	v31.4h, #0x80
+0x2f0797ff	bic	v31.4h, #0xff
+0x2f009c1f	.long	0x2f009c1f
+0x2f009c3f	.long	0x2f009c3f
+0x2f049c1f	.long	0x2f049c1f
+0x2f079fff	.long	0x2f079fff
+0x2f00a41f	mvni	v31.4h, #0x0, lsl #8
+0x2f00a43f	mvni	v31.4h, #0x1, lsl #8
+0x2f04a41f	mvni	v31.4h, #0x80, lsl #8
+0x2f07a7ff	mvni	v31.4h, #0xff, lsl #8
+0x2f00ac1f	.long	0x2f00ac1f
+0x2f00ac3f	.long	0x2f00ac3f
+0x2f04ac1f	.long	0x2f04ac1f
+0x2f07afff	.long	0x2f07afff
+0x2f00b41f	bic	v31.4h, #0x0, lsl #8
+0x2f00b43f	bic	v31.4h, #0x1, lsl #8
+0x2f04b41f	bic	v31.4h, #0x80, lsl #8
+0x2f07b7ff	bic	v31.4h, #0xff, lsl #8
+0x2f00bc1f	.long	0x2f00bc1f
+0x2f00bc3f	.long	0x2f00bc3f
+0x2f04bc1f	.long	0x2f04bc1f
+0x2f07bfff	.long	0x2f07bfff
+0x2f00c41f	mvni	v31.2s, #0x0, msl #8
+0x2f00c43f	mvni	v31.2s, #0x1, msl #8
+0x2f04c41f	mvni	v31.2s, #0x80, msl #8
+0x2f07c7ff	mvni	v31.2s, #0xff, msl #8
+0x2f00cc1f	.long	0x2f00cc1f
+0x2f00cc3f	.long	0x2f00cc3f
+0x2f04cc1f	.long	0x2f04cc1f
+0x2f07cfff	.long	0x2f07cfff
+0x2f00d41f	mvni	v31.2s, #0x0, msl #16
+0x2f00d43f	mvni	v31.2s, #0x1, msl #16
+0x2f04d41f	mvni	v31.2s, #0x80, msl #16
+0x2f07d7ff	mvni	v31.2s, #0xff, msl #16
+0x2f00dc1f	.long	0x2f00dc1f
+0x2f00dc3f	.long	0x2f00dc3f
+0x2f04dc1f	.long	0x2f04dc1f
+0x2f07dfff	.long	0x2f07dfff
+0x2f00e41f	movi	d31, #0000000000000000
+0x2f00e43f	movi	d31, #0x000000000000ff
+0x2f04e41f	movi	d31, #0xff00000000000000
+0x2f07e7ff	movi	d31, #0xffffffffffffffff
+0x2f00ec1f	.long	0x2f00ec1f
+0x2f00ec3f	.long	0x2f00ec3f
+0x2f04ec1f	.long	0x2f04ec1f
+0x2f07efff	.long	0x2f07efff
+0x2f00f41f	.long	0x2f00f41f
+0x2f00f43f	.long	0x2f00f43f
+0x2f04f41f	.long	0x2f04f41f
+0x2f07f7ff	.long	0x2f07f7ff
+0x2f00fc1f	.long	0x2f00fc1f
+0x2f00fc3f	.long	0x2f00fc3f
+0x2f04fc1f	.long	0x2f04fc1f
+0x2f07ffff	.long	0x2f07ffff
+0x4f00041f	movi	v31.4s, #0x0
+0x4f00043f	movi	v31.4s, #0x1
+0x4f04041f	movi	v31.4s, #0x80
+0x4f0707ff	movi	v31.4s, #0xff
+0x4f000c1f	.long	0x4f000c1f
+0x4f000c3f	.long	0x4f000c3f
+0x4f040c1f	.long	0x4f040c1f
+0x4f070fff	.long	0x4f070fff
+0x4f00141f	orr	v31.4s, #0x0
+0x4f00143f	orr	v31.4s, #0x1
+0x4f04141f	orr	v31.4s, #0x80
+0x4f0717ff	orr	v31.4s, #0xff
+0x4f001c1f	.long	0x4f001c1f
+0x4f001c3f	.long	0x4f001c3f
+0x4f041c1f	.long	0x4f041c1f
+0x4f071fff	.long	0x4f071fff
+0x4f00241f	movi	v31.4s, #0x0, lsl #8
+0x4f00243f	movi	v31.4s, #0x1, lsl #8
+0x4f04241f	movi	v31.4s, #0x80, lsl #8
+0x4f0727ff	movi	v31.4s, #0xff, lsl #8
+0x4f002c1f	.long	0x4f002c1f
+0x4f002c3f	.long	0x4f002c3f
+0x4f042c1f	.long	0x4f042c1f
+0x4f072fff	.long	0x4f072fff
+0x4f00341f	orr	v31.4s, #0x0, lsl #8
+0x4f00343f	orr	v31.4s, #0x1, lsl #8
+0x4f04341f	orr	v31.4s, #0x80, lsl #8
+0x4f0737ff	orr	v31.4s, #0xff, lsl #8
+0x4f003c1f	.long	0x4f003c1f
+0x4f003c3f	.long	0x4f003c3f
+0x4f043c1f	.long	0x4f043c1f
+0x4f073fff	.long	0x4f073fff
+0x4f00441f	movi	v31.4s, #0x0, lsl #16
+0x4f00443f	movi	v31.4s, #0x1, lsl #16
+0x4f04441f	movi	v31.4s, #0x80, lsl #16
+0x4f0747ff	movi	v31.4s, #0xff, lsl #16
+0x4f004c1f	.long	0x4f004c1f
+0x4f004c3f	.long	0x4f004c3f
+0x4f044c1f	.long	0x4f044c1f
+0x4f074fff	.long	0x4f074fff
+0x4f00541f	orr	v31.4s, #0x0, lsl #16
+0x4f00543f	orr	v31.4s, #0x1, lsl #16
+0x4f04541f	orr	v31.4s, #0x80, lsl #16
+0x4f0757ff	orr	v31.4s, #0xff, lsl #16
+0x4f005c1f	.long	0x4f005c1f
+0x4f005c3f	.long	0x4f005c3f
+0x4f045c1f	.long	0x4f045c1f
+0x4f075fff	.long	0x4f075fff
+0x4f00641f	movi	v31.4s, #0x0, lsl #24
+0x4f00643f	movi	v31.4s, #0x1, lsl #24
+0x4f04641f	movi	v31.4s, #0x80, lsl #24
+0x4f0767ff	movi	v31.4s, #0xff, lsl #24
+0x4f006c1f	.long	0x4f006c1f
+0x4f006c3f	.long	0x4f006c3f
+0x4f046c1f	.long	0x4f046c1f
+0x4f076fff	.long	0x4f076fff
+0x4f00741f	orr	v31.4s, #0x0, lsl #24
+0x4f00743f	orr	v31.4s, #0x1, lsl #24
+0x4f04741f	orr	v31.4s, #0x80, lsl #24
+0x4f0777ff	orr	v31.4s, #0xff, lsl #24
+0x4f007c1f	.long	0x4f007c1f
+0x4f007c3f	.long	0x4f007c3f
+0x4f047c1f	.long	0x4f047c1f
+0x4f077fff	.long	0x4f077fff
+0x4f00841f	movi	v31.8h, #0x0
+0x4f00843f	movi	v31.8h, #0x1
+0x4f04841f	movi	v31.8h, #0x80
+0x4f0787ff	movi	v31.8h, #0xff
+0x4f008c1f	.long	0x4f008c1f
+0x4f008c3f	.long	0x4f008c3f
+0x4f048c1f	.long	0x4f048c1f
+0x4f078fff	.long	0x4f078fff
+0x4f00941f	orr	v31.8h, #0x0
+0x4f00943f	orr	v31.8h, #0x1
+0x4f04941f	orr	v31.8h, #0x80
+0x4f0797ff	orr	v31.8h, #0xff
+0x4f009c1f	.long	0x4f009c1f
+0x4f009c3f	.long	0x4f009c3f
+0x4f049c1f	.long	0x4f049c1f
+0x4f079fff	.long	0x4f079fff
+0x4f00a41f	movi	v31.8h, #0x0, lsl #8
+0x4f00a43f	movi	v31.8h, #0x1, lsl #8
+0x4f04a41f	movi	v31.8h, #0x80, lsl #8
+0x4f07a7ff	movi	v31.8h, #0xff, lsl #8
+0x4f00ac1f	.long	0x4f00ac1f
+0x4f00ac3f	.long	0x4f00ac3f
+0x4f04ac1f	.long	0x4f04ac1f
+0x4f07afff	.long	0x4f07afff
+0x4f00b41f	orr	v31.8h, #0x0, lsl #8
+0x4f00b43f	orr	v31.8h, #0x1, lsl #8
+0x4f04b41f	orr	v31.8h, #0x80, lsl #8
+0x4f07b7ff	orr	v31.8h, #0xff, lsl #8
+0x4f00bc1f	.long	0x4f00bc1f
+0x4f00bc3f	.long	0x4f00bc3f
+0x4f04bc1f	.long	0x4f04bc1f
+0x4f07bfff	.long	0x4f07bfff
+0x4f00c41f	movi	v31.4s, #0x0, msl #8
+0x4f00c43f	movi	v31.4s, #0x1, msl #8
+0x4f04c41f	movi	v31.4s, #0x80, msl #8
+0x4f07c7ff	movi	v31.4s, #0xff, msl #8
+0x4f00cc1f	.long	0x4f00cc1f
+0x4f00cc3f	.long	0x4f00cc3f
+0x4f04cc1f	.long	0x4f04cc1f
+0x4f07cfff	.long	0x4f07cfff
+0x4f00d41f	movi	v31.4s, #0x0, msl #16
+0x4f00d43f	movi	v31.4s, #0x1, msl #16
+0x4f04d41f	movi	v31.4s, #0x80, msl #16
+0x4f07d7ff	movi	v31.4s, #0xff, msl #16
+0x4f00dc1f	.long	0x4f00dc1f
+0x4f00dc3f	.long	0x4f00dc3f
+0x4f04dc1f	.long	0x4f04dc1f
+0x4f07dfff	.long	0x4f07dfff
+0x4f00e41f	movi	v31.16b, #0x0
+0x4f00e43f	movi	v31.16b, #0x1
+0x4f04e41f	movi	v31.16b, #0x80
+0x4f07e7ff	movi	v31.16b, #0xff
+0x4f00ec1f	.long	0x4f00ec1f
+0x4f00ec3f	.long	0x4f00ec3f
+0x4f04ec1f	.long	0x4f04ec1f
+0x4f07efff	.long	0x4f07efff
+0x4f00f41f	fmov	v31.4s, #2.00000000
+0x4f00f43f	fmov	v31.4s, #2.12500000
+0x4f04f41f	fmov	v31.4s, #-2.00000000
+0x4f07f7ff	fmov	v31.4s, #-1.93750000
+0x4f00fc1f	fmov	v31.8h, #2.00000000
+0x4f00fc3f	fmov	v31.8h, #2.12500000
+0x4f04fc1f	fmov	v31.8h, #-2.00000000
+0x4f07ffff	fmov	v31.8h, #-1.93750000
+0x6f00041f	mvni	v31.4s, #0x0
+0x6f00043f	mvni	v31.4s, #0x1
+0x6f04041f	mvni	v31.4s, #0x80
+0x6f0707ff	mvni	v31.4s, #0xff
+0x6f000c1f	.long	0x6f000c1f
+0x6f000c3f	.long	0x6f000c3f
+0x6f040c1f	.long	0x6f040c1f
+0x6f070fff	.long	0x6f070fff
+0x6f00141f	bic	v31.4s, #0x0
+0x6f00143f	bic	v31.4s, #0x1
+0x6f04141f	bic	v31.4s, #0x80
+0x6f0717ff	bic	v31.4s, #0xff
+0x6f001c1f	.long	0x6f001c1f
+0x6f001c3f	.long	0x6f001c3f
+0x6f041c1f	.long	0x6f041c1f
+0x6f071fff	.long	0x6f071fff
+0x6f00241f	mvni	v31.4s, #0x0, lsl #8
+0x6f00243f	mvni	v31.4s, #0x1, lsl #8
+0x6f04241f	mvni	v31.4s, #0x80, lsl #8
+0x6f0727ff	mvni	v31.4s, #0xff, lsl #8
+0x6f002c1f	.long	0x6f002c1f
+0x6f002c3f	.long	0x6f002c3f
+0x6f042c1f	.long	0x6f042c1f
+0x6f072fff	.long	0x6f072fff
+0x6f00341f	bic	v31.4s, #0x0, lsl #8
+0x6f00343f	bic	v31.4s, #0x1, lsl #8
+0x6f04341f	bic	v31.4s, #0x80, lsl #8
+0x6f0737ff	bic	v31.4s, #0xff, lsl #8
+0x6f003c1f	.long	0x6f003c1f
+0x6f003c3f	.long	0x6f003c3f
+0x6f043c1f	.long	0x6f043c1f
+0x6f073fff	.long	0x6f073fff
+0x6f00441f	mvni	v31.4s, #0x0, lsl #16
+0x6f00443f	mvni	v31.4s, #0x1, lsl #16
+0x6f04441f	mvni	v31.4s, #0x80, lsl #16
+0x6f0747ff	mvni	v31.4s, #0xff, lsl #16
+0x6f004c1f	.long	0x6f004c1f
+0x6f004c3f	.long	0x6f004c3f
+0x6f044c1f	.long	0x6f044c1f
+0x6f074fff	.long	0x6f074fff
+0x6f00541f	bic	v31.4s, #0x0, lsl #16
+0x6f00543f	bic	v31.4s, #0x1, lsl #16
+0x6f04541f	bic	v31.4s, #0x80, lsl #16
+0x6f0757ff	bic	v31.4s, #0xff, lsl #16
+0x6f005c1f	.long	0x6f005c1f
+0x6f005c3f	.long	0x6f005c3f
+0x6f045c1f	.long	0x6f045c1f
+0x6f075fff	.long	0x6f075fff
+0x6f00641f	mvni	v31.4s, #0x0, lsl #24
+0x6f00643f	mvni	v31.4s, #0x1, lsl #24
+0x6f04641f	mvni	v31.4s, #0x80, lsl #24
+0x6f0767ff	mvni	v31.4s, #0xff, lsl #24
+0x6f006c1f	.long	0x6f006c1f
+0x6f006c3f	.long	0x6f006c3f
+0x6f046c1f	.long	0x6f046c1f
+0x6f076fff	.long	0x6f076fff
+0x6f00741f	bic	v31.4s, #0x0, lsl #24
+0x6f00743f	bic	v31.4s, #0x1, lsl #24
+0x6f04741f	bic	v31.4s, #0x80, lsl #24
+0x6f0777ff	bic	v31.4s, #0xff, lsl #24
+0x6f007c1f	.long	0x6f007c1f
+0x6f007c3f	.long	0x6f007c3f
+0x6f047c1f	.long	0x6f047c1f
+0x6f077fff	.long	0x6f077fff
+0x6f00841f	mvni	v31.8h, #0x0
+0x6f00843f	mvni	v31.8h, #0x1
+0x6f04841f	mvni	v31.8h, #0x80
+0x6f0787ff	mvni	v31.8h, #0xff
+0x6f008c1f	.long	0x6f008c1f
+0x6f008c3f	.long	0x6f008c3f
+0x6f048c1f	.long	0x6f048c1f
+0x6f078fff	.long	0x6f078fff
+0x6f00941f	bic	v31.8h, #0x0
+0x6f00943f	bic	v31.8h, #0x1
+0x6f04941f	bic	v31.8h, #0x80
+0x6f0797ff	bic	v31.8h, #0xff
+0x6f009c1f	.long	0x6f009c1f
+0x6f009c3f	.long	0x6f009c3f
+0x6f049c1f	.long	0x6f049c1f
+0x6f079fff	.long	0x6f079fff
+0x6f00a41f	mvni	v31.8h, #0x0, lsl #8
+0x6f00a43f	mvni	v31.8h, #0x1, lsl #8
+0x6f04a41f	mvni	v31.8h, #0x80, lsl #8
+0x6f07a7ff	mvni	v31.8h, #0xff, lsl #8
+0x6f00ac1f	.long	0x6f00ac1f
+0x6f00ac3f	.long	0x6f00ac3f
+0x6f04ac1f	.long	0x6f04ac1f
+0x6f07afff	.long	0x6f07afff
+0x6f00b41f	bic	v31.8h, #0x0, lsl #8
+0x6f00b43f	bic	v31.8h, #0x1, lsl #8
+0x6f04b41f	bic	v31.8h, #0x80, lsl #8
+0x6f07b7ff	bic	v31.8h, #0xff, lsl #8
+0x6f00bc1f	.long	0x6f00bc1f
+0x6f00bc3f	.long	0x6f00bc3f
+0x6f04bc1f	.long	0x6f04bc1f
+0x6f07bfff	.long	0x6f07bfff
+0x6f00c41f	mvni	v31.4s, #0x0, msl #8
+0x6f00c43f	mvni	v31.4s, #0x1, msl #8
+0x6f04c41f	mvni	v31.4s, #0x80, msl #8
+0x6f07c7ff	mvni	v31.4s, #0xff, msl #8
+0x6f00cc1f	.long	0x6f00cc1f
+0x6f00cc3f	.long	0x6f00cc3f
+0x6f04cc1f	.long	0x6f04cc1f
+0x6f07cfff	.long	0x6f07cfff
+0x6f00d41f	mvni	v31.4s, #0x0, msl #16
+0x6f00d43f	mvni	v31.4s, #0x1, msl #16
+0x6f04d41f	mvni	v31.4s, #0x80, msl #16
+0x6f07d7ff	mvni	v31.4s, #0xff, msl #16
+0x6f00dc1f	.long	0x6f00dc1f
+0x6f00dc3f	.long	0x6f00dc3f
+0x6f04dc1f	.long	0x6f04dc1f
+0x6f07dfff	.long	0x6f07dfff
+0x6f00e41f	movi	v31.2d, #0000000000000000
+0x6f00e43f	movi	v31.2d, #0x000000000000ff
+0x6f04e41f	movi	v31.2d, #0xff00000000000000
+0x6f07e7ff	movi	v31.2d, #0xffffffffffffffff
+0x6f00ec1f	.long	0x6f00ec1f
+0x6f00ec3f	.long	0x6f00ec3f
+0x6f04ec1f	.long	0x6f04ec1f
+0x6f07efff	.long	0x6f07efff
+0x6f00f41f	fmov	v31.2d, #2.00000000
+0x6f00f43f	fmov	v31.2d, #2.12500000
+0x6f04f41f	fmov	v31.2d, #-2.00000000
+0x6f07f7ff	fmov	v31.2d, #-1.93750000
+0x6f00fc1f	.long	0x6f00fc1f
+0x6f00fc3f	.long	0x6f00fc3f
+0x6f04fc1f	.long	0x6f04fc1f
+0x6f07ffff	.long	0x6f07ffff

@@ -3563,53 +3563,9 @@ public struct A64InstructionDecoder: Sendable {
         let rn = UInt8(A64BitUtils.extract(word, 9, 5))
         let rd = UInt8(A64BitUtils.extract(word, 4, 0))
 
-        // 1. AdvSIMD Modified Immediate (MOVI): (word & 0x9FF8_0400) == 0x0F00_0400
+        // 1. AdvSIMD Modified Immediate (MOVI, MVNI, ORR, BIC, FMOV): (word & 0x9FF8_0400) == 0x0F00_0400
         if (word & 0x9FF8_0400) == 0x0F00_0400 {
-            let abc = UInt8(A64BitUtils.extract(word, 18, 16))
-            let cmode = A64BitUtils.extract(word, 15, 12)
-            let o2 = A64BitUtils.bit(word, 11)
-            let defgh = UInt8(A64BitUtils.extract(word, 9, 5))
-            let imm8 = (abc << 5) | defgh
-
-            if cmode == 0b1110 && o2 == 0 {
-                if u {
-                    let expanded = A64BitUtils.expandSIMDByteMaskImmediate(imm8)
-                    let dst: A64Register = q ? .v(rd, arrangement: "2d") : .d(rd)
-                    return A64DecodedInstruction(
-                        address: address,
-                        rawWord: word,
-                        mnemonic: .movi,
-                        operands: [.register(dst), .unsignedImmediate(expanded)],
-                        group: .simdAndFP,
-                        writesRegisters: [dst]
-                    )
-                } else {
-                    let arr = q ? "16b" : "8b"
-                    let dst = A64Register.v(rd, arrangement: arr)
-                    return A64DecodedInstruction(
-                        address: address,
-                        rawWord: word,
-                        mnemonic: .movi,
-                        operands: [.register(dst), .unsignedImmediate(UInt64(imm8))],
-                        group: .simdAndFP,
-                        writesRegisters: [dst]
-                    )
-                }
-            }
-            if (cmode & 0b1001) == 0b0000 && !u && o2 == 0 {
-                let shift = UInt8(((cmode >> 1) & 0x3) * 8)
-                let dst = A64Register.v(rd, arrangement: q ? "4s" : "2s")
-                let immOp: A64Operand = (shift == 0) ? .unsignedImmediate(UInt64(imm8)) : .shiftedImmediate(UInt64(imm8), shiftBits: shift)
-                return A64DecodedInstruction(
-                    address: address,
-                    rawWord: word,
-                    mnemonic: .movi,
-                    operands: [.register(dst), immOp],
-                    group: .simdAndFP,
-                    writesRegisters: [dst]
-                )
-            }
-            return nil
+            return decodeAdvSIMDModifiedImmediate(word: word, at: address)
         }
 
         // 1b. AdvSIMD Vector Shift by Immediate (C4.1.95.19):
@@ -4945,5 +4901,172 @@ public struct A64InstructionDecoder: Sendable {
             readsRegisters: [vRn],
             writesRegisters: [dstScalar]
         )
+    }
+
+    private func decodeAdvSIMDModifiedImmediate(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let op = A64BitUtils.flag(word, 29)
+        let abc = UInt8(A64BitUtils.extract(word, 18, 16))
+        let cmode = A64BitUtils.extract(word, 15, 12)
+        let o2 = A64BitUtils.flag(word, 11)
+        let defgh = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+        let imm8 = (abc << 5) | defgh
+        let immHex = "#0x\(String(imm8, radix: 16))"
+
+        if o2 {
+            // Only FP16 vector FMOV (cmode == 0b1111, op == 0) is allocated when o2 == 1.
+            guard cmode == 0b1111, !op else { return nil }
+            let dst = A64Register.v(rd, arrangement: q ? "8h" : "4h")
+            let val = decodeVFPExpandImm8(imm8)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .fmov,
+                operands: [.register(dst), .fpImmediate(val)],
+                group: .simdAndFP,
+                readsRegisters: [],
+                writesRegisters: [dst]
+            )
+        }
+
+        switch cmode {
+        case 0b0000...0b0111: // 32-bit shifted immediate (MOVI / MVNI / ORR / BIC)
+            let dst = A64Register.v(rd, arrangement: q ? "4s" : "2s")
+            let shift = UInt8(((cmode >> 1) & 0x3) * 8)
+            let immOp: A64Operand = (shift == 0) ? .unsignedImmediate(UInt64(imm8)) : .shiftedImmediate(UInt64(imm8), shiftBits: shift)
+            let opText = (shift == 0) ? "\(dst.canonicalName), \(immHex)" : "\(dst.canonicalName), \(immHex), lsl #\(shift)"
+            if (cmode & 1) == 0 {
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .movi,
+                    mnemonicText: op ? "mvni" : "movi",
+                    operands: [.register(dst), immOp],
+                    operandText: opText,
+                    group: .simdAndFP,
+                    readsRegisters: [],
+                    writesRegisters: [dst]
+                )
+            } else {
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: op ? .andVec : .orrVec,
+                    mnemonicText: op ? "bic" : "orr",
+                    operands: [.register(dst), immOp],
+                    operandText: opText,
+                    group: .simdAndFP,
+                    readsRegisters: [dst],
+                    writesRegisters: [dst]
+                )
+            }
+
+        case 0b1000...0b1011: // 16-bit shifted immediate (MOVI / MVNI / ORR / BIC)
+            let dst = A64Register.v(rd, arrangement: q ? "8h" : "4h")
+            let shift = UInt8(((cmode >> 1) & 0x1) * 8)
+            let immOp: A64Operand = (shift == 0) ? .unsignedImmediate(UInt64(imm8)) : .shiftedImmediate(UInt64(imm8), shiftBits: shift)
+            let opText = (shift == 0) ? "\(dst.canonicalName), \(immHex)" : "\(dst.canonicalName), \(immHex), lsl #\(shift)"
+            if (cmode & 1) == 0 {
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .movi,
+                    mnemonicText: op ? "mvni" : "movi",
+                    operands: [.register(dst), immOp],
+                    operandText: opText,
+                    group: .simdAndFP,
+                    readsRegisters: [],
+                    writesRegisters: [dst]
+                )
+            } else {
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: op ? .andVec : .orrVec,
+                    mnemonicText: op ? "bic" : "orr",
+                    operands: [.register(dst), immOp],
+                    operandText: opText,
+                    group: .simdAndFP,
+                    readsRegisters: [dst],
+                    writesRegisters: [dst]
+                )
+            }
+
+        case 0b1100, 0b1101: // 32-bit shifting ones (MOVI / MVNI ..., msl #8|#16)
+            let dst = A64Register.v(rd, arrangement: q ? "4s" : "2s")
+            let shift: UInt8 = (cmode == 0b1100) ? 8 : 16
+            let opText = "\(dst.canonicalName), \(immHex), msl #\(shift)"
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .movi,
+                mnemonicText: op ? "mvni" : "movi",
+                operands: [.register(dst), .unsignedImmediate(UInt64(imm8))],
+                operandText: opText,
+                group: .simdAndFP,
+                readsRegisters: [],
+                writesRegisters: [dst]
+            )
+
+        case 0b1110: // 8-bit MOVI (op=0) or 64-bit byte-mask MOVI (op=1)
+            if !op {
+                let dst = A64Register.v(rd, arrangement: q ? "16b" : "8b")
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .movi,
+                    operands: [.register(dst), .unsignedImmediate(UInt64(imm8))],
+                    operandText: "\(dst.canonicalName), \(immHex)",
+                    group: .simdAndFP,
+                    readsRegisters: [],
+                    writesRegisters: [dst]
+                )
+            } else {
+                let expanded = A64BitUtils.expandSIMDByteMaskImmediate(imm8)
+                let dst: A64Register = q ? .v(rd, arrangement: "2d") : .d(rd)
+                let maskText: String
+                if expanded == 0 {
+                    maskText = "#0000000000000000"
+                } else if imm8 < 0x80 {
+                    maskText = String(format: "#0x%014llx", expanded)
+                } else {
+                    maskText = String(format: "#0x%016llx", expanded)
+                }
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: .movi,
+                    operands: [.register(dst), .unsignedImmediate(expanded)],
+                    operandText: "\(dst.canonicalName), \(maskText)",
+                    group: .simdAndFP,
+                    readsRegisters: [],
+                    writesRegisters: [dst]
+                )
+            }
+
+        case 0b1111: // FP32 (op=0) or FP64 (op=1, Q=1) vector FMOV
+            let dst: A64Register
+            if !op {
+                dst = A64Register.v(rd, arrangement: q ? "4s" : "2s")
+            } else if q {
+                dst = A64Register.v(rd, arrangement: "2d")
+            } else {
+                return nil
+            }
+            let val = decodeVFPExpandImm8(imm8)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .fmov,
+                operands: [.register(dst), .fpImmediate(val)],
+                group: .simdAndFP,
+                readsRegisters: [],
+                writesRegisters: [dst]
+            )
+
+        default:
+            return nil
+        }
     }
 }
