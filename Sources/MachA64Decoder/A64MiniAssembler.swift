@@ -262,6 +262,105 @@ public struct A64MiniAssembler: Sendable {
 
     // MARK: - Internal Statement & Lexer Helpers
 
+    /// Strips `//` line comments and `/* ... */` block comments, splits by line and `;`,
+    /// trims leading/trailing whitespace, and drops empty statements.
+    public static func splitStatements(_ source: String) -> [String] {
+        var copy = source
+        return copy.withUTF8 { rawBuf -> [String] in
+            if rawBuf.isEmpty { return [] }
+
+            var hasSlash = false
+            for b in rawBuf where b == 0x2F {
+                hasSlash = true
+                break
+            }
+            if !hasSlash {
+                return extractClausesFromCommentFreeUTF8(rawBuf)
+            }
+
+            var cleaned: [UInt8] = []
+            cleaned.reserveCapacity(rawBuf.count)
+            let n = rawBuf.count
+            var i = 0
+            while i < n {
+                let b = rawBuf[i]
+                if b == 0x2F && i + 1 < n {
+                    let next = rawBuf[i + 1]
+                    if next == 0x2F {
+                        i += 2
+                        while i < n && rawBuf[i] != 0x0A && rawBuf[i] != 0x0D {
+                            i += 1
+                        }
+                        continue
+                    }
+                    if next == 0x2A {
+                        i += 2
+                        var sawNewline = false
+                        while i + 1 < n && !(rawBuf[i] == 0x2A && rawBuf[i + 1] == 0x2F) {
+                            if rawBuf[i] == 0x0A || rawBuf[i] == 0x0D {
+                                sawNewline = true
+                            }
+                            i += 1
+                        }
+                        if sawNewline {
+                            cleaned.append(0x0A)
+                        }
+                        i += 2
+                        continue
+                    }
+                }
+                cleaned.append(b)
+                i += 1
+            }
+
+            return cleaned.withUnsafeBufferPointer { buf in
+                extractClausesFromCommentFreeUTF8(buf)
+            }
+        }
+    }
+
+    private static func isASCIIHorizontalOrVerticalSpace(_ b: UInt8) -> Bool {
+        b == 0x20 || b == 0x09 || b == 0x0B || b == 0x0C
+    }
+
+    private static func extractClausesFromCommentFreeUTF8(_ buf: UnsafeBufferPointer<UInt8>) -> [String] {
+        var results: [String] = []
+        let n = buf.count
+        var i = 0
+        while i < n {
+            let start = i
+            while i < n {
+                let b = buf[i]
+                if b == 0x0A || b == 0x0D || b == 0x3B {
+                    break
+                }
+                i += 1
+            }
+            var lo = start
+            var hi = i
+            while lo < hi && isASCIIHorizontalOrVerticalSpace(buf[lo]) {
+                lo += 1
+            }
+            while hi > lo && isASCIIHorizontalOrVerticalSpace(buf[hi - 1]) {
+                hi -= 1
+            }
+            if lo < hi {
+                let slice = UnsafeBufferPointer(rebasing: buf[lo..<hi])
+                let str = String(decoding: slice, as: UTF8.self)
+                if buf[lo] >= 0x80 || buf[hi - 1] >= 0x80 {
+                    let trimmed = str.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty {
+                        results.append(trimmed)
+                    }
+                } else {
+                    results.append(str)
+                }
+            }
+            i += 1
+        }
+        return results
+    }
+
     private enum ParsedStatement {
         case instruction(mnemonic: String, operands: [String], address: VirtualAddress, lineNumber: Int, raw: String)
         case wordDirective(values: [String], address: VirtualAddress, lineNumber: Int, raw: String)
