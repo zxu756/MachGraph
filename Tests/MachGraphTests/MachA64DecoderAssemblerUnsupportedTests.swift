@@ -72,7 +72,7 @@ struct MachA64DecoderAssemblerUnsupportedTests {
 
         if case .assemblerUnsupported(let mnem, let form) = caught {
             #expect(mnem == "shrn")
-            #expect(form == "shrn v1.4h, v1.4s, #0x10")
+            #expect(form == "shrn V.Nh, V.Ns, #N")
         } else {
             Issue.record("Expected assemblerUnsupported, got \(String(describing: caught))")
         }
@@ -86,7 +86,7 @@ struct MachA64DecoderAssemblerUnsupportedTests {
 
         if case .assemblerUnsupported(let mnem, let form) = listCaught {
             #expect(mnem == "ld1")
-            #expect(form == "ld1 { v0.16b, v1.16b }, [x0]")
+            #expect(form == "ld1 { V.Nb, V.Nb }, [X]")
         } else {
             Issue.record("Expected assemblerUnsupported for ld1, got \(String(describing: listCaught))")
         }
