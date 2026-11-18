@@ -2139,8 +2139,9 @@ public struct A64InstructionDecoder: Sendable {
         let memOp = A64Operand.memory(.baseOffset(base: baseReg, offset: 0))
         let widthSuffix: String = (size == 0b00) ? "b" : ((size == 0b01) ? "h" : "")
 
-        // 1. LSE Compare-and-Swap (CAS / CASA / CASAL / CASL): o2 == 1 && o1 == 1 && rt2 == 31
-        if o2 && o1 && rt2 == 31 {
+        // 1. LSE Compare-and-Swap (CAS / CASA / CASAL / CASL + B/H): o2 == 1 && o1 == 1 && rt2 == 31
+        if o2 && o1 {
+            guard rt2 == 31 else { return nil }
             let rsReg = A64Register.gp(rs, is64Bit: is64, allowSP: false)
             let casMnemonic: A64Mnemonic
             let orderSuffix: String
@@ -2163,10 +2164,9 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
-        // 2. Exclusive Register (LDXR, LDAXR, STXR, STLXR): !o2 && !o1 && rt2 == 31
-        if !o2 && !o1 && rt2 == 31 {
+        // 2. Exclusive Register (LDXR, LDAXR, STXR, STLXR + B/H): !o2 && !o1 (G62: Rs/Rt2 soft-ignored per reference)
+        if !o2 && !o1 {
             if lBit {
-                guard rs == 31 else { return nil }
                 let mnem: A64Mnemonic = o0 ? .ldaxr : .ldxr
                 let prefix = o0 ? "ldaxr" : "ldxr"
                 return A64DecodedInstruction(
@@ -2196,8 +2196,71 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // 3. Load-Acquire / Store-Release (LDAR, LDARB, LDARH, STLR, STLRB, STLRH): o2 && !o1 && o0 && rs == 31 && rt2 == 31
-        if o2 && !o1 && o0 && rs == 31 && rt2 == 31 {
+        // 3. LSE Compare-and-Swap Pair (CASP*, size in 0..1) & Exclusive Pair (LDXP/LDAXP/STXP/STLXP, size in 2..3): !o2 && o1
+        if !o2 && o1 {
+            if size <= 0b01 {
+                guard rt2 == 31 && (rs & 1) == 0 && (rt & 1) == 0 else { return nil }
+                let pairIs64 = (size == 0b01)
+                let rsReg = A64Register.gp(rs, is64Bit: pairIs64, allowSP: false)
+                let rsNextReg = A64Register.gp(rs + 1, is64Bit: pairIs64, allowSP: false)
+                let rtPairReg = A64Register.gp(rt, is64Bit: pairIs64, allowSP: false)
+                let rtNextReg = A64Register.gp(rt + 1, is64Bit: pairIs64, allowSP: false)
+                let casMnemonic: A64Mnemonic
+                let mnemText: String
+                switch (lBit, o0) {
+                case (false, false): casMnemonic = .cas;   mnemText = "casp"
+                case (true, false):  casMnemonic = .casa;  mnemText = "caspa"
+                case (true, true):   casMnemonic = .casal; mnemText = "caspal"
+                case (false, true):  casMnemonic = .casl;  mnemText = "caspl"
+                }
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: casMnemonic,
+                    mnemonicText: mnemText,
+                    operands: [.register(rsReg), .register(rsNextReg), .register(rtPairReg), .register(rtNextReg), memOp],
+                    group: .atomicLSE,
+                    readsRegisters: activeRegs([baseReg, rsReg, rsNextReg, rtPairReg, rtNextReg]),
+                    writesRegisters: activeRegs([rsReg, rsNextReg]),
+                    autoComment: "LSE atomic compare-and-swap pair"
+                )
+            } else {
+                let pairIs64 = (size == 0b11)
+                let rtPairReg = A64Register.gp(rt, is64Bit: pairIs64, allowSP: false)
+                let rt2Reg = A64Register.gp(rt2, is64Bit: pairIs64, allowSP: false)
+                if lBit {
+                    let mnem: A64Mnemonic = o0 ? .ldaxr : .ldxr
+                    let mnemText = o0 ? "ldaxp" : "ldxp"
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: mnem,
+                        mnemonicText: mnemText,
+                        operands: [.register(rtPairReg), .register(rt2Reg), memOp],
+                        group: .loadStore,
+                        readsRegisters: activeRegs([baseReg]),
+                        writesRegisters: activeRegs([rtPairReg, rt2Reg])
+                    )
+                } else {
+                    let statusReg = A64Register.w(rs, allowWSP: false)
+                    let mnem: A64Mnemonic = o0 ? .stlxr : .stxr
+                    let mnemText = o0 ? "stlxp" : "stxp"
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: mnem,
+                        mnemonicText: mnemText,
+                        operands: [.register(statusReg), .register(rtPairReg), .register(rt2Reg), memOp],
+                        group: .loadStore,
+                        readsRegisters: activeRegs([baseReg, rtPairReg, rt2Reg]),
+                        writesRegisters: activeRegs([statusReg])
+                    )
+                }
+            }
+        }
+
+        // 4. Load-Acquire / Store-Release & LORegion (LDAR*, STLR*, LDLAR*, STLLR*): o2 && !o1 (G62: Rs/Rt2 soft-ignored)
+        if o2 && !o1 {
             if lBit {
                 let mnem: A64Mnemonic
                 switch size {
@@ -2205,10 +2268,12 @@ public struct A64InstructionDecoder: Sendable {
                 case 0b01: mnem = .ldarh
                 default:   mnem = .ldar
                 }
+                let prefix = o0 ? "ldar" : "ldlar"
                 return A64DecodedInstruction(
                     address: address,
                     rawWord: word,
                     mnemonic: mnem,
+                    mnemonicText: "\(prefix)\(widthSuffix)",
                     operands: [.register(rtReg), memOp],
                     group: .loadStore,
                     readsRegisters: activeRegs([baseReg]),
@@ -2221,10 +2286,12 @@ public struct A64InstructionDecoder: Sendable {
                 case 0b01: mnem = .stlrh
                 default:   mnem = .stlr
                 }
+                let prefix = o0 ? "stlr" : "stllr"
                 return A64DecodedInstruction(
                     address: address,
                     rawWord: word,
                     mnemonic: mnem,
+                    mnemonicText: "\(prefix)\(widthSuffix)",
                     operands: [.register(rtReg), memOp],
                     group: .loadStore,
                     readsRegisters: activeRegs([baseReg, rtReg]),

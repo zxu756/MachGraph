@@ -1960,12 +1960,15 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x9E690009), "Scalar FP <-> integer conversions")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1E664000), "Scalar FP data-processing (1 source)")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1F608020), "Scalar FP data-processing (3 source)")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x08070605), "Load/store exclusive and CASP")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x48247D00), "Load/store exclusive and CASP")
         expected_counts = {
             "pac_data_ptr": 3200,
             "rcpc_ldapr": 512,
             "scalar_fp_int_conv": 1536,
             "scalar_fp_one_source": 1120,
             "scalar_fp_three_source": 128,
+            "load_store_exclusive_casp": 512,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1984,6 +1987,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                     "scalar_fp_int_conv",
                     "scalar_fp_one_source",
                     "scalar_fp_three_source",
+                    "load_store_exclusive_casp",
                     "--out-dir",
                     tmp,
                 ],
@@ -2081,6 +2085,59 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             tm = {m for _, m, _ in trows}
             for expected_mnem in ("fmadd", "fmsub", "fnmadd", "fnmsub", ".long"):
                 self.assertIn(expected_mnem, tm)
+
+            ec, erows = enc_table.load_reference_table(os.path.join(tmp, "load_store_exclusive_casp.tsv"))
+            self.assertEqual(len(erows), 512)
+            self.assertTrue(any("encoding-table.py generate load_store_exclusive_casp" in c for c in ec))
+            em = {m for _, m, _ in erows}
+            for expected_mnem in (
+                "stxrb",
+                "stlxrb",
+                "ldxrb",
+                "ldaxrb",
+                "stxrh",
+                "stlxrh",
+                "ldxrh",
+                "ldaxrh",
+                "stxr",
+                "stlxr",
+                "ldxr",
+                "ldaxr",
+                "stxp",
+                "stlxp",
+                "ldxp",
+                "ldaxp",
+                "casp",
+                "caspa",
+                "caspl",
+                "caspal",
+                "casb",
+                "casab",
+                "caslb",
+                "casalb",
+                "cash",
+                "casah",
+                "caslh",
+                "casalh",
+                "cas",
+                "casa",
+                "casl",
+                "casal",
+                "stlrb",
+                "stlrh",
+                "stlr",
+                "ldarb",
+                "ldarh",
+                "ldar",
+                "stllrb",
+                "stllrh",
+                "stllr",
+                "ldlarb",
+                "ldlarh",
+                "ldlar",
+                ".long",
+            ):
+                self.assertIn(expected_mnem, em)
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

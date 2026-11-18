@@ -2463,4 +2463,72 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 128)
         #expect(mismatches.isEmpty, "Group 27 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 28: Load/store exclusive, ordered/LORegion, CAS, CASP, and G62 non-31 Rs/Rt2 match load_store_exclusive_casp.tsv")
+    func loadStoreExclusiveOrderedAndCaspDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x0807_0605, "stxrb w7, w5, [x16]"),            // /usr/bin/afscexpand G62 Rt2!=31 baseline example
+            (0x4824_7D00, "casp x4, x5, x0, x1, [x8]"),      // /usr/bin/stz CASP X baseline example
+            (0x4838_FD00, "caspl x24, x25, x0, x1, [x8]"),   // /usr/bin/stz CASPL X baseline example
+            (0x0824_7CC2, "casp w4, w5, w2, w3, [x6]"),
+            (0x0864_7CC2, "caspa w4, w5, w2, w3, [x6]"),
+            (0x4864_FCC2, "caspal x4, x5, x2, x3, [x6]"),
+            (0x483E_7FFE, "casp x30, xzr, x30, xzr, [sp]"),
+            (0x8824_20C2, "stxp w4, w2, w8, [x6]"),
+            (0xC824_A0C2, "stlxp w4, x2, x8, [x6]"),
+            (0x8864_20C2, "ldxp w2, w8, [x6]"),              // G62 Rs=4 ignored
+            (0xC864_A0C2, "ldaxp x2, x8, [x6]"),             // G62 Rs=4 ignored
+            (0x48D2_E1DC, "ldarh w28, [x14]"),               // seed 20261117 fuzz G62 example
+            (0x88D1_429E, "ldlar w30, [x20]"),               // seed 20261117 fuzz LORegion example
+            (0xC884_20C2, "stllr x2, [x6]"),
+            (0x08C4_20C2, "ldlarb w2, [x6]"),
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        // CASP odd Rs/Rt or Rt2!=31 and CAS Rt2!=31 must decode as .inst:
+        for badWord: UInt32 in [0x0825_7CC2, 0x0824_7CC3, 0x0824_20C2, 0x88A4_20C2, 0xC8E4_A0C2] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("load_store_exclusive_casp"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 512)
+        #expect(mismatches.isEmpty, "Group 28 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

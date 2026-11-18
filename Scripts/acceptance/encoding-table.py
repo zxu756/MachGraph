@@ -872,6 +872,53 @@ def _generate_scalar_fp_three_source_words() -> List[int]:
     return words
 
 
+def _generate_load_store_exclusive_casp_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.1..4 Load/store exclusive, Load-acquire/store-release, LORegion, CAS, and CASP:
+    size(2)|001000|o2(1)|L(1)|o1(1)|Rs(5)|o0(1)|Rt2(5)|Rn(5)|Rt(5), i.e. (word & 0x3f000000) == 0x08000000.
+    Enumerates all 4 x 2 x 2 x 2 x 2 = 64 combinations of size=0..3, o2=0..1, L=0..1, o1=0..1, o0=0..1 across
+    8 register tuples (Rs, Rt2, Rn, Rt) = 512 unique words:
+      - (4, 31, 6, 2): canonical Rt2=31 with distinct even Rs=4, Rn=6, Rt=2 (CASP, CAS, STXR/STXP, G62 Rs!=31);
+      - (31, 31, 6, 2): canonical Rs=31, Rt2=31 (LDXR/LDAR/LDLAR, CAS wzr, CASP odd-Rs counterexample);
+      - (4, 8, 6, 2): four distinct non-31 registers (STXP/LDXP operand order, G62 Rt2!=31, CAS/CASP .long);
+      - (5, 31, 6, 2): odd Rs=5 with even Rt=2, Rt2=31 (CASP odd-Rs .long vs valid CAS/STXR);
+      - (4, 31, 6, 3): even Rs=4 with odd Rt=3, Rt2=31 (CASP odd-Rt .long vs valid CAS/STXR);
+      - (30, 31, 31, 30): Rs=30, Rt2=31, Rn=SP, Rt=30 (CASP w30, wzr / x30, xzr and [sp] base);
+      - (31, 31, 31, 31): all 31 (ZR operands with [sp]);
+      - (31, 8, 6, 2): Rs=31, Rt2=8 != 31 (G62 Rt2!=31 with Rs=31 vs CAS .long).
+    """
+    reg_tuples = (
+        (4, 31, 6, 2),
+        (31, 31, 6, 2),
+        (4, 8, 6, 2),
+        (5, 31, 6, 2),
+        (4, 31, 6, 3),
+        (30, 31, 31, 30),
+        (31, 31, 31, 31),
+        (31, 8, 6, 2),
+    )
+    words: List[int] = []
+    for size in range(4):
+        for o2 in (0, 1):
+            for l_bit in (0, 1):
+                for o1 in (0, 1):
+                    for o0 in (0, 1):
+                        for rs, rt2, rn, rt in reg_tuples:
+                            word = (
+                                (size << 30)
+                                | (0b001000 << 24)
+                                | (o2 << 23)
+                                | (l_bit << 22)
+                                | (o1 << 21)
+                                | (rs << 16)
+                                | (o0 << 15)
+                                | (rt2 << 10)
+                                | (rn << 5)
+                                | rt
+                            )
+                            words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1168,6 +1215,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "o1=0..1, o0=0..1 across (Rd, Rn, Rm, Ra) in {(1,2,3,4), (31,31,31,31)}.",
         ),
         generate_words=_generate_scalar_fp_three_source_words,
+    ),
+    "load_store_exclusive_casp": EncodingGroupSpec(
+        name="load_store_exclusive_casp",
+        title="Load/store exclusive, Load-acquire/store-release (incl. LORegion), CAS, and CASP",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.1..4 Load/store exclusive & atomic CAS/CASP: (word & 0x3f000000) == 0x08000000.",
+            "Enumerates all 4 x 2 x 2 x 2 x 2 = 64 combinations of size=0..3, o2=0..1, L=0..1, o1=0..1, o0=0..1",
+            "across 8 register tuples (Rs, Rt2, Rn, Rt) covering STXR/LDXR, STXP/LDXP, LDAR/STLR, LDLAR/STLLR,",
+            "CAS/CASA/CASL/CASAL (Rt2=31), CASP/CASPA/CASPL/CASPAL (Rt2=31, even Rs/Rt incl. 30->ZR), and G62 non-31 Rs/Rt2 (512 rows).",
+        ),
+        generate_words=_generate_load_store_exclusive_casp_words,
     ),
 }
 
