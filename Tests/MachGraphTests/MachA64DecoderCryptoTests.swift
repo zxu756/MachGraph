@@ -106,4 +106,119 @@ struct MachA64DecoderCryptoTests {
         #expect(rowCount == 256)
         #expect(mismatches.isEmpty, "Group 17 crypto_aes mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 14 Group 23: Cryptographic four-register & XAR samples, register tracking, and SHA512/SM3/unallocated guards")
+    func cryptoSHA3SamplesAndSemantics() {
+        let pc = VirtualAddress(0x1_0000_2000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0xCE10_4ABC, "eor3 v28.16b, v21.16b, v16.16b, v18.16b"), // /usr/libexec/AssetCache/AssetCache
+            (0xCE32_06CF, "bcax v15.16b, v22.16b, v18.16b, v1.16b"),  // seed 20261117 fuzz
+            (0xCE83_4960, "xar v0.2d, v11.2d, v3.2d, #0x12"),         // seed 17 fuzz
+            (0xCE03_1041, "eor3 v1.16b, v2.16b, v3.16b, v4.16b"),     // crypto_sha3.tsv
+            (0xCE23_1041, "bcax v1.16b, v2.16b, v3.16b, v4.16b"),     // crypto_sha3.tsv
+            (0xCE83_0041, "xar v1.2d, v2.2d, v3.2d, #0x0"),           // crypto_sha3.tsv imm6=0
+            (0xCE83_8041, "xar v1.2d, v2.2d, v3.2d, #0x20"),          // crypto_sha3.tsv imm6=32
+            (0xCE9F_FFFF, "xar v31.2d, v31.2d, v31.2d, #0x3f"),       // crypto_sha3.tsv imm6=63 & dedup
+        ]
+
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .eorVec, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.group == .simdAndFP, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        let eor3 = decoder.decode(word: 0xCE10_4ABC, at: pc)
+        #expect(
+            eor3.readsRegisters == [
+                .v(21, arrangement: "16b"),
+                .v(16, arrangement: "16b"),
+                .v(18, arrangement: "16b"),
+            ]
+        )
+        #expect(eor3.writesRegisters == [.v(28, arrangement: "16b")])
+
+        let bcax = decoder.decode(word: 0xCE32_06CF, at: pc)
+        #expect(
+            bcax.readsRegisters == [
+                .v(22, arrangement: "16b"),
+                .v(18, arrangement: "16b"),
+                .v(1, arrangement: "16b"),
+            ]
+        )
+        #expect(bcax.writesRegisters == [.v(15, arrangement: "16b")])
+
+        let xar = decoder.decode(word: 0xCE83_4960, at: pc)
+        #expect(xar.readsRegisters == [.v(11, arrangement: "2d"), .v(3, arrangement: "2d")])
+        #expect(xar.writesRegisters == [.v(0, arrangement: "2d")])
+
+        let xarDedup = decoder.decode(word: 0xCE9F_FFFF, at: pc)
+        #expect(xarDedup.readsRegisters == [.v(31, arrangement: "2d")])
+        #expect(xarDedup.writesRegisters == [.v(31, arrangement: "2d")])
+
+        // Unallocated encodings in 0xCE00_0000..0xCEFF_FFFF, apple-m1 unsupported SM3/SM4,
+        // and out-of-scope SHA512 / RAX1 must decode as .inst:
+        let mustRemainInst: [UInt32] = [
+            0xCE03_9041, // Op0=00, bit[15]=1 (.long)
+            0xCE23_9041, // Op0=01, bit[15]=1 (.long)
+            0xCE43_1041, // Op0=10, bit[15]=0 (sm3ss1 -> .long on apple-m1)
+            0xCE63_1041, // Op0=11, bit[15]=0 (.long)
+            0xCE63_9041, // Op0=11, bit[15]=1, Ra=4 (.long)
+            0xCE75_869B, // sha512h2 (seed 17 fuzz, out of scope -> must remain .inst)
+            0xCE78_8F84, // rax1 (seed 20261117 fuzz, out of scope -> must remain .inst)
+            0xCEC0_8041, // sha512su0 in 0xCEC0_0000 (out of scope -> must remain .inst)
+            0xCEA3_0041, // 0xCE80_0000 sibling bits[23:21]=0b101 (.long)
+        ]
+        for badWord in mustRemainInst {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+    }
+
+    @Test("Stage 14 Group 23: Exhaustive field table crypto_sha3.tsv matches reference disassembly")
+    func cryptoSHA3TableParity() throws {
+        let pc = VirtualAddress(0x1_0000_2000)
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("crypto_sha3"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2
+                ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces)
+                : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(
+                            String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly)
+                        )
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(
+                            String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly)
+                        )
+                    }
+                }
+            }
+        }
+
+        #expect(rowCount == 24)
+        #expect(mismatches.isEmpty, "Group 23 crypto_sha3 mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
