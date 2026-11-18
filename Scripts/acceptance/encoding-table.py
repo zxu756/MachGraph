@@ -210,6 +210,39 @@ def _generate_crypto_aes_words() -> List[int]:
     return words
 
 
+# M2 第 14 段：第 23 组 Crypto 四寄存器和 XAR（SHA3）
+def _generate_crypto_sha3_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.4 Cryptographic four-register ((word & 0xff800000) == 0xce000000) & XAR ((word & 0xffe00000) == 0xce800000)."""
+    words: List[int] = []
+    four_reg_tuples = ((1, 2, 3, 4), (31, 31, 31, 31))
+    for op0 in range(4):
+        for bit15 in (0, 1):
+            for rd, rn, rm, ra in four_reg_tuples:
+                word = (
+                    0xCE000000
+                    | (op0 << 21)
+                    | (rm << 16)
+                    | (bit15 << 15)
+                    | (ra << 10)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+
+    xar_reg_tuples = ((1, 2, 3), (31, 31, 31))
+    for imm6 in (0, 1, 32, 63):
+        for rd, rn, rm in xar_reg_tuples:
+            word = (
+                0xCE800000
+                | (rm << 16)
+                | (imm6 << 10)
+                | (rn << 5)
+                | rd
+            )
+            words.append(word)
+    return words
+
+
 def _generate_move_wide_imm_words() -> List[int]:
     """ARM DDI 0487 C4.1.92.5 Move wide (immediate): bits[28:23] == 0b100101."""
     words: List[int] = []
@@ -1292,6 +1325,19 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "Reference decodes 8 rows (size=0b00, opcode in 0b00100..0b00111: aese, aesd, aesmc, aesimc) and prints .long for 248 rows.",
         ),
         generate_words=_generate_crypto_aes_words,
+    ),
+    "crypto_sha3": EncodingGroupSpec(
+        name="crypto_sha3",
+        title="Cryptographic four-register & XAR (FEAT_SHA3) — EOR3, BCAX, and XAR",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.4 Cryptographic four-register ((word & 0xff800000) == 0xce000000) and XAR ((word & 0xffe00000) == 0xce800000).",
+            "Enumerates all 4 x 2 = 8 combinations of Op0=0..3 (bits[22:21]) and bit[15]=0..1 in 0xce000000 across",
+            "2 register tuples (Rd, Rn, Rm, Ra) in {(1, 2, 3, 4), (31, 31, 31, 31)} (16 rows), plus XAR imm6 in {0, 1, 32, 63}",
+            "(bits[15:10]) in 0xce800000 across 2 register tuples (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (8 rows), totaling 24 rows.",
+            "Reference decodes 12 rows (eor3: 2, bcax: 2, xar: 8) and prints .long for 12 rows (including apple-m1 unsupported sm3ss1",
+            "and bit[15]=1 / Op0=0b11 counterexamples).",
+        ),
+        generate_words=_generate_crypto_sha3_words,
     ),
 }
 

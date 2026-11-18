@@ -2546,6 +2546,44 @@ class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
                 self.assertEqual(mnem_counts.get(expected_mnem), 2)
             self.assertEqual(mnem_counts.get(".long"), 248)
 
+    def test_stage14_crypto_sha3_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_sha3_check", "encoding-fuzz.py")
+
+        for sample_word in (0xCE104ABC, 0xCE3206CF, 0xCE834960):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto four-register / SHA3 (EOR3/BCAX/SM3/XAR)",
+            )
+
+        self.assertIn("crypto_sha3", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_sha3"].generate_words()
+        self.assertEqual(len(words), 24)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_sha3")
+        for w in words:
+            self.assertTrue(
+                (w & 0xFF800000) == 0xCE000000 or (w & 0xFFE00000) == 0xCE800000,
+                f"unexpected word 0x{w:08x} in crypto_sha3",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_sha3", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_sha3 failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_sha3.tsv"))
+            self.assertEqual(len(rows), 24)
+            self.assertTrue(any("encoding-table.py generate crypto_sha3" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            self.assertEqual(mnem_counts.get("eor3"), 2)
+            self.assertEqual(mnem_counts.get("bcax"), 2)
+            self.assertEqual(mnem_counts.get("xar"), 8)
+            self.assertEqual(mnem_counts.get(".long"), 12)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
