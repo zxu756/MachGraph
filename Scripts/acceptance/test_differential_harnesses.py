@@ -2148,6 +2148,38 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             bm = {m for _, m, _ in brows}
             self.assertEqual(bm, {"clrex", "dsb", "dmb", "isb", "sb", "ssbb", "pssbb", "msr"})
 
+    def test_stage11a_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage11a_check", "encoding-fuzz.py")
+
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x6E1C6401), "AdvSIMD vector copy")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x5E0C044A), "AdvSIMD scalar copy")
+
+        self.assertIn("advsimd_scalar_copy", enc_table.ENCODING_GROUPS)
+        sc_words = enc_table.ENCODING_GROUPS["advsimd_scalar_copy"].generate_words()
+        self.assertEqual(len(sc_words), 2048)
+        self.assertLessEqual(len(sc_words), 4096)
+        self.assertEqual(len(set(sc_words)), 2048, "duplicate words in advsimd_scalar_copy")
+        for w in sc_words[::64]:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD scalar copy")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_scalar_copy", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_scalar_copy failed: {stdout_txt}\n{stderr_txt}")
+            sc_comments, sc_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_copy.tsv"))
+            self.assertEqual(len(sc_rows), 2048)
+            self.assertTrue(any("encoding-table.py generate advsimd_scalar_copy" in c for c in sc_comments))
+            sc_mnems = {m for _, m, _ in sc_rows}
+            self.assertEqual(sc_mnems, {"mov", ".long"})
+            valid_ops = {ops for _, m, ops in sc_rows if m == "mov"}
+            self.assertEqual(len(valid_ops), 60)
+            self.assertIn("b1, v2.b[0]", valid_ops)
+            self.assertIn("s1, v2.s[1]", valid_ops)
+            self.assertIn("d31, v31.d[1]", valid_ops)
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

@@ -3218,6 +3218,11 @@ public struct A64InstructionDecoder: Sendable {
             return decodeScalarFPFixedPointConversion(word: word, at: address)
         }
 
+        // 2c. AdvSIMD Scalar Copy (C4.1.95.4): (word & 0xDFE0_8400) == 0x5E00_0400
+        if (word & 0xDFE0_8400) == 0x5E00_0400 {
+            return decodeAdvSIMDScalarCopy(word: word, at: address)
+        }
+
         // 3. AdvSIMD Scalar Three-Register Same (integer, saturating/shift, FP32/FP64, FP16, RDMA):
         //    (word & 0xDF00_0400) == 0x5E00_0400
         if (word & 0xDF00_0400) == 0x5E00_0400 {
@@ -4902,5 +4907,43 @@ public struct A64InstructionDecoder: Sendable {
         default:
             return nil
         }
+    }
+
+    private func decodeAdvSIMDScalarCopy(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        guard !A64BitUtils.flag(word, 29),
+              !A64BitUtils.flag(word, 15),
+              A64BitUtils.extract(word, 14, 11) == 0b0000
+        else {
+            return nil
+        }
+
+        let imm5 = A64BitUtils.extract(word, 20, 16)
+        let tz = imm5.trailingZeroBitCount
+        guard tz <= 3 else { return nil }
+
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+        let laneIndex = imm5 >> (tz + 1)
+
+        let dstScalar: A64Register
+        let elemChar: String
+        switch tz {
+        case 0: dstScalar = .b(rd); elemChar = "b"
+        case 1: dstScalar = .h(rd); elemChar = "h"
+        case 2: dstScalar = .s(rd); elemChar = "s"
+        default: dstScalar = .d(rd); elemChar = "d"
+        }
+
+        let vRn = A64Register.v(rn, arrangement: elemChar)
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .mov,
+            operands: [.register(dstScalar), .register(vRn)],
+            operandText: "\(dstScalar.canonicalName), v\(rn).\(elemChar)[\(laneIndex)]",
+            group: .simdAndFP,
+            readsRegisters: [vRn],
+            writesRegisters: [dstScalar]
+        )
     }
 }

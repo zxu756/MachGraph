@@ -934,6 +934,32 @@ def _generate_barriers_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_scalar_copy_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.4 Advanced SIMD scalar copy:
+    0|1|op(1)|11110000|imm5(5)|0|imm4(4)|1|Rn(5)|Rd(5), i.e. (word & 0xdfe08400) == 0x5e000400.
+    Enumerates all 2 x 32 x 16 x 2 = 2,048 combinations of op=0..1, imm5=0..31, imm4=0..15
+    across (Rd, Rn) in {(1, 2), (31, 31)} (covering DUP <V><d>, <Vn>.<Ts>[index] preferred alias
+    MOV across B/H/S/D, b31/h31/s31/d31/v31 registers, and op=1 / imm4!=0 / imm5 in {0,16} unallocated .long).
+    """
+    words: List[int] = []
+    for op_bit in (0, 1):
+        for imm5 in range(32):
+            for imm4 in range(16):
+                for rd, rn in ((1, 2), (31, 31)):
+                    word = (
+                        (1 << 30)
+                        | (op_bit << 29)
+                        | (0b11110000 << 21)
+                        | (imm5 << 16)
+                        | (imm4 << 11)
+                        | (1 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1251,6 +1277,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "(covering Rt=31 CLREX, DSB, SSBB, PSSBB, DMB, ISB, SB, and op2 in {0,1,3} / Rt!=31 MSR S0_3_C3_* fallbacks).",
         ),
         generate_words=_generate_barriers_words,
+    ),
+    "advsimd_scalar_copy": EncodingGroupSpec(
+        name="advsimd_scalar_copy",
+        title="Advanced SIMD scalar copy — scalar DUP element (preferred alias MOV) and unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.4 Advanced SIMD scalar copy: (word & 0xdfe08400) == 0x5e000400.",
+            "Enumerates all 2 x 32 x 16 x 2 = 2,048 combinations of op=0..1, imm5=0..31, imm4=0..15",
+            "across (Rd, Rn) in {(1, 2), (31, 31)} (covering MOV <B|H|S|D><d>, v<n>.<b|h|s|d>[index] and .long space).",
+        ),
+        generate_words=_generate_advsimd_scalar_copy_words,
     ),
 }
 

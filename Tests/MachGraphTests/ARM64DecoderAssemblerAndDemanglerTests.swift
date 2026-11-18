@@ -2654,4 +2654,70 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 4096)
         #expect(mismatches.isEmpty, "Group 6 advsimd_copy mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 11a Group 15: AdvSIMD scalar copy (scalar DUP element -> MOV) matches all 2,048 rows of advsimd_scalar_copy.tsv")
+    func advsimdScalarCopyDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x5E0C_044A, "mov s10, v2.s[1]", [.v(2, arrangement: "s")], [.s(10)]), // /usr/bin/IOMFBDiagnose baseline example (generic Neon syntax)
+            (0x5E01_0441, "mov b1, v2.b[0]", [.v(2, arrangement: "b")], [.b(1)]),   // advsimd_scalar_copy.tsv byte lane 0
+            (0x5E1F_0441, "mov b1, v2.b[15]", [.v(2, arrangement: "b")], [.b(1)]),  // advsimd_scalar_copy.tsv byte lane 15
+            (0x5E02_0441, "mov h1, v2.h[0]", [.v(2, arrangement: "h")], [.h(1)]),   // advsimd_scalar_copy.tsv halfword lane 0
+            (0x5E1E_0441, "mov h1, v2.h[7]", [.v(2, arrangement: "h")], [.h(1)]),   // advsimd_scalar_copy.tsv halfword lane 7
+            (0x5E04_0441, "mov s1, v2.s[0]", [.v(2, arrangement: "s")], [.s(1)]),   // advsimd_scalar_copy.tsv singleword lane 0
+            (0x5E1C_0441, "mov s1, v2.s[3]", [.v(2, arrangement: "s")], [.s(1)]),   // advsimd_scalar_copy.tsv singleword lane 3
+            (0x5E08_0441, "mov d1, v2.d[0]", [.v(2, arrangement: "d")], [.d(1)]),   // advsimd_scalar_copy.tsv doubleword lane 0
+            (0x5E18_0441, "mov d1, v2.d[1]", [.v(2, arrangement: "d")], [.d(1)]),   // advsimd_scalar_copy.tsv doubleword lane 1
+            (0x5E1F_07FF, "mov b31, v31.b[15]", [.v(31, arrangement: "b")], [.b(31)]), // (Rd,Rn)=(31,31) stays b31/v31, never wzr/xzr
+            (0x5E18_07FF, "mov d31, v31.d[1]", [.v(31, arrangement: "d")], [.d(31)]),  // (Rd,Rn)=(31,31) stays d31/v31
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples (op==1, imm4!=0, imm5 in {0, 16}, bit[15]==1) must remain .inst:
+        for badWord: UInt32 in [0x7E01_0441, 0x5E01_0C41, 0x5E00_0441, 0x5E10_0441, 0x5E01_8441, 0x5E0C_844A] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_scalar_copy"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 2048)
+        #expect(mismatches.isEmpty, "Group 15 advsimd_scalar_copy mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
