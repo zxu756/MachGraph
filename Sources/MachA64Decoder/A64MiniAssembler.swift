@@ -344,6 +344,27 @@ public struct A64MiniAssembler: Sendable {
         return (mnem, operands)
     }
 
+    private static func normalizeStatementForm(_ raw: String) -> String {
+        let withoutComments = stripComments(from: raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        let firstClause = withoutComments
+            .split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? withoutComments
+
+        var body = firstClause
+        while let colonRange = leadingLabelColonIndex(in: body) {
+            body = String(body[body.index(after: colonRange)...]).trimmingCharacters(in: .whitespaces)
+        }
+
+        let lowered = body.lowercased()
+        let commaParts = lowered.split(separator: ",", omittingEmptySubsequences: false).map { segment -> String in
+            segment
+                .split(whereSeparator: { $0.isWhitespace })
+                .joined(separator: " ")
+        }
+        return commaParts.joined(separator: ", ")
+    }
+
     private static func parseSignedInt64(_ token: String) -> Int64? {
         var s = token.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "_", with: "")
         if s.hasPrefix("#") {
@@ -790,7 +811,13 @@ public struct A64MiniAssembler: Sendable {
             return try encodeFloatingPointOrSIMD(mnemonic: mnemonic, operands: operands, line: line, src: src)
 
         default:
-            throw err(line, src, "Unsupported ARM64 mnemonic '\(mnemonic)'")
+            if A64KnownMnemonics.all.contains(mnemonic) {
+                throw MachGraphError.assemblerUnsupported(
+                    mnemonic: mnemonic,
+                    form: Self.normalizeStatementForm(src)
+                )
+            }
+            throw err(line, src, "Unknown ARM64 mnemonic '\(mnemonic)'")
         }
     }
 

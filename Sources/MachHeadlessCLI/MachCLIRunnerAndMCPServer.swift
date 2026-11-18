@@ -251,10 +251,17 @@ public struct MachCLIRunner: Sendable {
         return recognizedHeadlessTokens.contains(first)
     }
 
-    /// Process exit code for a failed invocation: `2` for usage errors, `1` for everything else.
+    /// Process exit code for a failed invocation: `2` for usage errors, `3` for unsupported A64 assembly, `1` for everything else.
     public static func exitCode(for error: Error) -> Int32 {
-        if let mgErr = error as? MachGraphError, case .invalidCLIArguments = mgErr {
-            return 2
+        if let mgErr = error as? MachGraphError {
+            switch mgErr {
+            case .invalidCLIArguments:
+                return 2
+            case .assemblerUnsupported:
+                return 3
+            default:
+                return 1
+            }
         }
         return 1
     }

@@ -192,6 +192,7 @@ public enum MachGraphError: Error, LocalizedError, Sendable, Equatable {
     case invalidFixupChain(String)
     case decoderError(address: VirtualAddress, detail: String)
     case assemblerError(line: Int, instruction: String, reason: String)
+    case assemblerUnsupported(mnemonic: String, form: String)
     case cfgAnalysisError(String)
     case decompilerError(String)
     case patchBoundsError(offset: UInt64, length: Int, fileSize: Int)
@@ -267,6 +268,11 @@ public enum MachGraphError: Error, LocalizedError, Sendable, Equatable {
             return language.select(
                 "Inline assembler error on line \(line) ('\(insn)'): \(reason)",
                 "汇编错误（第 \(line) 行 '\(insn)'）: \(reason)"
+            )
+        case .assemblerUnsupported(let mnemonic, let form):
+            return language.select(
+                "Valid A64 instruction syntax '\(form)' (mnemonic '\(mnemonic)') is not yet supported by the MachGraph assembler.",
+                "这是合法的 A64 写法 '\(form)'（助记符 '\(mnemonic)'），但 MachGraph 的汇编器还不支持。"
             )
         case .cfgAnalysisError(let msg):
             return language.select(
