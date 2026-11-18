@@ -27,6 +27,12 @@ extension A64InstructionDecoder {
                 ?? makeCryptoUnallocatedInstruction(word: word, at: address)
         }
 
+        // Group 25: Cryptographic three-register & two-register SHA (ARM DDI 0487 C4.1.95.2–C4.1.95.3):
+        if (word & 0xFF20_8C00) == 0x5E00_0000 || (word & 0xFF3E_0C00) == 0x5E28_0800 {
+            return decodeCryptographicSHA(word: word, at: address)
+                ?? makeCryptoUnallocatedInstruction(word: word, at: address)
+        }
+
         return nil
     }
 
@@ -150,6 +156,113 @@ extension A64InstructionDecoder {
         }
 
         return nil
+    }
+
+    // MARK: - Group 25: Cryptographic SHA1 & SHA256 (Three-Register & Two-Register)
+
+    private func decodeCryptographicSHA(
+        word: UInt32,
+        at address: VirtualAddress
+    ) -> A64DecodedInstruction? {
+        let size = extractCryptoBits(word, high: 23, low: 22)
+        guard size == 0b00 else { return nil }
+
+        let rn = UInt8(extractCryptoBits(word, high: 9, low: 5))
+        let rd = UInt8(extractCryptoBits(word, high: 4, low: 0))
+
+        if (word & 0xFF20_8C00) == 0x5E00_0000 {
+            let rm = UInt8(extractCryptoBits(word, high: 20, low: 16))
+            let opcode = extractCryptoBits(word, high: 14, low: 12)
+            let vm = A64Register.v(rm, arrangement: "4s")
+
+            let mnemonicText: String
+            let dst: A64Register
+            let src1: A64Register
+            switch opcode {
+            case 0b000:
+                mnemonicText = "sha1c"
+                dst = .q(rd)
+                src1 = .s(rn)
+            case 0b001:
+                mnemonicText = "sha1p"
+                dst = .q(rd)
+                src1 = .s(rn)
+            case 0b010:
+                mnemonicText = "sha1m"
+                dst = .q(rd)
+                src1 = .s(rn)
+            case 0b011:
+                mnemonicText = "sha1su0"
+                dst = .v(rd, arrangement: "4s")
+                src1 = .v(rn, arrangement: "4s")
+            case 0b100:
+                mnemonicText = "sha256h"
+                dst = .q(rd)
+                src1 = .q(rn)
+            case 0b101:
+                mnemonicText = "sha256h2"
+                dst = .q(rd)
+                src1 = .q(rn)
+            case 0b110:
+                mnemonicText = "sha256su1"
+                dst = .v(rd, arrangement: "4s")
+                src1 = .v(rn, arrangement: "4s")
+            default:
+                return nil
+            }
+
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .eorVec,
+                mnemonicText: mnemonicText,
+                operands: [.register(dst), .register(src1), .register(vm)],
+                operandText: "\(dst.canonicalName), \(src1.canonicalName), \(vm.canonicalName)",
+                group: .simdAndFP,
+                flow: .sequential,
+                readsRegisters: uniqueCryptoRegisters([dst, src1, vm]),
+                writesRegisters: [dst]
+            )
+        }
+
+        let opcode = extractCryptoBits(word, high: 16, low: 12)
+        let mnemonicText: String
+        let dst: A64Register
+        let src: A64Register
+        let readsDestination: Bool
+        switch opcode {
+        case 0b00000:
+            mnemonicText = "sha1h"
+            dst = .s(rd)
+            src = .s(rn)
+            readsDestination = false
+        case 0b00001:
+            mnemonicText = "sha1su1"
+            dst = .v(rd, arrangement: "4s")
+            src = .v(rn, arrangement: "4s")
+            readsDestination = true
+        case 0b00010:
+            mnemonicText = "sha256su0"
+            dst = .v(rd, arrangement: "4s")
+            src = .v(rn, arrangement: "4s")
+            readsDestination = true
+        default:
+            return nil
+        }
+
+        let rawReads = readsDestination ? [dst, src] : [src]
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .eorVec,
+            mnemonicText: mnemonicText,
+            operands: [.register(dst), .register(src)],
+            operandText: "\(dst.canonicalName), \(src.canonicalName)",
+            group: .simdAndFP,
+            flow: .sequential,
+            readsRegisters: uniqueCryptoRegisters(rawReads),
+            writesRegisters: [dst]
+        )
     }
 
     // MARK: - Private Helpers (Public Types Only)

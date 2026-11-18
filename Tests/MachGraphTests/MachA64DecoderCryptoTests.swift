@@ -221,4 +221,106 @@ struct MachA64DecoderCryptoTests {
         #expect(rowCount == 24)
         #expect(mismatches.isEmpty, "Group 23 crypto_sha3 mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 14 Group 25: Cryptographic SHA1 & SHA256 samples, register tracking, and unallocated guards")
+    func cryptoSHASamplesAndSemantics() {
+        let pc = VirtualAddress(0x1_0000_3000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0x5E04_4272, "sha256h q18, q19, v4.4s"),  // /usr/libexec/DumpPanic
+            (0x5E28_2820, "sha256su0 v0.4s, v1.4s"),   // /usr/libexec/DumpPanic
+            (0x5E1A_0052, "sha1c q18, s2, v26.4s"),    // seed 17 fuzz
+            (0x5E01_207B, "sha1m q27, s3, v1.4s"),     // seed 20261117 fuzz
+            (0x5E03_1041, "sha1p q1, s2, v3.4s"),      // crypto_sha.tsv
+            (0x5E03_3041, "sha1su0 v1.4s, v2.4s, v3.4s"),
+            (0x5E03_5041, "sha256h2 q1, q2, v3.4s"),
+            (0x5E03_6041, "sha256su1 v1.4s, v2.4s, v3.4s"),
+            (0x5E28_0841, "sha1h s1, s2"),
+            (0x5E28_1841, "sha1su1 v1.4s, v2.4s"),
+        ]
+
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic == .eorVec, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.group == .simdAndFP, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        let sha256h = decoder.decode(word: 0x5E04_4272, at: pc)
+        #expect(sha256h.readsRegisters == [.q(18), .q(19), .v(4, arrangement: "4s")])
+        #expect(sha256h.writesRegisters == [.q(18)])
+
+        let sha1c = decoder.decode(word: 0x5E1A_0052, at: pc)
+        #expect(sha1c.readsRegisters == [.q(18), .s(2), .v(26, arrangement: "4s")])
+        #expect(sha1c.writesRegisters == [.q(18)])
+
+        let sha1h = decoder.decode(word: 0x5E28_0841, at: pc)
+        #expect(sha1h.readsRegisters == [.s(2)])
+        #expect(sha1h.writesRegisters == [.s(1)])
+
+        let sha256su0 = decoder.decode(word: 0x5E28_2820, at: pc)
+        #expect(sha256su0.readsRegisters == [.v(0, arrangement: "4s"), .v(1, arrangement: "4s")])
+        #expect(sha256su0.writesRegisters == [.v(0, arrangement: "4s")])
+
+        // Unallocated encodings in 3-reg (0x5E00_0000) and 2-reg (0x5E28_0800) SHA spaces must decode as .inst:
+        let mustRemainInst: [UInt32] = [
+            0x5E03_7041, // 3-reg size=0, opcode=7
+            0x5E43_0041, // 3-reg size=1, opcode=0
+            0x5E83_4041, // 3-reg size=2, opcode=4
+            0x5EC3_6041, // 3-reg size=3, opcode=6
+            0x5E28_3841, // 2-reg size=0, opcode=3
+            0x5E68_0841, // 2-reg size=1, opcode=0
+            0x5EA8_2841, // 2-reg size=2, opcode=2
+        ]
+        for badWord in mustRemainInst {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+    }
+
+    @Test("Stage 14 Group 25: Exhaustive field table crypto_sha.tsv matches reference disassembly")
+    func cryptoSHATableParity() throws {
+        let pc = VirtualAddress(0x1_0000_3000)
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("crypto_sha"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2
+                ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces)
+                : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(
+                            String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly)
+                        )
+                    }
+                }
+            } else {
+                let expectedText = "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(
+                            String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly)
+                        )
+                    }
+                }
+            }
+        }
+
+        #expect(rowCount == 320)
+        #expect(mismatches.isEmpty, "Group 25 crypto_sha mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
