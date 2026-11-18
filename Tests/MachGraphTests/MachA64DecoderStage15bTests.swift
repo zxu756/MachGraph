@@ -198,6 +198,53 @@ struct MachA64DecoderStage15bTests {
         }
     }
 
+    @Test("15b(1.c.6): Post-encoding self-check rejects unallocated encodings as assemblerError while allowing aliases and .inst/.word")
+    func postEncodingSelfCheckRejectsUnallocatedEncodings() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+        let unallocated = [
+            "fmov w1, d2",
+            "fcvt s1, s2",
+        ]
+
+        for text in unallocated {
+            var singleCaught: MachGraphError?
+            do {
+                let w = try assembler.assembleSingle(text, at: pc)
+                Issue.record("assembleSingle('\(text)') returned \(String(format: "0x%08x", w)) instead of assemblerError")
+            } catch let err as MachGraphError {
+                singleCaught = err
+            }
+            if case .assemblerError(_, _, let reason) = singleCaught {
+                #expect(reason.contains("encodes an unallocated instruction"), "Unexpected reason for '\(text)': \(reason)")
+            } else {
+                Issue.record("Expected assemblerError for '\(text)', got \(String(describing: singleCaught))")
+            }
+
+            var progCaught: MachGraphError?
+            do {
+                _ = try assembler.assembleProgram("nop; \(text)", baseAddress: pc)
+                Issue.record("assembleProgram('nop; \(text)') succeeded instead of throwing assemblerError")
+            } catch let err as MachGraphError {
+                progCaught = err
+            }
+            if case .assemblerError(_, _, let reason) = progCaught {
+                #expect(reason.contains("encodes an unallocated instruction"))
+            } else {
+                Issue.record("Expected assemblerError from assembleProgram for '\(text)', got \(String(describing: progCaught))")
+            }
+        }
+
+        // Directives .inst and .word bypass self-check even when the raw 32-bit value is unallocated.
+        #expect(try assembler.assembleSingle(".inst 0x1e660041", at: pc) == 0x1E66_0041)
+        #expect(try assembler.assembleSingle(".word 0x1e660041", at: pc) == 0x1E66_0041)
+        let dirProg = try assembler.assembleProgram(".inst 0x1e660041; .word 0x1e224041", baseAddress: pc)
+        #expect(dirProg.words == [0x1E66_0041, 0x1E22_4041])
+
+        // Canonical aliases whose disassembly text differs from input still succeed.
+        #expect(try assembler.assembleSingle("csinc w0, wzr, wzr, ne", at: pc) == 0x1A9F_17E0)
+        #expect(try assembler.assembleSingle("orr x0, xzr, x1", at: pc) == 0xAA01_03E0)
+    }
+
     @Test("15b(1.c.7): Invalid registers, malformed brackets/braces, non-numeric #, unknown mnemonics, and bad shifts remain assemblerError")
     func syntaxAndLexicalErrorsRemainAssemblerError() {
         let pc = VirtualAddress(0x1_0000_1000)

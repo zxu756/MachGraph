@@ -460,7 +460,32 @@ public struct A64MiniAssembler: Sendable {
         return delta
     }
 
+    private static let selfCheckDecoder = A64InstructionDecoder()
+
     private func encodeInstruction(
+        mnemonic: String,
+        operands: [String],
+        at pc: VirtualAddress,
+        labels: [String: VirtualAddress],
+        lineNumber line: Int,
+        rawSource src: String
+    ) throws -> UInt32 {
+        let word = try encodeInstructionRaw(
+            mnemonic: mnemonic,
+            operands: operands,
+            at: pc,
+            labels: labels,
+            lineNumber: line,
+            rawSource: src
+        )
+        let decoded = Self.selfCheckDecoder.decode(word: word, at: pc)
+        if decoded.mnemonicText == ".inst" {
+            throw err(line, src, "encodes an unallocated instruction")
+        }
+        return word
+    }
+
+    private func encodeInstructionRaw(
         mnemonic: String,
         operands: [String],
         at pc: VirtualAddress,
