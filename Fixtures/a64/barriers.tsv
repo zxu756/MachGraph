@@ -1,0 +1,266 @@
+# A64 encoding reference table: barriers
+# ARM DDI 0487 C4.1.93.5 Barriers: (word & 0xfffff000) == 0xd5033000.
+# Enumerates all 16 x 8 x 2 = 256 combinations of CRm=0..15, op2=0..7 across Rt in {31, 1}
+# (covering Rt=31 CLREX, DSB, SSBB, PSSBB, DMB, ISB, SB, and op2 in {0,1,3} / Rt!=31 MSR S0_3_C3_* fallbacks).
+# Rows: 256 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e barriers.s -o barriers.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text barriers.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate barriers
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0xd503301f	msr	S0_3_C3_C0_0, xzr
+0xd5033001	msr	S0_3_C3_C0_0, x1
+0xd503303f	msr	S0_3_C3_C0_1, xzr
+0xd5033021	msr	S0_3_C3_C0_1, x1
+0xd503305f	clrex	#0x0
+0xd5033041	msr	S0_3_C3_C0_2, x1
+0xd503307f	msr	S0_3_C3_C0_3, xzr
+0xd5033061	msr	S0_3_C3_C0_3, x1
+0xd503309f	ssbb
+0xd5033081	msr	S0_3_C3_C0_4, x1
+0xd50330bf	dmb	#0
+0xd50330a1	msr	S0_3_C3_C0_5, x1
+0xd50330df	isb	#0
+0xd50330c1	msr	S0_3_C3_C0_6, x1
+0xd50330ff	sb
+0xd50330e1	msr	S0_3_C3_C0_7, x1
+0xd503311f	msr	S0_3_C3_C1_0, xzr
+0xd5033101	msr	S0_3_C3_C1_0, x1
+0xd503313f	msr	S0_3_C3_C1_1, xzr
+0xd5033121	msr	S0_3_C3_C1_1, x1
+0xd503315f	clrex	#0x1
+0xd5033141	msr	S0_3_C3_C1_2, x1
+0xd503317f	msr	S0_3_C3_C1_3, xzr
+0xd5033161	msr	S0_3_C3_C1_3, x1
+0xd503319f	dsb	oshld
+0xd5033181	msr	S0_3_C3_C1_4, x1
+0xd50331bf	dmb	oshld
+0xd50331a1	msr	S0_3_C3_C1_5, x1
+0xd50331df	isb	#1
+0xd50331c1	msr	S0_3_C3_C1_6, x1
+0xd50331ff	sb
+0xd50331e1	msr	S0_3_C3_C1_7, x1
+0xd503321f	msr	S0_3_C3_C2_0, xzr
+0xd5033201	msr	S0_3_C3_C2_0, x1
+0xd503323f	msr	S0_3_C3_C2_1, xzr
+0xd5033221	msr	S0_3_C3_C2_1, x1
+0xd503325f	clrex	#0x2
+0xd5033241	msr	S0_3_C3_C2_2, x1
+0xd503327f	msr	S0_3_C3_C2_3, xzr
+0xd5033261	msr	S0_3_C3_C2_3, x1
+0xd503329f	dsb	oshst
+0xd5033281	msr	S0_3_C3_C2_4, x1
+0xd50332bf	dmb	oshst
+0xd50332a1	msr	S0_3_C3_C2_5, x1
+0xd50332df	isb	#2
+0xd50332c1	msr	S0_3_C3_C2_6, x1
+0xd50332ff	sb
+0xd50332e1	msr	S0_3_C3_C2_7, x1
+0xd503331f	msr	S0_3_C3_C3_0, xzr
+0xd5033301	msr	S0_3_C3_C3_0, x1
+0xd503333f	msr	S0_3_C3_C3_1, xzr
+0xd5033321	msr	S0_3_C3_C3_1, x1
+0xd503335f	clrex	#0x3
+0xd5033341	msr	S0_3_C3_C3_2, x1
+0xd503337f	msr	S0_3_C3_C3_3, xzr
+0xd5033361	msr	S0_3_C3_C3_3, x1
+0xd503339f	dsb	osh
+0xd5033381	msr	S0_3_C3_C3_4, x1
+0xd50333bf	dmb	osh
+0xd50333a1	msr	S0_3_C3_C3_5, x1
+0xd50333df	isb	#3
+0xd50333c1	msr	S0_3_C3_C3_6, x1
+0xd50333ff	sb
+0xd50333e1	msr	S0_3_C3_C3_7, x1
+0xd503341f	msr	S0_3_C3_C4_0, xzr
+0xd5033401	msr	S0_3_C3_C4_0, x1
+0xd503343f	msr	S0_3_C3_C4_1, xzr
+0xd5033421	msr	S0_3_C3_C4_1, x1
+0xd503345f	clrex	#0x4
+0xd5033441	msr	S0_3_C3_C4_2, x1
+0xd503347f	msr	S0_3_C3_C4_3, xzr
+0xd5033461	msr	S0_3_C3_C4_3, x1
+0xd503349f	pssbb
+0xd5033481	msr	S0_3_C3_C4_4, x1
+0xd50334bf	dmb	#4
+0xd50334a1	msr	S0_3_C3_C4_5, x1
+0xd50334df	isb	#4
+0xd50334c1	msr	S0_3_C3_C4_6, x1
+0xd50334ff	sb
+0xd50334e1	msr	S0_3_C3_C4_7, x1
+0xd503351f	msr	S0_3_C3_C5_0, xzr
+0xd5033501	msr	S0_3_C3_C5_0, x1
+0xd503353f	msr	S0_3_C3_C5_1, xzr
+0xd5033521	msr	S0_3_C3_C5_1, x1
+0xd503355f	clrex	#0x5
+0xd5033541	msr	S0_3_C3_C5_2, x1
+0xd503357f	msr	S0_3_C3_C5_3, xzr
+0xd5033561	msr	S0_3_C3_C5_3, x1
+0xd503359f	dsb	nshld
+0xd5033581	msr	S0_3_C3_C5_4, x1
+0xd50335bf	dmb	nshld
+0xd50335a1	msr	S0_3_C3_C5_5, x1
+0xd50335df	isb	#5
+0xd50335c1	msr	S0_3_C3_C5_6, x1
+0xd50335ff	sb
+0xd50335e1	msr	S0_3_C3_C5_7, x1
+0xd503361f	msr	S0_3_C3_C6_0, xzr
+0xd5033601	msr	S0_3_C3_C6_0, x1
+0xd503363f	msr	S0_3_C3_C6_1, xzr
+0xd5033621	msr	S0_3_C3_C6_1, x1
+0xd503365f	clrex	#0x6
+0xd5033641	msr	S0_3_C3_C6_2, x1
+0xd503367f	msr	S0_3_C3_C6_3, xzr
+0xd5033661	msr	S0_3_C3_C6_3, x1
+0xd503369f	dsb	nshst
+0xd5033681	msr	S0_3_C3_C6_4, x1
+0xd50336bf	dmb	nshst
+0xd50336a1	msr	S0_3_C3_C6_5, x1
+0xd50336df	isb	#6
+0xd50336c1	msr	S0_3_C3_C6_6, x1
+0xd50336ff	sb
+0xd50336e1	msr	S0_3_C3_C6_7, x1
+0xd503371f	msr	S0_3_C3_C7_0, xzr
+0xd5033701	msr	S0_3_C3_C7_0, x1
+0xd503373f	msr	S0_3_C3_C7_1, xzr
+0xd5033721	msr	S0_3_C3_C7_1, x1
+0xd503375f	clrex	#0x7
+0xd5033741	msr	S0_3_C3_C7_2, x1
+0xd503377f	msr	S0_3_C3_C7_3, xzr
+0xd5033761	msr	S0_3_C3_C7_3, x1
+0xd503379f	dsb	nsh
+0xd5033781	msr	S0_3_C3_C7_4, x1
+0xd50337bf	dmb	nsh
+0xd50337a1	msr	S0_3_C3_C7_5, x1
+0xd50337df	isb	#7
+0xd50337c1	msr	S0_3_C3_C7_6, x1
+0xd50337ff	sb
+0xd50337e1	msr	S0_3_C3_C7_7, x1
+0xd503381f	msr	S0_3_C3_C8_0, xzr
+0xd5033801	msr	S0_3_C3_C8_0, x1
+0xd503383f	msr	S0_3_C3_C8_1, xzr
+0xd5033821	msr	S0_3_C3_C8_1, x1
+0xd503385f	clrex	#0x8
+0xd5033841	msr	S0_3_C3_C8_2, x1
+0xd503387f	msr	S0_3_C3_C8_3, xzr
+0xd5033861	msr	S0_3_C3_C8_3, x1
+0xd503389f	dsb	#8
+0xd5033881	msr	S0_3_C3_C8_4, x1
+0xd50338bf	dmb	#8
+0xd50338a1	msr	S0_3_C3_C8_5, x1
+0xd50338df	isb	#8
+0xd50338c1	msr	S0_3_C3_C8_6, x1
+0xd50338ff	sb
+0xd50338e1	msr	S0_3_C3_C8_7, x1
+0xd503391f	msr	S0_3_C3_C9_0, xzr
+0xd5033901	msr	S0_3_C3_C9_0, x1
+0xd503393f	msr	S0_3_C3_C9_1, xzr
+0xd5033921	msr	S0_3_C3_C9_1, x1
+0xd503395f	clrex	#0x9
+0xd5033941	msr	S0_3_C3_C9_2, x1
+0xd503397f	msr	S0_3_C3_C9_3, xzr
+0xd5033961	msr	S0_3_C3_C9_3, x1
+0xd503399f	dsb	ishld
+0xd5033981	msr	S0_3_C3_C9_4, x1
+0xd50339bf	dmb	ishld
+0xd50339a1	msr	S0_3_C3_C9_5, x1
+0xd50339df	isb	#9
+0xd50339c1	msr	S0_3_C3_C9_6, x1
+0xd50339ff	sb
+0xd50339e1	msr	S0_3_C3_C9_7, x1
+0xd5033a1f	msr	S0_3_C3_C10_0, xzr
+0xd5033a01	msr	S0_3_C3_C10_0, x1
+0xd5033a3f	msr	S0_3_C3_C10_1, xzr
+0xd5033a21	msr	S0_3_C3_C10_1, x1
+0xd5033a5f	clrex	#0xa
+0xd5033a41	msr	S0_3_C3_C10_2, x1
+0xd5033a7f	msr	S0_3_C3_C10_3, xzr
+0xd5033a61	msr	S0_3_C3_C10_3, x1
+0xd5033a9f	dsb	ishst
+0xd5033a81	msr	S0_3_C3_C10_4, x1
+0xd5033abf	dmb	ishst
+0xd5033aa1	msr	S0_3_C3_C10_5, x1
+0xd5033adf	isb	#10
+0xd5033ac1	msr	S0_3_C3_C10_6, x1
+0xd5033aff	sb
+0xd5033ae1	msr	S0_3_C3_C10_7, x1
+0xd5033b1f	msr	S0_3_C3_C11_0, xzr
+0xd5033b01	msr	S0_3_C3_C11_0, x1
+0xd5033b3f	msr	S0_3_C3_C11_1, xzr
+0xd5033b21	msr	S0_3_C3_C11_1, x1
+0xd5033b5f	clrex	#0xb
+0xd5033b41	msr	S0_3_C3_C11_2, x1
+0xd5033b7f	msr	S0_3_C3_C11_3, xzr
+0xd5033b61	msr	S0_3_C3_C11_3, x1
+0xd5033b9f	dsb	ish
+0xd5033b81	msr	S0_3_C3_C11_4, x1
+0xd5033bbf	dmb	ish
+0xd5033ba1	msr	S0_3_C3_C11_5, x1
+0xd5033bdf	isb	#11
+0xd5033bc1	msr	S0_3_C3_C11_6, x1
+0xd5033bff	sb
+0xd5033be1	msr	S0_3_C3_C11_7, x1
+0xd5033c1f	msr	S0_3_C3_C12_0, xzr
+0xd5033c01	msr	S0_3_C3_C12_0, x1
+0xd5033c3f	msr	S0_3_C3_C12_1, xzr
+0xd5033c21	msr	S0_3_C3_C12_1, x1
+0xd5033c5f	clrex	#0xc
+0xd5033c41	msr	S0_3_C3_C12_2, x1
+0xd5033c7f	msr	S0_3_C3_C12_3, xzr
+0xd5033c61	msr	S0_3_C3_C12_3, x1
+0xd5033c9f	dsb	#12
+0xd5033c81	msr	S0_3_C3_C12_4, x1
+0xd5033cbf	dmb	#12
+0xd5033ca1	msr	S0_3_C3_C12_5, x1
+0xd5033cdf	isb	#12
+0xd5033cc1	msr	S0_3_C3_C12_6, x1
+0xd5033cff	sb
+0xd5033ce1	msr	S0_3_C3_C12_7, x1
+0xd5033d1f	msr	S0_3_C3_C13_0, xzr
+0xd5033d01	msr	S0_3_C3_C13_0, x1
+0xd5033d3f	msr	S0_3_C3_C13_1, xzr
+0xd5033d21	msr	S0_3_C3_C13_1, x1
+0xd5033d5f	clrex	#0xd
+0xd5033d41	msr	S0_3_C3_C13_2, x1
+0xd5033d7f	msr	S0_3_C3_C13_3, xzr
+0xd5033d61	msr	S0_3_C3_C13_3, x1
+0xd5033d9f	dsb	ld
+0xd5033d81	msr	S0_3_C3_C13_4, x1
+0xd5033dbf	dmb	ld
+0xd5033da1	msr	S0_3_C3_C13_5, x1
+0xd5033ddf	isb	#13
+0xd5033dc1	msr	S0_3_C3_C13_6, x1
+0xd5033dff	sb
+0xd5033de1	msr	S0_3_C3_C13_7, x1
+0xd5033e1f	msr	S0_3_C3_C14_0, xzr
+0xd5033e01	msr	S0_3_C3_C14_0, x1
+0xd5033e3f	msr	S0_3_C3_C14_1, xzr
+0xd5033e21	msr	S0_3_C3_C14_1, x1
+0xd5033e5f	clrex	#0xe
+0xd5033e41	msr	S0_3_C3_C14_2, x1
+0xd5033e7f	msr	S0_3_C3_C14_3, xzr
+0xd5033e61	msr	S0_3_C3_C14_3, x1
+0xd5033e9f	dsb	st
+0xd5033e81	msr	S0_3_C3_C14_4, x1
+0xd5033ebf	dmb	st
+0xd5033ea1	msr	S0_3_C3_C14_5, x1
+0xd5033edf	isb	#14
+0xd5033ec1	msr	S0_3_C3_C14_6, x1
+0xd5033eff	sb
+0xd5033ee1	msr	S0_3_C3_C14_7, x1
+0xd5033f1f	msr	S0_3_C3_C15_0, xzr
+0xd5033f01	msr	S0_3_C3_C15_0, x1
+0xd5033f3f	msr	S0_3_C3_C15_1, xzr
+0xd5033f21	msr	S0_3_C3_C15_1, x1
+0xd5033f5f	clrex
+0xd5033f41	msr	S0_3_C3_C15_2, x1
+0xd5033f7f	msr	S0_3_C3_C15_3, xzr
+0xd5033f61	msr	S0_3_C3_C15_3, x1
+0xd5033f9f	dsb	sy
+0xd5033f81	msr	S0_3_C3_C15_4, x1
+0xd5033fbf	dmb	sy
+0xd5033fa1	msr	S0_3_C3_C15_5, x1
+0xd5033fdf	isb
+0xd5033fc1	msr	S0_3_C3_C15_6, x1
+0xd5033fff	sb
+0xd5033fe1	msr	S0_3_C3_C15_7, x1

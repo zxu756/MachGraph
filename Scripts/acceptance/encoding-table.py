@@ -919,6 +919,21 @@ def _generate_load_store_exclusive_casp_words() -> List[int]:
     return words
 
 
+def _generate_barriers_words() -> List[int]:
+    """ARM DDI 0487 C4.1.93.5 Barriers:
+    11010101000|0|00|011|0011|CRm(4)|op2(3)|Rt(5), i.e. (word & 0xfffff000) == 0xd5033000.
+    Enumerates all 16 x 8 x 2 = 256 combinations of CRm=0..15, op2=0..7 across Rt in {31, 1}
+    (covering Rt=31 CLREX, DSB, SSBB/PSSBB, DMB, ISB, SB, and op2 in {0,1,3} / Rt!=31 MSR S0_3_C3_* fallbacks).
+    """
+    words: List[int] = []
+    for crm in range(16):
+        for op2 in range(8):
+            for rt in (31, 1):
+                word = 0xD5033000 | (crm << 8) | (op2 << 5) | rt
+                words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1226,6 +1241,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "CAS/CASA/CASL/CASAL (Rt2=31), CASP/CASPA/CASPL/CASPAL (Rt2=31, even Rs/Rt incl. 30->ZR), and G62 non-31 Rs/Rt2 (512 rows).",
         ),
         generate_words=_generate_load_store_exclusive_casp_words,
+    ),
+    "barriers": EncodingGroupSpec(
+        name="barriers",
+        title="Barriers — CLREX, DSB, SSBB, PSSBB, DMB, ISB, SB, and S0_3_C3_* MSR fallbacks",
+        header_notes=(
+            "ARM DDI 0487 C4.1.93.5 Barriers: (word & 0xfffff000) == 0xd5033000.",
+            "Enumerates all 16 x 8 x 2 = 256 combinations of CRm=0..15, op2=0..7 across Rt in {31, 1}",
+            "(covering Rt=31 CLREX, DSB, SSBB, PSSBB, DMB, ISB, SB, and op2 in {0,1,3} / Rt!=31 MSR S0_3_C3_* fallbacks).",
+        ),
+        generate_words=_generate_barriers_words,
     ),
 }
 

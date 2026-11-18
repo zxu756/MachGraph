@@ -1962,6 +1962,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x1F608020), "Scalar FP data-processing (3 source)")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x08070605), "Load/store exclusive and CASP")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x48247D00), "Load/store exclusive and CASP")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0xD50330FF), "Barriers")
         expected_counts = {
             "pac_data_ptr": 3200,
             "rcpc_ldapr": 512,
@@ -1969,6 +1970,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             "scalar_fp_one_source": 1120,
             "scalar_fp_three_source": 128,
             "load_store_exclusive_casp": 512,
+            "barriers": 256,
         }
         for grp_name, expected_len in expected_counts.items():
             self.assertIn(grp_name, enc_table.ENCODING_GROUPS)
@@ -1988,6 +1990,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                     "scalar_fp_one_source",
                     "scalar_fp_three_source",
                     "load_store_exclusive_casp",
+                    "barriers",
                     "--out-dir",
                     tmp,
                 ],
@@ -2138,6 +2141,12 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 ".long",
             ):
                 self.assertIn(expected_mnem, em)
+
+            bc, brows = enc_table.load_reference_table(os.path.join(tmp, "barriers.tsv"))
+            self.assertEqual(len(brows), 256)
+            self.assertTrue(any("encoding-table.py generate barriers" in c for c in bc))
+            bm = {m for _, m, _ in brows}
+            self.assertEqual(bm, {"clrex", "dsb", "dmb", "isb", "sb", "ssbb", "pssbb", "msr"})
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()

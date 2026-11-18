@@ -1184,45 +1184,92 @@ public struct A64InstructionDecoder: Sendable {
             }
         }
 
-        // Memory Barriers (CLREX, DSB, DMB, ISB)
-        if !isRead && op0 == 0 && op1 == 0b011 && crn == 0b0011 && rt == 31 {
-            switch op2 {
-            case 0b010:
-                let ops: [A64Operand] = (crm == 15) ? [] : [.unsignedImmediate(UInt64(crm))]
-                return A64DecodedInstruction(address: address, rawWord: word, mnemonic: .clrex, operands: ops, group: .branchAndSystem)
-            case 0b100:
-                let opt = A64BarrierOptionTable.name(forCRm: crm)
-                return A64DecodedInstruction(
-                    address: address,
-                    rawWord: word,
-                    mnemonic: .dsb,
-                    operands: [.barrierOption(opt)],
-                    group: .branchAndSystem,
-                    autoComment: "Data Synchronization Barrier (\(A64BarrierOptionTable.architecturalName(forCRm: crm)))"
-                )
-            case 0b101:
-                let opt = A64BarrierOptionTable.name(forCRm: crm)
-                return A64DecodedInstruction(
-                    address: address,
-                    rawWord: word,
-                    mnemonic: .dmb,
-                    operands: [.barrierOption(opt)],
-                    group: .branchAndSystem,
-                    autoComment: "Data Memory Barrier (\(A64BarrierOptionTable.architecturalName(forCRm: crm)))"
-                )
-            case 0b110:
-                let ops: [A64Operand] = (crm == 15) ? [] : [.barrierOption(A64BarrierOptionTable.name(forCRm: crm))]
-                return A64DecodedInstruction(
-                    address: address,
-                    rawWord: word,
-                    mnemonic: .isb,
-                    operands: ops,
-                    group: .branchAndSystem,
-                    autoComment: "Instruction Synchronization Barrier"
-                )
-            default:
-                break
+        // Memory Barriers (CLREX, DSB, SSBB, PSSBB, DMB, ISB, SB, and S0_3_C3_* MSR fallbacks)
+        if !isRead && op0 == 0 && op1 == 0b011 && crn == 0b0011 {
+            if rt == 31 {
+                switch op2 {
+                case 0b010:
+                    let ops: [A64Operand] = (crm == 15) ? [] : [.unsignedImmediate(UInt64(crm))]
+                    let opText: String? = (crm == 15) ? nil : String(format: "#0x%x", crm)
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: .clrex,
+                        operands: ops,
+                        operandText: opText,
+                        group: .branchAndSystem
+                    )
+                case 0b100:
+                    if crm == 0 || crm == 4 {
+                        let alias = (crm == 0) ? "ssbb" : "pssbb"
+                        return A64DecodedInstruction(
+                            address: address,
+                            rawWord: word,
+                            mnemonic: .dsb,
+                            mnemonicText: alias,
+                            operands: [],
+                            group: .branchAndSystem,
+                            autoComment: crm == 0 ? "Speculative Store Bypass Barrier" : "Physical Speculative Store Bypass Barrier"
+                        )
+                    }
+                    let opt = A64BarrierOptionTable.name(forCRm: crm)
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: .dsb,
+                        operands: [.barrierOption(opt)],
+                        group: .branchAndSystem,
+                        autoComment: "Data Synchronization Barrier (\(A64BarrierOptionTable.architecturalName(forCRm: crm)))"
+                    )
+                case 0b101:
+                    let opt = A64BarrierOptionTable.name(forCRm: crm)
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: .dmb,
+                        operands: [.barrierOption(opt)],
+                        group: .branchAndSystem,
+                        autoComment: "Data Memory Barrier (\(A64BarrierOptionTable.architecturalName(forCRm: crm)))"
+                    )
+                case 0b110:
+                    let ops: [A64Operand] = (crm == 15) ? [] : [.unsignedImmediate(UInt64(crm))]
+                    let opText: String? = (crm == 15) ? nil : "#\(crm)"
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: .isb,
+                        operands: ops,
+                        operandText: opText,
+                        group: .branchAndSystem,
+                        autoComment: "Instruction Synchronization Barrier"
+                    )
+                case 0b111:
+                    return A64DecodedInstruction(
+                        address: address,
+                        rawWord: word,
+                        mnemonic: .isb,
+                        mnemonicText: "sb",
+                        operands: [],
+                        group: .branchAndSystem,
+                        autoComment: "Speculation Barrier"
+                    )
+                default:
+                    break
+                }
             }
+
+            let sysEnc = UInt16((word >> 5) & 0xFFFF)
+            let sysName = "S0_3_C3_C\(crm)_\(op2)"
+            let xtReg = A64Register.x(rt, allowSP: false)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .msr,
+                operands: [.systemRegister(name: sysName, encoding: sysEnc), .register(xtReg)],
+                group: .branchAndSystem,
+                readsRegisters: activeRegs([xtReg]),
+                writesRegisters: []
+            )
         }
 
         // PSTATE Immediate MSR (e.g. MSR SPSel, #imm)

@@ -2531,4 +2531,62 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 512)
         #expect(mismatches.isEmpty, "Group 28 table mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 10 Group 31: Barriers (SB, SSBB, PSSBB, CLREX, DSB, DMB, ISB, and S0_3_C3_* MSR fallbacks) match barriers.tsv")
+    func barriersAndSbDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String)] = [
+            (0xD503_30FF, "sb"),                     // /usr/libexec/DumpPanic baseline example (CRm=0)
+            (0xD503_3FFF, "sb"),                     // CRm=15 SB
+            (0xD503_309F, "ssbb"),                   // DSB CRm=0 alias
+            (0xD503_349F, "pssbb"),                  // DSB CRm=4 alias
+            (0xD503_3F9F, "dsb sy"),
+            (0xD503_3BBF, "dmb ish"),
+            (0xD503_3FDF, "isb"),
+            (0xD503_3BDF, "isb #11"),                // ISB non-15 CRm prints #<imm>, not barrier domain
+            (0xD503_3F5F, "clrex"),
+            (0xD503_3A5F, "clrex #0xa"),
+            (0xD503_301F, "msr S0_3_C3_C0_0, xzr"),  // op2=0 Rt=31 fallback
+            (0xD503_30E1, "msr S0_3_C3_C0_7, x1"),   // op2=7 Rt=1 fallback
+        ]
+        for (word, expected) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("barriers"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 256)
+        #expect(mismatches.isEmpty, "Group 31 table mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
