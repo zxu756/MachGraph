@@ -2464,6 +2464,54 @@ class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
                 self.assertEqual(mnem_counts.get(expected_rep), 48)
             self.assertEqual(mnem_counts.get(".long"), 3584 - 1632)
 
+    def test_stage13b_advsimd_ldst_multi_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage13b_check", "encoding-fuzz.py")
+
+        for sample_word in (0x4C008161, 0x4C400140, 0x0C0B0A09, 0x0C0D0E0F):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "AdvSIMD load/store multiple structures",
+            )
+
+        self.assertIn("advsimd_ldst_multi", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["advsimd_ldst_multi"].generate_words()
+        self.assertEqual(len(words), 2304)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in advsimd_ldst_multi")
+        for w in words:
+            self.assertEqual(w & 0xBF000000, 0x0C000000)
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD load/store multiple structures",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_ldst_multi", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_ldst_multi failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ldst_multi.tsv"))
+            self.assertEqual(len(rows), 2304)
+            self.assertTrue(any("encoding-table.py generate advsimd_ldst_multi" in c for c in comments))
+            mnem_counts = {}
+            mbz_rows = 0
+            for w, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+                is_post = ((w >> 23) & 1) == 1
+                bit21 = (w >> 21) & 1
+                rm = (w >> 16) & 0x1F
+                if bit21 != 0 or (not is_post and rm != 0):
+                    mbz_rows += 1
+                    self.assertEqual(m, ".long", f"must-be-zero violation word 0x{w:08x} decoded as {m}")
+            self.assertEqual(mbz_rows, 768)
+            for expected_mnem in ("ld1", "st1"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 192)
+            for expected_mnem in ("ld2", "ld3", "ld4", "st2", "st3", "st4"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 42)
+            self.assertEqual(mnem_counts.get(".long"), 2304 - 636)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

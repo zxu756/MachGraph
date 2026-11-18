@@ -137,6 +137,60 @@ def _generate_advsimd_ldst_single_words() -> List[int]:
     return words
 
 
+# M2 第 13b 段：第 21 组 AdvSIMD 多结构加载存储
+def _generate_advsimd_ldst_multi_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.10 / C4.1.94.11 AdvSIMD load/store multiple structures: (word & 0xbf000000) == 0x0c000000."""
+    words: List[int] = []
+    addr_modes = ((0, 0), (1, 31), (1, 3))
+    reg_pairs = ((1, 2), (31, 31))
+    for q_bit in (0, 1):
+        for l_bit in (0, 1):
+            for opcode in range(16):
+                for size in range(4):
+                    for post_bit, rm in addr_modes:
+                        for rt, rn in reg_pairs:
+                            word = (
+                                (q_bit << 30)
+                                | 0x0C000000
+                                | (post_bit << 23)
+                                | (l_bit << 22)
+                                | (rm << 16)
+                                | (opcode << 12)
+                                | (size << 10)
+                                | (rn << 5)
+                                | rt
+                            )
+                            words.append(word)
+
+    # Must-be-zero unallocated counterexamples (3 x 256 = 768 rows):
+    # - no-offset form (bit[23]=0) requires bits[21:16] == 0: sample bit[16]=1 and bit[21]=1;
+    # - post-indexed form (bit[23]=1) requires bit[21] == 0: sample bit[21]=1 (with Rm=31).
+    mbz_variants = (
+        (0, 0, 1),
+        (0, 1, 0),
+        (1, 1, 31),
+    )
+    for post_bit, bit21, rm in mbz_variants:
+        for q_bit in (0, 1):
+            for l_bit in (0, 1):
+                for opcode in range(16):
+                    for size in range(4):
+                        word = (
+                            (q_bit << 30)
+                            | 0x0C000000
+                            | (post_bit << 23)
+                            | (l_bit << 22)
+                            | (bit21 << 21)
+                            | (rm << 16)
+                            | (opcode << 12)
+                            | (size << 10)
+                            | (2 << 5)
+                            | 1
+                        )
+                        words.append(word)
+    return words
+
+
 def _generate_move_wide_imm_words() -> List[int]:
     """ARM DDI 0487 C4.1.92.5 Move wide (immediate): bits[28:23] == 0b100101."""
     words: List[int] = []
@@ -1193,6 +1247,21 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "and (Rt, Rn) = (1, 2) (must-be-zero unallocated counterexamples, 512 rows), totaling 3,584 rows.",
         ),
         generate_words=_generate_advsimd_ldst_single_words,
+    ),
+    "advsimd_ldst_multi": EncodingGroupSpec(
+        name="advsimd_ldst_multi",
+        title="Advanced SIMD load/store multiple structures (no-offset & post-indexed) — LD1..LD4 (1..4 regs) and ST1..ST4",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.10 / C4.1.94.11 AdvSIMD load/store multiple structures: (word & 0xbf000000) == 0x0c000000.",
+            "Enumerates all 2 x 2 x 16 x 4 = 256 non-register combinations of Q=0..1, L=0..1, opcode=0..15, size=0..3",
+            "across 3 addressing modes: no-offset (bit[23]=0, bits[21:16]=0), post-indexed immediate (bit[23]=1, bit[21]=0, Rm=31),",
+            "and post-indexed register (bit[23]=1, bit[21]=0, Rm=3), and 2 register pairs: (Rt, Rn) in {(1, 2), (31, 31)}",
+            "(covering v31->v0 wraparound and [sp] base, 1,536 rows);",
+            "plus 3 x 256 = 768 must-be-zero unallocated counterexamples with (Rt, Rn) = (1, 2):",
+            "no-offset bit[16]=1 (256 rows), no-offset bit[21]=1 (256 rows), and post-indexed bit[21]=1 (Rm=31, 256 rows),",
+            "totaling 2,304 rows.",
+        ),
+        generate_words=_generate_advsimd_ldst_multi_words,
     ),
 }
 
