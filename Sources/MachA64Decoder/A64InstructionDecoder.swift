@@ -3683,6 +3683,17 @@ public struct A64InstructionDecoder: Sendable {
                     group: .simdAndFP, readsRegisters: activeRegs([vRd, gpRn]), writesRegisters: [vRd]
                 )
             }
+            if u && q { // INS <Vd>.<Ts>[index1], <Vn>.<Ts>[index2] (preferred alias MOV)
+                let srcLaneIndex = imm4 >> tz
+                let vRd = A64Register.v(rd, arrangement: elemChar)
+                let vRn = A64Register.v(rn, arrangement: elemChar)
+                return A64DecodedInstruction(
+                    address: address, rawWord: word, mnemonic: .mov,
+                    operands: [.register(vRd), .register(vRn)],
+                    operandText: "v\(rd).\(elemChar)[\(laneIndex)], v\(rn).\(elemChar)[\(srcLaneIndex)]",
+                    group: .simdAndFP, readsRegisters: activeRegs([vRd, vRn]), writesRegisters: [vRd]
+                )
+            }
             return nil
         }
 
