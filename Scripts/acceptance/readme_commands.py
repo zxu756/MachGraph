@@ -165,6 +165,17 @@ def expect_patch(out):
     return "16 bytes assembled, valid=true, codesign --verify --strict passed"
 
 
+def expect_asm(out):
+    doc = json.loads(out)
+    assert doc["at"] == "0x100000460", doc
+    assert doc["summary"] == {"ok": 3, "unsupported": 0, "error": 0}, doc["summary"]
+    results = doc["results"]
+    assert [r["status"] for r in results] == ["ok", "ok", "ok"], results
+    assert [r["word"] for r in results] == ["a9bf7bfd", "d2800540", "14000002"], results
+    assert [r["address"] for r in results] == ["0x100000460", "0x100000464", "0x100000468"], results
+    return "3 ok words: a9bf7bfd, d2800540, 14000002 @ 0x100000460..0x100000468"
+
+
 def expect_export_html(out):
     with open("/tmp/machgraph_ls_triage.html", "r", encoding="utf-8") as fh:
         html = fh.read()
@@ -213,6 +224,10 @@ EXPECTATIONS = {
         "--asm \"pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab\" "
         "--force --output /tmp/machgraph_readme_patched --json"
     ): expect_patch,
+    (
+        f"{BIN} asm --at 0x100000460 "
+        "--asm \"stp x29, x30, [sp, #-16]!; mov x0, #42; b .+8\" --json"
+    ): expect_asm,
     f"{BIN} export-html /bin/ls --output /tmp/machgraph_ls_triage.html": expect_export_html,
     f"{BIN} --help --lang zh": expect_help_zh,
     f"{BIN} info --demo --lang zh": expect_demo_zh,

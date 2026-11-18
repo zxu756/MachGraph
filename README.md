@@ -19,7 +19,7 @@ Pure-Swift ARM64/ARM64e disassembler, inline mini-assembler, and Universal/Mach-
 | **Universal & Mach-O 64 Container Parsing** | `info`, `segments` | Parses Fat/Fat64 slices, `mach_header_64`, `LC_SEGMENT_64` segments/sections, `LC_UUID`, `LC_BUILD_VERSION`, `LC_MAIN`, and imported dylibs (`--json` & text). Rejects empty files, plain text, truncated Mach-O slices, and unsupported ELF `ET_REL` relocatable object files with non-zero exit codes. |
 | **Chained Fixups, Symbols, Strings & CodeSign** | `fixups`, `symbols`, `strings`, `codesign`, `entropy` | Parses `LC_DYLD_CHAINED_FIXUPS` binds/rebases (`fixups`), separates `LC_SYMTAB` symbols from `[inferred:...]` `LC_FUNCTION_STARTS` / `LC_DYSYMTAB` stub entries (`symbols`), scans printable strings (`strings`), prints one Shannon entropy figure for the whole file together with its byte chi-square, zero-byte ratio, and the number of 1024-byte sliding windows and anomalies (`entropy`; per-section entropy is not printed), and verifies embedded `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` & CDHash (`codesign`). |
 | **ARM64 / ARM64e Disassembly & Xrefs** | `disasm`, `xrefs`, `cfg-dot` | Disassembles only sections carrying `S_ATTR_PURE_INSTRUCTIONS` or `S_ATTR_SOME_INSTRUCTIONS`, supports `--symbol` / `--function`, `--address`, and `--count`, queries resolved call/branch/data cross-references (`xrefs`), and exports Graphviz DOT control-flow graphs (`cfg-dot`). Missing targets fail with exit code `1` and empty `stdout`. |
-| **Inline ARM64 Mini-Assembler & Ad-Hoc Re-Signing** | `patch-asm`, `resign` | Assembles semicolon-separated ARM64 instruction sequences (`pacibsp; stp ...; mov ...; retab`) into machine words, writes a patched Mach-O copy, and refreshes the ad-hoc `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory`. `;` only separates statements (`//` starts a comment): if any statement cannot be assembled, `patch-asm` exits non-zero and writes no output file. `--force` overrides the safety check that otherwise refuses a patch whose interior covers a branch target, function start, symbol, or PAC/BTI landing pad. |
+| **Inline ARM64 Mini-Assembler & Ad-Hoc Re-Signing** | `asm`, `patch-asm`, `resign` | `asm` assembles ARM64 statements from `--asm` or `stdin` starting at `--at` into machine words without reading or writing files (exit `0` when all succeed, `3` when a valid A64 form is not yet supported, `1` on invalid statement). `patch-asm` writes assembled statements onto a Mach-O copy and refreshes the ad-hoc `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory`. `;` only separates statements (`//` and `/* */` are comments): if any statement cannot be assembled, `patch-asm` exits non-zero and writes no output file. `--force` overrides the safety check that otherwise refuses a patch whose interior covers a branch target, function start, symbol, or PAC/BTI landing pad. |
 | **Bilingual CLI, HTML Dossier & MCP Server** | `export-html`, `mcp` | Supports `--lang en|zh` and `MACHGRAPH_LANG=en|zh`, exports standalone bilingual (`中文 \| EN`) HTML binary triage reports (`export-html`), and serves JSON-RPC 2.0 MCP requests over `stdio` (`mcp`), requiring an explicit `binaryPath` on every tool call. |
 
 ---
@@ -67,6 +67,9 @@ cp Fixtures/demo_arm64_sample /tmp/machgraph_readme_sample
   --output /tmp/machgraph_readme_patched \
   --json
 rm -f /tmp/machgraph_readme_sample /tmp/machgraph_readme_patched
+
+# Assemble ARM64 statements only (no files read or written; exit 0 all ok, 3 unsupported valid A64 form, 1 invalid statement)
+.build/debug/MachGraph asm --at 0x100000460 --asm "stp x29, x30, [sp, #-16]!; mov x0, #42; b .+8" --json
 
 # Export a standalone bilingual (中文 | EN) HTML binary triage report for /bin/ls
 .build/debug/MachGraph export-html /bin/ls --output /tmp/machgraph_ls_triage.html

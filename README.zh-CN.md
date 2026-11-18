@@ -19,7 +19,7 @@
 | **Universal 与 Mach-O 64 容器解析** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN` 与动态库依赖（支持文本与 `--json`）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
 | **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），输出整个文件的一个香农熵数值，以及字节卡方值、零字节占比、1024 字节滑动窗口的个数与异常数（`entropy`；不输出各节的熵），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
 | **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤，查询调用/跳转/数据交叉引用（`xrefs`），导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
-| **内联 ARM64 微型汇编与临时重签名** | `patch-asm`、`resign` | 支持分号分隔的多条 ARM64 汇编语句（如 `pacibsp; stp ...; mov ...; retab`）逐条编码写入副本，并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。`;` 只是语句分隔符（注释用 `//`）：只要有一条语句汇编不了，`patch-asm` 就以非零退出码报错，不写出文件。补丁内部盖住跳转目标、函数起点、符号或 PAC/BTI 落点时默认拒绝写入，加 `--force` 可跳过这项安全检查。 |
+| **内联 ARM64 微型汇编与临时重签名** | `asm`、`patch-asm`、`resign` | `asm` 从 `--asm` 或标准输入读取 ARM64 语句并在 `--at` 起逐条汇编成机器码，不读写任何文件（退出码 `0` 全部成功，`3` 表示有合法 A64 写法汇编器还不支持，`1` 表示有写错的语句）。`patch-asm` 将汇编结果写入副本并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。`;` 只是语句分隔符（注释用 `//` 或 `/* */`）：只要有一条语句汇编不了，`patch-asm` 就以非零退出码报错，不写出文件。补丁内部盖住跳转目标、函数起点、符号或 PAC/BTI 落点时默认拒绝写入，加 `--force` 可跳过这项安全检查。 |
 | **中英双语命令行、HTML 报告与 MCP 服务端** | `export-html`、`mcp` | 支持 `--lang zh|en` 与 `MACHGRAPH_LANG=zh|en`（简体中文环境自动默认中文），导出单文件离线双语（`中文 \| EN`）HTML 分诊报告（`export-html`），并提供基于 `stdio` 的 JSON-RPC 2.0 MCP 服务端（`mcp`，所有工具调用均要求显式传入 `binaryPath`）。 |
 
 ---
@@ -67,6 +67,9 @@ cp Fixtures/demo_arm64_sample /tmp/machgraph_readme_sample
   --output /tmp/machgraph_readme_patched \
   --json
 rm -f /tmp/machgraph_readme_sample /tmp/machgraph_readme_patched
+
+# 只汇编、不写文件；退出码 0 全部成功，3 表示有合法 A64 写法汇编器还不支持，1 表示有写错的语句
+.build/debug/MachGraph asm --at 0x100000460 --asm "stp x29, x30, [sp, #-16]!; mov x0, #42; b .+8" --json
 
 # 为 /bin/ls 导出单文件离线中英双语（中文 | EN）HTML 二进制分诊报告
 .build/debug/MachGraph export-html /bin/ls --output /tmp/machgraph_ls_triage.html
