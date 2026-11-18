@@ -658,7 +658,9 @@ public struct A64MiniAssembler: Sendable {
         case "paciza", "pacizb", "autiza", "autizb", "xpaci", "xpacd":
             guard operands.count == 1 else { throw err(line, src, "\(mnemonic) requires <Xd>") }
             let rd = try requireReg(operands[0], line: line, src: src)
-            guard rd.bank == .gp64 else { throw err(line, src, "\(mnemonic) requires 64-bit Xd") }
+            guard rd.bank == .gp64 || (rd.bank == .zeroRegister && rd.bitWidth == 64) else {
+                throw err(line, src, "\(mnemonic) requires 64-bit Xd")
+            }
             let base: UInt32
             switch mnemonic {
             case "paciza": base = 0xDAC1_23E0
@@ -1706,6 +1708,7 @@ public struct A64MiniAssembler: Sendable {
             let option: UInt32
             let sBit: UInt32
             if let ext = extend {
+                let explicitZeroOnByte = (scaleShift == 0) && Self.registerOffsetHasExplicitExtendAmount(operands[1])
                 switch ext {
                 case .lsl(let amt):
                     option = 0b011
@@ -1716,15 +1719,15 @@ public struct A64MiniAssembler: Sendable {
                 case .uxtw(let amt):
                     option = 0b010
                     guard amt == 0 || Int(amt) == scaleShift else { throw err(line, src, "Invalid UXTW shift") }
-                    sBit = (amt > 0) ? 1 : 0
+                    sBit = (amt > 0 || explicitZeroOnByte) ? 1 : 0
                 case .sxtw(let amt):
                     option = 0b110
                     guard amt == 0 || Int(amt) == scaleShift else { throw err(line, src, "Invalid SXTW shift") }
-                    sBit = (amt > 0) ? 1 : 0
+                    sBit = (amt > 0 || explicitZeroOnByte) ? 1 : 0
                 case .sxtx(let amt):
                     option = 0b111
                     guard amt == 0 || Int(amt) == scaleShift else { throw err(line, src, "Invalid SXTX shift") }
-                    sBit = (amt > 0) ? 1 : 0
+                    sBit = (amt > 0 || explicitZeroOnByte) ? 1 : 0
                 default:
                     throw err(line, src, "Unsupported register offset extend '\(ext)'")
                 }
@@ -1737,6 +1740,16 @@ public struct A64MiniAssembler: Sendable {
         case .pcRelativeLiteral:
             throw err(line, src, "Unexpected literal mode")
         }
+    }
+
+    private static func registerOffsetHasExplicitExtendAmount(_ rawMemOperand: String) -> Bool {
+        let tok = rawMemOperand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard tok.hasPrefix("["), tok.hasSuffix("]") else { return false }
+        let inner = String(tok.dropFirst().dropLast())
+        let parts = inner.split(separator: ",", omittingEmptySubsequences: false)
+        guard parts.count == 3 else { return false }
+        let extTokens = parts[2].split(whereSeparator: { $0 == " " || $0 == "\t" })
+        return extTokens.count >= 2
     }
 
     private func encodeLoadStorePair(mnemonic: String, operands: [String], line: Int, src: String) throws -> UInt32 {

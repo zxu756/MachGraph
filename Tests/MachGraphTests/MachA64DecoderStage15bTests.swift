@@ -11,6 +11,160 @@ struct MachA64DecoderStage15bTests {
     private let decoder = A64InstructionDecoder()
     private let assembler = A64MiniAssembler()
 
+    private struct TableStats {
+        let name: String
+        var totalRows: Int = 0
+        var skippedInst: Int = 0
+        var ok: Int = 0
+        var equivalent: Int = 0
+        var unsupported: Int = 0
+        var errors: Int = 0
+        var wrongWords: Int = 0
+    }
+
+    private static func discoverReferenceTables() throws -> [(name: String, url: URL)] {
+        let fixturesDir = RepoFixtures.repositoryRoot.appendingPathComponent("Fixtures", isDirectory: true)
+        let a64Dir = fixturesDir.appendingPathComponent("a64", isDirectory: true)
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: a64Dir,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )
+        let a64Tables = entries
+            .filter { $0.pathExtension.lowercased() == "tsv" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { (name: "a64/\($0.lastPathComponent)", url: $0) }
+
+        #expect(a64Tables.count >= 38, "Expected at least 38 Fixtures/a64/*.tsv tables, found \(a64Tables.count)")
+
+        let m1Tables: [(name: String, url: URL)] = [
+            ("hint_llvm_table.tsv", RepoFixtures.hintAliasTableURL),
+            ("sys_crn7_8_llvm_table.tsv", RepoFixtures.sysAliasTableURL),
+        ]
+        return a64Tables + m1Tables
+    }
+
+    @Test("15b(1.a): Every non-.inst row across all Fixtures/a64/*.tsv and M1 TSV tables round-trips or throws assemblerUnsupported")
+    func referenceTablesRoundTripOrThrowUnsupported() throws {
+        let tables = try Self.discoverReferenceTables()
+        var allStats: [TableStats] = []
+        allStats.reserveCapacity(tables.count)
+
+        for table in tables {
+            let rawText = try String(contentsOf: table.url, encoding: .utf8)
+            var stats = TableStats(name: table.name)
+            var rowIndex: UInt64 = 0
+
+            for rawLine in rawText.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+                let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+                if trimmed.isEmpty || trimmed.hasPrefix("#") {
+                    continue
+                }
+                let cols = rawLine.split(separator: "\t", maxSplits: 1, omittingEmptySubsequences: false)
+                guard let firstCol = cols.first else { continue }
+                let hexPart = firstCol.hasPrefix("0x") || firstCol.hasPrefix("0X")
+                    ? firstCol.dropFirst(2)
+                    : firstCol[...]
+                let word = try #require(
+                    UInt32(hexPart, radix: 16),
+                    "Malformed hex word '\(firstCol)' in \(table.name)"
+                )
+
+                let addr = VirtualAddress(0x1_0000_0000 + rowIndex * 4)
+                rowIndex += 1
+                stats.totalRows += 1
+
+                let decoded = decoder.decode(word: word, at: addr)
+                if decoded.mnemonicText == ".inst" {
+                    stats.skippedInst += 1
+                    continue
+                }
+
+                let text = decoded.formattedDisassembly
+                do {
+                    let encoded = try assembler.assembleSingle(text, at: addr)
+                    if encoded == word {
+                        stats.ok += 1
+                    } else {
+                        let redecoded = decoder.decode(word: encoded, at: addr)
+                        if redecoded.mnemonicText != ".inst" && redecoded.formattedDisassembly == text {
+                            stats.equivalent += 1
+                        } else {
+                            stats.wrongWords += 1
+                            Issue.record(
+                                Comment(
+                                    rawValue: String(
+                                        format: "[%@] word=0x%08x text='%@' produced wrong word 0x%08x ('%@')",
+                                        table.name,
+                                        word,
+                                        text,
+                                        encoded,
+                                        redecoded.formattedDisassembly
+                                    )
+                                )
+                            )
+                        }
+                    }
+                } catch let err as MachGraphError {
+                    if case .assemblerUnsupported = err {
+                        stats.unsupported += 1
+                    } else {
+                        stats.errors += 1
+                        Issue.record(
+                            Comment(
+                                rawValue: String(
+                                    format: "[%@] word=0x%08x text='%@' threw unexpected error: %@",
+                                    table.name,
+                                    word,
+                                    text,
+                                    String(describing: err)
+                                )
+                            )
+                        )
+                    }
+                } catch {
+                    stats.errors += 1
+                    Issue.record(
+                        Comment(
+                            rawValue: String(
+                                format: "[%@] word=0x%08x text='%@' threw non-MachGraphError: %@",
+                                table.name,
+                                word,
+                                text,
+                                String(describing: error)
+                            )
+                        )
+                    )
+                }
+            }
+            allStats.append(stats)
+        }
+
+        var sumRows = 0
+        var sumSkipped = 0
+        var sumOk = 0
+        var sumEquiv = 0
+        var sumUnsup = 0
+        var sumErr = 0
+        var sumWrong = 0
+        for s in allStats {
+            let decoded = s.totalRows - s.skippedInst
+            print(
+                "[15b-table] \(s.name)\trows=\(s.totalRows)\tdecoded=\(decoded)\tok=\(s.ok)\tequiv=\(s.equivalent)\tunsupported=\(s.unsupported)\terror=\(s.errors)\twrong=\(s.wrongWords)"
+            )
+            sumRows += s.totalRows
+            sumSkipped += s.skippedInst
+            sumOk += s.ok
+            sumEquiv += s.equivalent
+            sumUnsup += s.unsupported
+            sumErr += s.errors
+            sumWrong += s.wrongWords
+        }
+        print(
+            "[15b-table-total] tables=\(allStats.count)\trows=\(sumRows)\tdecoded=\(sumRows - sumSkipped)\tok=\(sumOk)\tequiv=\(sumEquiv)\tunsupported=\(sumUnsup)\terror=\(sumErr)\twrong=\(sumWrong)"
+        )
+    }
+
     @Test("15b(1.b): /bin/ls (arm64e) __TEXT,__text instructions all round-trip or throw assemblerUnsupported, with ok >= 3845")
     func binLsTextInstructionsRoundTripOrThrowUnsupported() throws {
         let url = URL(fileURLWithPath: "/bin/ls")
@@ -198,6 +352,48 @@ struct MachA64DecoderStage15bTests {
         }
     }
 
+    @Test("15b(1.c.4): G50 byte-width register-offset extend preserves S=1 when #0 is written and S=0 when omitted")
+    func g50ByteRegisterOffsetExtendExplicitZeroShiftSetsSBit() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+        let cases: [(text: String, expectedWord: UInt32)] = [
+            ("strb w1, [x2, w3, uxtw #0]", 0x3823_5841),
+            ("strb w1, [x2, w3, uxtw]",    0x3823_4841),
+            ("strb w1, [x2, w3, sxtw #0]", 0x3823_D841),
+            ("strb w1, [x2, w3, sxtw]",    0x3823_C841),
+            ("strb w1, [x2, x3, sxtx #0]", 0x3823_F841),
+            ("strb w1, [x2, x3, sxtx]",    0x3823_E841),
+            ("ldr b1, [x2, w3, uxtw #0]",  0x3C63_5841),
+            ("ldr b1, [x2, w3, uxtw]",     0x3C63_4841),
+            ("ldrsb x1, [x2, w3, uxtw #0]", 0x38A3_5841),
+            ("ldrsb x1, [x2, w3, uxtw]",    0x38A3_4841),
+        ]
+
+        for c in cases {
+            let word = try assembler.assembleSingle(c.text, at: pc)
+            #expect(word == c.expectedWord, "Expected \(String(format: "0x%08x", c.expectedWord)) for '\(c.text)', got \(String(format: "0x%08x", word))")
+            #expect(decoder.decode(word: c.expectedWord, at: pc).formattedDisassembly == c.text)
+        }
+    }
+
+    @Test("15b(1.c.5): Single-operand PAC instructions accept xzr")
+    func singleOperandPACAcceptsXZR() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+        let cases: [(text: String, expectedWord: UInt32)] = [
+            ("paciza xzr", 0xDAC1_23FF),
+            ("pacizb xzr", 0xDAC1_27FF),
+            ("autiza xzr", 0xDAC1_33FF),
+            ("autizb xzr", 0xDAC1_37FF),
+            ("xpaci xzr",  0xDAC1_43FF),
+            ("xpacd xzr",  0xDAC1_47FF),
+        ]
+
+        for c in cases {
+            let word = try assembler.assembleSingle(c.text, at: pc)
+            #expect(word == c.expectedWord, "Expected \(String(format: "0x%08x", c.expectedWord)) for '\(c.text)', got \(String(format: "0x%08x", word))")
+            #expect(decoder.decode(word: c.expectedWord, at: pc).formattedDisassembly == c.text)
+        }
+    }
+
     @Test("15b(1.c.6): Post-encoding self-check rejects unallocated encodings as assemblerError while allowing aliases and .inst/.word")
     func postEncodingSelfCheckRejectsUnallocatedEncodings() throws {
         let pc = VirtualAddress(0x1_0000_1000)
@@ -290,5 +486,67 @@ struct MachA64DecoderStage15bTests {
                 Issue.record("Expected assemblerError from assembleProgram for '\(text)', got \(String(describing: progCaught))")
             }
         }
+    }
+
+    @Test("15b(2 & 4): A64AssemblerOperandClassifier covers all operand classes, brace splitting, and canonical form edge cases")
+    func operandClassifierAndCanonicalFormEdgeCases() throws {
+        // Brace & bracket splitting
+        let (m1, ops1) = A64AssemblerOperandClassifier.splitMnemonicAndOperands("ld2 { v0.16b, v1.16b }, [x0, #32]!")
+        #expect(m1 == "ld2")
+        #expect(ops1 == ["{ v0.16b, v1.16b }", "[x0, #32]!"])
+
+        // Operand classes
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("x0") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("x30") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("xzr") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("sp") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("fp") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("lr") == .gpX)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("w0") == .gpW)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("w30") == .gpW)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("wzr") == .gpW)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("wsp") == .gpW)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("b31") == .scalarB)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("h0") == .scalarH)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("s15") == .scalarS)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("d7") == .scalarD)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("q31") == .scalarQ)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v0.1q") == .vector("1q"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v3.4b") == .vector("4b"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v5.2h") == .vector("2h"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v2.4b[1]") == .vectorElement("4b"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v7.2h[0]") == .vectorElement("2h"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("v1.q[0]") == .vectorElement("q"))
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("{ v0.16b - v3.16b }") == .registerList)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("{ v0.h, v1.h }[1]") == .registerList)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("#-0x3333333333333334") == .immediate)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("#-0.12500000") == .immediate)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("msl #8") == .shiftOrExtend)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("uxtw") == .shiftOrExtend)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("sxtx #3") == .shiftOrExtend)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("[sp, #-16]!") == .memory)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("vbar_el1") == .other)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand("vs") == .other)
+        #expect(try A64AssemblerOperandClassifier.classifyOperand(".+12") == .other)
+
+        // Form preserves sp/wsp/xzr/wzr and avoids false register matches inside hex literals
+        #expect(
+            A64AssemblerOperandClassifier.formatInstructionForm(
+                mnemonic: "st1",
+                operands: ["{ v0.16b - v3.16b }", "[sp]", "#-0xd0"]
+            ) == "st1 { V.Nb - V.Nb }, [sp], #N"
+        )
+        #expect(
+            A64AssemblerOperandClassifier.formatInstructionForm(
+                mnemonic: "autdza",
+                operands: ["xzr"]
+            ) == "autdza xzr"
+        )
+        #expect(
+            A64AssemblerOperandClassifier.formatInstructionForm(
+                mnemonic: "add",
+                operands: ["wsp", "wzr", "#0x1b0"]
+            ) == "add wsp, wzr, #N"
+        )
     }
 }

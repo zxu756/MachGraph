@@ -60,5 +60,27 @@ struct MachHeadlessCLIAsmTests {
             Issue.record("Expected assemblerUnsupported from patch-asm on 'nop; autdza x16', got \(String(describing: caught))")
         }
         #expect(!FileManager.default.fileExists(atPath: outputBin.path))
+
+        // Stage 15b: implemented mnemonic with unsupported SIMD operand sequence also exits with 3 via patch-asm.
+        var simdCaught: MachGraphError?
+        do {
+            _ = try await cli.execute(arguments: [
+                "patch-asm", inputBin.path,
+                "--address", address,
+                "--asm", "nop; mul v2.4s, v2.4s, v4.4s",
+                "--output", outputBin.path,
+            ])
+        } catch let err as MachGraphError {
+            simdCaught = err
+        }
+
+        if case .assemblerUnsupported(let mnem, let form) = simdCaught {
+            #expect(mnem == "mul")
+            #expect(form == "mul V.Ns, V.Ns, V.Ns")
+            #expect(MachCLIRunner.exitCode(for: simdCaught!) == 3)
+        } else {
+            Issue.record("Expected assemblerUnsupported from patch-asm on 'nop; mul v2.4s, v2.4s, v4.4s', got \(String(describing: simdCaught))")
+        }
+        #expect(!FileManager.default.fileExists(atPath: outputBin.path))
     }
 }
