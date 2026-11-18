@@ -2512,6 +2512,40 @@ class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
                 self.assertEqual(mnem_counts.get(expected_mnem), 42)
             self.assertEqual(mnem_counts.get(".long"), 2304 - 636)
 
+    def test_stage14_crypto_aes_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_aes_check", "encoding-fuzz.py")
+
+        for sample_word in (0x4E284840, 0x4E28782C):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto AES",
+            )
+
+        self.assertIn("crypto_aes", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_aes"].generate_words()
+        self.assertEqual(len(words), 256)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_aes")
+        for w in words:
+            self.assertEqual(w & 0xFF3E0C00, 0x4E280800)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_aes", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_aes failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_aes.tsv"))
+            self.assertEqual(len(rows), 256)
+            self.assertTrue(any("encoding-table.py generate crypto_aes" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in ("aese", "aesd", "aesmc", "aesimc"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 2)
+            self.assertEqual(mnem_counts.get(".long"), 248)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

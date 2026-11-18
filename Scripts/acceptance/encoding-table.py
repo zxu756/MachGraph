@@ -191,6 +191,25 @@ def _generate_advsimd_ldst_multi_words() -> List[int]:
     return words
 
 
+# M2 第 14 段：第 17 组 Crypto AES
+def _generate_crypto_aes_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.1 Cryptographic AES: (word & 0xff3e0c00) == 0x4e280800."""
+    words: List[int] = []
+    reg_pairs = ((1, 2), (31, 31))
+    for size in range(4):
+        for opcode in range(32):
+            for rd, rn in reg_pairs:
+                word = (
+                    0x4E280800
+                    | (size << 22)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+    return words
+
+
 def _generate_move_wide_imm_words() -> List[int]:
     """ARM DDI 0487 C4.1.92.5 Move wide (immediate): bits[28:23] == 0b100101."""
     words: List[int] = []
@@ -1262,6 +1281,17 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "totaling 2,304 rows.",
         ),
         generate_words=_generate_advsimd_ldst_multi_words,
+    ),
+    "crypto_aes": EncodingGroupSpec(
+        name="crypto_aes",
+        title="Cryptographic AES — AESE, AESD, AESMC, and AESIMC",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.1 Cryptographic AES: (word & 0xff3e0c00) == 0x4e280800.",
+            "Enumerates all 4 x 32 = 128 non-register combinations of size=0..3 (bits[23:22]) and opcode=0..31 (bits[16:12])",
+            "across 2 register pairs: (Rd, Rn) in {(1, 2), (31, 31)}, totaling 256 rows.",
+            "Reference decodes 8 rows (size=0b00, opcode in 0b00100..0b00111: aese, aesd, aesmc, aesimc) and prints .long for 248 rows.",
+        ),
+        generate_words=_generate_crypto_aes_words,
     ),
 }
 
