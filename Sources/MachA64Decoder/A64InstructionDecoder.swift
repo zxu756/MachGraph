@@ -34,6 +34,9 @@ public struct A64InstructionDecoder: Sendable {
                 return decoded
             }
         } else if (op0 & 0b0111) == 0b0111 {
+            if let crypto = decodeCryptographic(word: word, at: address) {
+                return crypto
+            }
             if let decoded = decodeSIMDAndFloatingPoint(word: word, at: address) {
                 return decoded
             }
