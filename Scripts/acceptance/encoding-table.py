@@ -1047,6 +1047,34 @@ def _generate_advsimd_permute_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_table_lookup_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.10 Advanced SIMD table lookup (TBL / TBX):
+    0|Q(1)|001110|op2(2)|0|Rm(5)|0|len(2)|op(1)|00|Rn(5)|Rd(5), i.e. (word & 0xbf208c00) == 0x0e000000.
+    Enumerates all 2 x 4 x 4 x 2 x 2 = 128 combinations of Q=0..1, op2=0..3, len=0..3 (1..4 table registers),
+    and op=0..1 (TBL vs TBX) across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)}
+    (covering .8b/.16b, 1..4 table registers { v2.16b .. v5.16b }, v31->v0..v2 wrap-around
+    { v31.16b, v0.16b, ... }, and op2!=0 unallocated .long space).
+    """
+    words: List[int] = []
+    for rd, rn, rm in ((1, 2, 3), (31, 31, 31)):
+        for q_bit in (0, 1):
+            for op2 in range(4):
+                for length in range(4):
+                    for op_bit in (0, 1):
+                        word = (
+                            (q_bit << 30)
+                            | (0b001110 << 24)
+                            | (op2 << 22)
+                            | (rm << 16)
+                            | (length << 13)
+                            | (op_bit << 12)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1406,6 +1434,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering 8b/16b/4h/8h/2s/4s/2d and .long space).",
         ),
         generate_words=_generate_advsimd_permute_words,
+    ),
+    "advsimd_table_lookup": EncodingGroupSpec(
+        name="advsimd_table_lookup",
+        title="Advanced SIMD table lookup — TBL / TBX (1..4 table registers incl. v31->v0 wrap-around) and op2!=0 unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.10 Advanced SIMD table lookup: (word & 0xbf208c00) == 0x0e000000.",
+            "Enumerates all 2 x 4 x 4 x 2 x 2 = 128 combinations of Q=0..1, op2=0..3, len=0..3, op=0..1",
+            "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering 1..4 table regs, v31->v0 wrap, and .long space).",
+        ),
+        generate_words=_generate_advsimd_table_lookup_words,
     ),
 }
 

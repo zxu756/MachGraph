@@ -3703,6 +3703,12 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDVectorPermute(word: word, at: address)
         }
 
+        // 8. AdvSIMD Vector Table Lookup (TBL, TBX, C4.1.95.10):
+        //    (word & 0xBF20_8C00) == 0x0E00_0000
+        if (word & 0xBF20_8C00) == 0x0E00_0000 {
+            return decodeAdvSIMDVectorTableLookup(word: word, at: address)
+        }
+
         return nil
     }
 
@@ -5153,6 +5159,40 @@ public struct A64InstructionDecoder: Sendable {
             operands: [.register(vd), .register(vn), .register(vm)],
             group: .simdAndFP,
             readsRegisters: activeRegs([vn, vm]),
+            writesRegisters: [vd]
+        )
+    }
+
+    private func decodeAdvSIMDVectorTableLookup(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let op2 = A64BitUtils.extract(word, 23, 22)
+        guard op2 == 0b00 else { return nil }
+
+        let q = A64BitUtils.flag(word, 30)
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let len = Int(A64BitUtils.extract(word, 14, 13))
+        let isTbx = A64BitUtils.flag(word, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let vecArr = q ? "16b" : "8b"
+        let vd = A64Register.v(rd, arrangement: vecArr)
+        let vm = A64Register.v(rm, arrangement: vecArr)
+        let tableRegs = (0...len).map { offset in
+            A64Register.v((rn &+ UInt8(offset)) & 31, arrangement: "16b")
+        }
+        let tableText = tableRegs.map(\.canonicalName).joined(separator: ", ")
+        let operands = [.register(vd)] + tableRegs.map(A64Operand.register) + [.register(vm)]
+        let reads = isTbx ? activeRegs([vd] + tableRegs + [vm]) : activeRegs(tableRegs + [vm])
+
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .andVec,
+            mnemonicText: isTbx ? "tbx" : "tbl",
+            operands: operands,
+            operandText: "\(vd.canonicalName), { \(tableText) }, \(vm.canonicalName)",
+            group: .simdAndFP,
+            readsRegisters: reads,
             writesRegisters: [vd]
         )
     }

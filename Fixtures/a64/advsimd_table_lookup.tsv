@@ -1,0 +1,138 @@
+# A64 encoding reference table: advsimd_table_lookup
+# ARM DDI 0487 C4.1.95.10 Advanced SIMD table lookup: (word & 0xbf208c00) == 0x0e000000.
+# Enumerates all 2 x 4 x 4 x 2 x 2 = 128 combinations of Q=0..1, op2=0..3, len=0..3, op=0..1
+# across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering 1..4 table regs, v31->v0 wrap, and .long space).
+# Rows: 128 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e advsimd_table_lookup.s -o advsimd_table_lookup.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text advsimd_table_lookup.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate advsimd_table_lookup
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x0e030041	tbl	v1.8b, { v2.16b }, v3.8b
+0x0e031041	tbx	v1.8b, { v2.16b }, v3.8b
+0x0e032041	tbl	v1.8b, { v2.16b, v3.16b }, v3.8b
+0x0e033041	tbx	v1.8b, { v2.16b, v3.16b }, v3.8b
+0x0e034041	tbl	v1.8b, { v2.16b, v3.16b, v4.16b }, v3.8b
+0x0e035041	tbx	v1.8b, { v2.16b, v3.16b, v4.16b }, v3.8b
+0x0e036041	tbl	v1.8b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.8b
+0x0e037041	tbx	v1.8b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.8b
+0x0e430041	.long	0x0e430041
+0x0e431041	.long	0x0e431041
+0x0e432041	.long	0x0e432041
+0x0e433041	.long	0x0e433041
+0x0e434041	.long	0x0e434041
+0x0e435041	.long	0x0e435041
+0x0e436041	.long	0x0e436041
+0x0e437041	.long	0x0e437041
+0x0e830041	.long	0x0e830041
+0x0e831041	.long	0x0e831041
+0x0e832041	.long	0x0e832041
+0x0e833041	.long	0x0e833041
+0x0e834041	.long	0x0e834041
+0x0e835041	.long	0x0e835041
+0x0e836041	.long	0x0e836041
+0x0e837041	.long	0x0e837041
+0x0ec30041	.long	0x0ec30041
+0x0ec31041	.long	0x0ec31041
+0x0ec32041	.long	0x0ec32041
+0x0ec33041	.long	0x0ec33041
+0x0ec34041	.long	0x0ec34041
+0x0ec35041	.long	0x0ec35041
+0x0ec36041	.long	0x0ec36041
+0x0ec37041	.long	0x0ec37041
+0x4e030041	tbl	v1.16b, { v2.16b }, v3.16b
+0x4e031041	tbx	v1.16b, { v2.16b }, v3.16b
+0x4e032041	tbl	v1.16b, { v2.16b, v3.16b }, v3.16b
+0x4e033041	tbx	v1.16b, { v2.16b, v3.16b }, v3.16b
+0x4e034041	tbl	v1.16b, { v2.16b, v3.16b, v4.16b }, v3.16b
+0x4e035041	tbx	v1.16b, { v2.16b, v3.16b, v4.16b }, v3.16b
+0x4e036041	tbl	v1.16b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.16b
+0x4e037041	tbx	v1.16b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.16b
+0x4e430041	.long	0x4e430041
+0x4e431041	.long	0x4e431041
+0x4e432041	.long	0x4e432041
+0x4e433041	.long	0x4e433041
+0x4e434041	.long	0x4e434041
+0x4e435041	.long	0x4e435041
+0x4e436041	.long	0x4e436041
+0x4e437041	.long	0x4e437041
+0x4e830041	.long	0x4e830041
+0x4e831041	.long	0x4e831041
+0x4e832041	.long	0x4e832041
+0x4e833041	.long	0x4e833041
+0x4e834041	.long	0x4e834041
+0x4e835041	.long	0x4e835041
+0x4e836041	.long	0x4e836041
+0x4e837041	.long	0x4e837041
+0x4ec30041	.long	0x4ec30041
+0x4ec31041	.long	0x4ec31041
+0x4ec32041	.long	0x4ec32041
+0x4ec33041	.long	0x4ec33041
+0x4ec34041	.long	0x4ec34041
+0x4ec35041	.long	0x4ec35041
+0x4ec36041	.long	0x4ec36041
+0x4ec37041	.long	0x4ec37041
+0x0e1f03ff	tbl	v31.8b, { v31.16b }, v31.8b
+0x0e1f13ff	tbx	v31.8b, { v31.16b }, v31.8b
+0x0e1f23ff	tbl	v31.8b, { v31.16b, v0.16b }, v31.8b
+0x0e1f33ff	tbx	v31.8b, { v31.16b, v0.16b }, v31.8b
+0x0e1f43ff	tbl	v31.8b, { v31.16b, v0.16b, v1.16b }, v31.8b
+0x0e1f53ff	tbx	v31.8b, { v31.16b, v0.16b, v1.16b }, v31.8b
+0x0e1f63ff	tbl	v31.8b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.8b
+0x0e1f73ff	tbx	v31.8b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.8b
+0x0e5f03ff	.long	0x0e5f03ff
+0x0e5f13ff	.long	0x0e5f13ff
+0x0e5f23ff	.long	0x0e5f23ff
+0x0e5f33ff	.long	0x0e5f33ff
+0x0e5f43ff	.long	0x0e5f43ff
+0x0e5f53ff	.long	0x0e5f53ff
+0x0e5f63ff	.long	0x0e5f63ff
+0x0e5f73ff	.long	0x0e5f73ff
+0x0e9f03ff	.long	0x0e9f03ff
+0x0e9f13ff	.long	0x0e9f13ff
+0x0e9f23ff	.long	0x0e9f23ff
+0x0e9f33ff	.long	0x0e9f33ff
+0x0e9f43ff	.long	0x0e9f43ff
+0x0e9f53ff	.long	0x0e9f53ff
+0x0e9f63ff	.long	0x0e9f63ff
+0x0e9f73ff	.long	0x0e9f73ff
+0x0edf03ff	.long	0x0edf03ff
+0x0edf13ff	.long	0x0edf13ff
+0x0edf23ff	.long	0x0edf23ff
+0x0edf33ff	.long	0x0edf33ff
+0x0edf43ff	.long	0x0edf43ff
+0x0edf53ff	.long	0x0edf53ff
+0x0edf63ff	.long	0x0edf63ff
+0x0edf73ff	.long	0x0edf73ff
+0x4e1f03ff	tbl	v31.16b, { v31.16b }, v31.16b
+0x4e1f13ff	tbx	v31.16b, { v31.16b }, v31.16b
+0x4e1f23ff	tbl	v31.16b, { v31.16b, v0.16b }, v31.16b
+0x4e1f33ff	tbx	v31.16b, { v31.16b, v0.16b }, v31.16b
+0x4e1f43ff	tbl	v31.16b, { v31.16b, v0.16b, v1.16b }, v31.16b
+0x4e1f53ff	tbx	v31.16b, { v31.16b, v0.16b, v1.16b }, v31.16b
+0x4e1f63ff	tbl	v31.16b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.16b
+0x4e1f73ff	tbx	v31.16b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.16b
+0x4e5f03ff	.long	0x4e5f03ff
+0x4e5f13ff	.long	0x4e5f13ff
+0x4e5f23ff	.long	0x4e5f23ff
+0x4e5f33ff	.long	0x4e5f33ff
+0x4e5f43ff	.long	0x4e5f43ff
+0x4e5f53ff	.long	0x4e5f53ff
+0x4e5f63ff	.long	0x4e5f63ff
+0x4e5f73ff	.long	0x4e5f73ff
+0x4e9f03ff	.long	0x4e9f03ff
+0x4e9f13ff	.long	0x4e9f13ff
+0x4e9f23ff	.long	0x4e9f23ff
+0x4e9f33ff	.long	0x4e9f33ff
+0x4e9f43ff	.long	0x4e9f43ff
+0x4e9f53ff	.long	0x4e9f53ff
+0x4e9f63ff	.long	0x4e9f63ff
+0x4e9f73ff	.long	0x4e9f73ff
+0x4edf03ff	.long	0x4edf03ff
+0x4edf13ff	.long	0x4edf13ff
+0x4edf23ff	.long	0x4edf23ff
+0x4edf33ff	.long	0x4edf33ff
+0x4edf43ff	.long	0x4edf43ff
+0x4edf53ff	.long	0x4edf53ff
+0x4edf63ff	.long	0x4edf63ff
+0x4edf73ff	.long	0x4edf73ff

@@ -2927,4 +2927,68 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 128)
         #expect(mismatches.isEmpty, "Group 8 advsimd_permute mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 11b Group 22: AdvSIMD vector table lookup (TBL, TBX across 1..4 table registers incl. v31->v0 wrap-around) matches all 128 rows of advsimd_table_lookup.tsv")
+    func advsimdVectorTableLookupDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x0E00_0362, "tbl v2.8b, { v27.16b }, v0.8b", [.v(27, arrangement: "16b"), .v(0, arrangement: "8b")], [.v(2, arrangement: "8b")]), // /usr/bin/afscexpand baseline example (generic Neon syntax)
+            (0x0E0D_41A5, "tbl v5.8b, { v13.16b, v14.16b, v15.16b }, v13.8b", [.v(13, arrangement: "16b"), .v(14, arrangement: "16b"), .v(15, arrangement: "16b"), .v(13, arrangement: "8b")], [.v(5, arrangement: "8b")]), // seed 20261117 fuzz example
+            (0x4E01_4334, "tbl v20.16b, { v25.16b, v26.16b, v27.16b }, v1.16b", [.v(25, arrangement: "16b"), .v(26, arrangement: "16b"), .v(27, arrangement: "16b"), .v(1, arrangement: "16b")], [.v(20, arrangement: "16b")]), // seed 17 fuzz example
+            (0x0E03_0041, "tbl v1.8b, { v2.16b }, v3.8b", [.v(2, arrangement: "16b"), .v(3, arrangement: "8b")], [.v(1, arrangement: "8b")]),   // 1-reg TBL .8b (does not read Vd)
+            (0x0E03_1041, "tbx v1.8b, { v2.16b }, v3.8b", [.v(1, arrangement: "8b"), .v(2, arrangement: "16b"), .v(3, arrangement: "8b")], [.v(1, arrangement: "8b")]), // 1-reg TBX .8b (read-modify-write on Vd)
+            (0x4E03_2041, "tbl v1.16b, { v2.16b, v3.16b }, v3.16b", [.v(2, arrangement: "16b"), .v(3, arrangement: "16b")], [.v(1, arrangement: "16b")]), // 2-reg TBL .16b (v3.16b deduplicated)
+            (0x4E03_7041, "tbx v1.16b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.16b", [.v(1, arrangement: "16b"), .v(2, arrangement: "16b"), .v(3, arrangement: "16b"), .v(4, arrangement: "16b"), .v(5, arrangement: "16b")], [.v(1, arrangement: "16b")]), // 4-reg TBX .16b
+            (0x0E1F_23FF, "tbl v31.8b, { v31.16b, v0.16b }, v31.8b", [.v(31, arrangement: "16b"), .v(0, arrangement: "16b"), .v(31, arrangement: "8b")], [.v(31, arrangement: "8b")]), // v31->v0 wrap-around
+            (0x4E1F_73FF, "tbx v31.16b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.16b", [.v(31, arrangement: "16b"), .v(0, arrangement: "16b"), .v(1, arrangement: "16b"), .v(2, arrangement: "16b")], [.v(31, arrangement: "16b")]), // 4-reg v31->v2 wrap-around TBX .16b
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples (op2 != 0, bit[15] == 1) must remain .inst:
+        for badWord: UInt32 in [0x0E43_0041, 0x0E83_2041, 0x0EC3_7041, 0x4E43_0041, 0x4EDF_73FF, 0x0E03_8041] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_table_lookup"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 128)
+        #expect(mismatches.isEmpty, "Group 22 advsimd_table_lookup mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

@@ -2209,6 +2209,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
 
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x6E024043), "AdvSIMD vector EXT")
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0E817802), "AdvSIMD vector permute (ZIP/UZP/TRN)")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0E000362), "AdvSIMD vector table lookup (TBL/TBX)")
 
         self.assertIn("advsimd_ext", enc_table.ENCODING_GROUPS)
         ext_words = enc_table.ENCODING_GROUPS["advsimd_ext"].generate_words()
@@ -2226,10 +2227,18 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         for w in perm_words:
             self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector permute (ZIP/UZP/TRN)")
 
+        self.assertIn("advsimd_table_lookup", enc_table.ENCODING_GROUPS)
+        tbl_words = enc_table.ENCODING_GROUPS["advsimd_table_lookup"].generate_words()
+        self.assertEqual(len(tbl_words), 128)
+        self.assertLessEqual(len(tbl_words), 4096)
+        self.assertEqual(len(set(tbl_words)), 128, "duplicate words in advsimd_table_lookup")
+        for w in tbl_words:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector table lookup (TBL/TBX)")
+
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "advsimd_ext", "advsimd_permute", "--out-dir", tmp],
+                ["generate", "advsimd_ext", "advsimd_permute", "advsimd_table_lookup", "--out-dir", tmp],
             )
             self.assertEqual(rc, 0, f"generate stage11b groups failed: {stdout_txt}\n{stderr_txt}")
             ext_comments, ext_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ext.tsv"))
@@ -2276,6 +2285,23 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_permute.tsv"), "rb"
             ) as repo_fh:
                 self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_permute.tsv must match reproducible generation")
+
+            tbl_comments, tbl_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_table_lookup.tsv"))
+            self.assertEqual(len(tbl_rows), 128)
+            self.assertTrue(any("encoding-table.py generate advsimd_table_lookup" in c for c in tbl_comments))
+            tbl_mnems = {m for _, m, _ in tbl_rows}
+            self.assertEqual(tbl_mnems, {"tbl", "tbx", ".long"})
+            valid_tbl = [(w, m, ops) for w, m, ops in tbl_rows if m != ".long"]
+            self.assertEqual(len(valid_tbl), 32)
+            tbl_pairs = {(m, ops) for _, m, ops in valid_tbl}
+            self.assertIn(("tbl", "v1.8b, { v2.16b }, v3.8b"), tbl_pairs)
+            self.assertIn(("tbx", "v1.16b, { v2.16b, v3.16b, v4.16b, v5.16b }, v3.16b"), tbl_pairs)
+            self.assertIn(("tbl", "v31.8b, { v31.16b, v0.16b }, v31.8b"), tbl_pairs)
+            self.assertIn(("tbx", "v31.16b, { v31.16b, v0.16b, v1.16b, v2.16b }, v31.16b"), tbl_pairs)
+            with open(os.path.join(tmp, "advsimd_table_lookup.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_table_lookup.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_table_lookup.tsv must match reproducible generation")
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
