@@ -243,6 +243,39 @@ def _generate_crypto_sha3_words() -> List[int]:
     return words
 
 
+# M2 第 14 段：第 25 组 Crypto SHA（SHA1 与 SHA256）
+def _generate_crypto_sha_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.2 / C4.1.95.3 Cryptographic three-register ((word & 0xff208c00) == 0x5e000000) & two-register ((word & 0xff3e0c00) == 0x5e280800) SHA."""
+    words: List[int] = []
+    three_reg_tuples = ((1, 2, 3), (31, 31, 31))
+    for size in range(4):
+        for opcode in range(8):
+            for rd, rn, rm in three_reg_tuples:
+                word = (
+                    0x5E000000
+                    | (size << 22)
+                    | (rm << 16)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+
+    two_reg_pairs = ((1, 2), (31, 31))
+    for size in range(4):
+        for opcode in range(32):
+            for rd, rn in two_reg_pairs:
+                word = (
+                    0x5E280800
+                    | (size << 22)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+    return words
+
+
 def _generate_move_wide_imm_words() -> List[int]:
     """ARM DDI 0487 C4.1.92.5 Move wide (immediate): bits[28:23] == 0b100101."""
     words: List[int] = []
@@ -1338,6 +1371,21 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "and bit[15]=1 / Op0=0b11 counterexamples).",
         ),
         generate_words=_generate_crypto_sha3_words,
+    ),
+    "crypto_sha": EncodingGroupSpec(
+        name="crypto_sha",
+        title="Cryptographic SHA1 & SHA256 — SHA1C/P/M/H/SU0/SU1 and SHA256H/H2/SU0/SU1",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.2 Cryptographic three-register SHA ((word & 0xff208c00) == 0x5e000000) and",
+            "C4.1.95.3 Cryptographic two-register SHA ((word & 0xff3e0c00) == 0x5e280800).",
+            "Enumerates all 4 x 8 = 32 combinations of size=0..3 (bits[23:22]) and opcode=0..7 (bits[14:12]) in 0x5e000000",
+            "across 2 register tuples (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (64 rows), plus all 4 x 32 = 128 combinations",
+            "of size=0..3 and opcode=0..31 (bits[16:12]) in 0x5e280800 across 2 register pairs (Rd, Rn) in {(1, 2), (31, 31)} (256 rows),",
+            "totaling 320 rows.",
+            "Reference decodes 20 rows (sha1c, sha1p, sha1m, sha1su0, sha256h, sha256h2, sha256su1, sha1h, sha1su1, sha256su0 x 2)",
+            "and prints .long for 300 rows.",
+        ),
+        generate_words=_generate_crypto_sha_words,
     ),
 }
 

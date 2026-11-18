@@ -2584,6 +2584,54 @@ class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
             self.assertEqual(mnem_counts.get("xar"), 8)
             self.assertEqual(mnem_counts.get(".long"), 12)
 
+    def test_stage14_crypto_sha_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_sha_check", "encoding-fuzz.py")
+
+        for sample_word in (0x5E044272, 0x5E282820, 0x5E1A0052):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto SHA (SHA1/SHA256)",
+            )
+
+        self.assertIn("crypto_sha", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_sha"].generate_words()
+        self.assertEqual(len(words), 320)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_sha")
+        for w in words:
+            self.assertTrue(
+                (w & 0xFF208C00) == 0x5E000000 or (w & 0xFF3E0C00) == 0x5E280800,
+                f"unexpected word 0x{w:08x} in crypto_sha",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_sha", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_sha failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_sha.tsv"))
+            self.assertEqual(len(rows), 320)
+            self.assertTrue(any("encoding-table.py generate crypto_sha" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in (
+                "sha1c",
+                "sha1p",
+                "sha1m",
+                "sha1su0",
+                "sha256h",
+                "sha256h2",
+                "sha256su1",
+                "sha1h",
+                "sha1su1",
+                "sha256su0",
+            ):
+                self.assertEqual(mnem_counts.get(expected_mnem), 2, f"unexpected count for {expected_mnem}")
+            self.assertEqual(mnem_counts.get(".long"), 300)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
