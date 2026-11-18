@@ -1021,6 +1021,32 @@ def _generate_advsimd_ext_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_permute_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.11 Advanced SIMD permute (UZP1 / TRN1 / ZIP1 / UZP2 / TRN2 / ZIP2):
+    0|Q(1)|001110|size(2)|0|Rm(5)|0|opcode(3)|10|Rn(5)|Rd(5), i.e. (word & 0xbf208c00) == 0x0e000800.
+    Enumerates all 2 x 4 x 8 x 2 = 128 combinations of Q=0..1, size=0..3, opcode=0..7
+    across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering UZP1/TRN1/ZIP1/UZP2/TRN2/ZIP2
+    across 8b/16b/4h/8h/2s/4s/2d, v31 registers, and size=11,Q=0 / opcode in {0,4} unallocated .long).
+    """
+    words: List[int] = []
+    for rd, rn, rm in ((1, 2, 3), (31, 31, 31)):
+        for q_bit in (0, 1):
+            for size in range(4):
+                for opcode in range(8):
+                    word = (
+                        (q_bit << 30)
+                        | (0b001110 << 24)
+                        | (size << 22)
+                        | (rm << 16)
+                        | (opcode << 12)
+                        | (0b10 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1370,6 +1396,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering EXT .8b/.16b and .long space).",
         ),
         generate_words=_generate_advsimd_ext_words,
+    ),
+    "advsimd_permute": EncodingGroupSpec(
+        name="advsimd_permute",
+        title="Advanced SIMD permute — UZP1, TRN1, ZIP1, UZP2, TRN2, ZIP2 and size=11,Q=0 / opcode in {0,4} unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.11 Advanced SIMD permute: (word & 0xbf208c00) == 0x0e000800.",
+            "Enumerates all 2 x 4 x 8 x 2 = 128 combinations of Q=0..1, size=0..3, opcode=0..7",
+            "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering 8b/16b/4h/8h/2s/4s/2d and .long space).",
+        ),
+        generate_words=_generate_advsimd_permute_words,
     ),
 }
 

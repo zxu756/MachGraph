@@ -3697,6 +3697,12 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDVectorExt(word: word, at: address)
         }
 
+        // 7. AdvSIMD Vector Permute (UZP1, TRN1, ZIP1, UZP2, TRN2, ZIP2, C4.1.95.11):
+        //    (word & 0xBF20_8C00) == 0x0E00_0800
+        if (word & 0xBF20_8C00) == 0x0E00_0800 {
+            return decodeAdvSIMDVectorPermute(word: word, at: address)
+        }
+
         return nil
     }
 
@@ -5099,6 +5105,52 @@ public struct A64InstructionDecoder: Sendable {
             mnemonicText: "ext",
             operands: [.register(vd), .register(vn), .register(vm), .unsignedImmediate(UInt64(imm4))],
             operandText: "\(vd.canonicalName), \(vn.canonicalName), \(vm.canonicalName), \(immHex)",
+            group: .simdAndFP,
+            readsRegisters: activeRegs([vn, vm]),
+            writesRegisters: [vd]
+        )
+    }
+
+    private func decodeAdvSIMDVectorPermute(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let arr: String
+        switch (size, q) {
+        case (0b00, false): arr = "8b"
+        case (0b00, true):  arr = "16b"
+        case (0b01, false): arr = "4h"
+        case (0b01, true):  arr = "8h"
+        case (0b10, false): arr = "2s"
+        case (0b10, true):  arr = "4s"
+        case (0b11, true):  arr = "2d"
+        default:            return nil // size=11 with Q=0 (.1d) is unallocated
+        }
+
+        let opcode = A64BitUtils.extract(word, 14, 12)
+        let mnemText: String
+        switch opcode {
+        case 0b001: mnemText = "uzp1"
+        case 0b010: mnemText = "trn1"
+        case 0b011: mnemText = "zip1"
+        case 0b101: mnemText = "uzp2"
+        case 0b110: mnemText = "trn2"
+        case 0b111: mnemText = "zip2"
+        default:    return nil // opcode in {0b000, 0b100} is unallocated
+        }
+
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+        let vd = A64Register.v(rd, arrangement: arr)
+        let vn = A64Register.v(rn, arrangement: arr)
+        let vm = A64Register.v(rm, arrangement: arr)
+
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .andVec,
+            mnemonicText: mnemText,
+            operands: [.register(vd), .register(vn), .register(vm)],
             group: .simdAndFP,
             readsRegisters: activeRegs([vn, vm]),
             writesRegisters: [vd]

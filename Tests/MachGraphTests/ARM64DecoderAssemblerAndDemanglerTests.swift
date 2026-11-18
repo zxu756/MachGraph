@@ -2862,4 +2862,69 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 256)
         #expect(mismatches.isEmpty, "Group 10 advsimd_ext mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 11b Group 8: AdvSIMD vector permute (UZP1, TRN1, ZIP1, UZP2, TRN2, ZIP2) and size=11,Q=0 / opcode in {0,4} guards match all 128 rows of advsimd_permute.tsv")
+    func advsimdVectorPermuteDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x0E81_7802, "zip2 v2.2s, v0.2s, v1.2s", [.v(0, arrangement: "2s"), .v(1, arrangement: "2s")], [.v(2, arrangement: "2s")]),     // /bin/csh baseline example
+            (0x0E40_5B64, "uzp2 v4.4h, v27.4h, v0.4h", [.v(27, arrangement: "4h"), .v(0, arrangement: "4h")], [.v(4, arrangement: "4h")]),   // seed 20261117 fuzz example
+            (0x4E1C_7A41, "zip2 v1.16b, v18.16b, v28.16b", [.v(18, arrangement: "16b"), .v(28, arrangement: "16b")], [.v(1, arrangement: "16b")]), // seed 17 fuzz example
+            (0x0E03_1841, "uzp1 v1.8b, v2.8b, v3.8b", [.v(2, arrangement: "8b"), .v(3, arrangement: "8b")], [.v(1, arrangement: "8b")]),     // advsimd_permute.tsv 8b UZP1
+            (0x4E03_2841, "trn1 v1.16b, v2.16b, v3.16b", [.v(2, arrangement: "16b"), .v(3, arrangement: "16b")], [.v(1, arrangement: "16b")]), // advsimd_permute.tsv 16b TRN1
+            (0x4E43_3841, "zip1 v1.8h, v2.8h, v3.8h", [.v(2, arrangement: "8h"), .v(3, arrangement: "8h")], [.v(1, arrangement: "8h")]),     // advsimd_permute.tsv 8h ZIP1
+            (0x4E83_6841, "trn2 v1.4s, v2.4s, v3.4s", [.v(2, arrangement: "4s"), .v(3, arrangement: "4s")], [.v(1, arrangement: "4s")]),     // advsimd_permute.tsv 4s TRN2
+            (0x4EC3_7841, "zip2 v1.2d, v2.2d, v3.2d", [.v(2, arrangement: "2d"), .v(3, arrangement: "2d")], [.v(1, arrangement: "2d")]),     // advsimd_permute.tsv 2d ZIP2 (size=11, Q=1)
+            (0x0E02_3841, "zip1 v1.8b, v2.8b, v2.8b", [.v(2, arrangement: "8b")], [.v(1, arrangement: "8b")]),                               // Rn == Rm deduplicates readsRegisters
+            (0x4EDF_6BFF, "trn2 v31.2d, v31.2d, v31.2d", [.v(31, arrangement: "2d")], [.v(31, arrangement: "2d")]),                          // (Rd,Rn,Rm)=(31,31,31) 2d
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples (size=11 with Q=0, opcode in {0, 4}, bit[15]==1) must remain .inst:
+        for badWord: UInt32 in [0x0EC3_1841, 0x0EC3_3841, 0x0EC3_7841, 0x0EDF_7BFF, 0x0E03_0841, 0x0E03_4841, 0x4EC3_0841, 0x4EC3_4841, 0x0E03_9841] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_permute"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 128)
+        #expect(mismatches.isEmpty, "Group 8 advsimd_permute mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }

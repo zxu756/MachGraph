@@ -2208,6 +2208,7 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         enc_fuzz = _load_script_module("encoding_fuzz_stage11b_check", "encoding-fuzz.py")
 
         self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x6E024043), "AdvSIMD vector EXT")
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x0E817802), "AdvSIMD vector permute (ZIP/UZP/TRN)")
 
         self.assertIn("advsimd_ext", enc_table.ENCODING_GROUPS)
         ext_words = enc_table.ENCODING_GROUPS["advsimd_ext"].generate_words()
@@ -2217,12 +2218,20 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
         for w in ext_words:
             self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector EXT")
 
+        self.assertIn("advsimd_permute", enc_table.ENCODING_GROUPS)
+        perm_words = enc_table.ENCODING_GROUPS["advsimd_permute"].generate_words()
+        self.assertEqual(len(perm_words), 128)
+        self.assertLessEqual(len(perm_words), 4096)
+        self.assertEqual(len(set(perm_words)), 128, "duplicate words in advsimd_permute")
+        for w in perm_words:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector permute (ZIP/UZP/TRN)")
+
         with tempfile.TemporaryDirectory() as tmp:
             rc, stdout_txt, stderr_txt = self._invoke(
                 enc_table,
-                ["generate", "advsimd_ext", "--out-dir", tmp],
+                ["generate", "advsimd_ext", "advsimd_permute", "--out-dir", tmp],
             )
-            self.assertEqual(rc, 0, f"generate advsimd_ext failed: {stdout_txt}\n{stderr_txt}")
+            self.assertEqual(rc, 0, f"generate stage11b groups failed: {stdout_txt}\n{stderr_txt}")
             ext_comments, ext_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ext.tsv"))
             self.assertEqual(len(ext_rows), 256)
             self.assertTrue(any("encoding-table.py generate advsimd_ext" in c for c in ext_comments))
@@ -2245,6 +2254,28 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
                 os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_ext.tsv"), "rb"
             ) as repo_fh:
                 self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_ext.tsv must match reproducible generation")
+
+            perm_comments, perm_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_permute.tsv"))
+            self.assertEqual(len(perm_rows), 128)
+            self.assertTrue(any("encoding-table.py generate advsimd_permute" in c for c in perm_comments))
+            perm_mnems = {m for _, m, _ in perm_rows}
+            self.assertEqual(perm_mnems, {"uzp1", "trn1", "zip1", "uzp2", "trn2", "zip2", ".long"})
+            valid_perm = [(w, m, ops) for w, m, ops in perm_rows if m != ".long"]
+            self.assertEqual(len(valid_perm), 84)
+            perm_pairs = {(m, ops) for _, m, ops in valid_perm}
+            self.assertIn(("uzp1", "v1.8b, v2.8b, v3.8b"), perm_pairs)
+            self.assertIn(("zip2", "v1.2d, v2.2d, v3.2d"), perm_pairs)
+            self.assertIn(("trn2", "v31.16b, v31.16b, v31.16b"), perm_pairs)
+            for w, m, _ in perm_rows:
+                q_bit = (w >> 30) & 1
+                size = (w >> 22) & 0x3
+                opcode = (w >> 12) & 0x7
+                if (size == 0b11 and q_bit == 0) or opcode in (0, 4):
+                    self.assertEqual(m, ".long", f"word 0x{w:08x} should be .long")
+            with open(os.path.join(tmp, "advsimd_permute.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_permute.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_permute.tsv must match reproducible generation")
 
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
