@@ -2401,5 +2401,69 @@ class TestItem15EncodingFuzzHarness(unittest.TestCase):
             self.assertEqual(rc_op_fail, 1)
 
 
+class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
+    """M2 Stage 13 (Group 9): `advsimd_ldst_single` encoding table registration, row bounds, and reference generation."""
+
+    def _mod(self):
+        return _load_script_module("encoding_table_stage13_mod", "encoding-table.py")
+
+    def _invoke(self, mod, argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        try:
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                rc = mod.main(argv)
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 1
+        return rc, out_buf.getvalue(), err_buf.getvalue()
+
+    def test_stage13_advsimd_ldst_single_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage13_check", "encoding-fuzz.py")
+
+        for sample_word in (0x0D9F8100, 0x4D408500, 0x0D0C0B0A, 0x0D0E0F10, 0x4D2C6DFC):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "AdvSIMD load/store single structure",
+            )
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x4C008161),
+            "AdvSIMD load/store multiple structures",
+        )
+
+        self.assertIn("advsimd_ldst_single", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["advsimd_ldst_single"].generate_words()
+        self.assertEqual(len(words), 3584)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in advsimd_ldst_single")
+        for w in words:
+            self.assertEqual(w & 0xBF000000, 0x0D000000)
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD load/store single structure",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_ldst_single", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_ldst_single failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ldst_single.tsv"))
+            self.assertEqual(len(rows), 3584)
+            self.assertTrue(any("encoding-table.py generate advsimd_ldst_single" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in ("ld1", "ld2", "ld3", "ld4", "st1", "st2", "st3", "st4"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 180)
+            for expected_rep in ("ld1r", "ld2r", "ld3r", "ld4r"):
+                self.assertEqual(mnem_counts.get(expected_rep), 48)
+            self.assertEqual(mnem_counts.get(".long"), 3584 - 1632)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
