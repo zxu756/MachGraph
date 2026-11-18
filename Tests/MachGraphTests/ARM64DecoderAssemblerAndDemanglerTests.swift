@@ -2415,7 +2415,8 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         let pc = VirtualAddress(0x1_0000_1000)
 
         let sampleCases: [(UInt32, String)] = [
-            (0x1F60_8020, "fnmsub d0, d1, d0, d0"),   // /usr/bin/afinfo baseline example
+            (0x1FFF_FFFF, "fnmsub h31, h31, h31, h31"), // /usr/bin/afscexpand baseline example
+            (0x1F60_8020, "fnmsub d0, d1, d0, d0"),
             (0x1F6A_4DBF, "fnmadd d31, d13, d10, d19"), // seed 20261117 fuzz example
             (0x1F6B_D5A4, "fnmsub d4, d13, d11, d21"),  // seed 17 fuzz example
             (0x1F23_1041, "fnmadd s1, s2, s3, s4"),
