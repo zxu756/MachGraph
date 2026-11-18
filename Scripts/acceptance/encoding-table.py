@@ -996,6 +996,31 @@ def _generate_advsimd_modified_imm_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_ext_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.12 Advanced SIMD extract (EXT):
+    0|Q(1)|101110|op2(2)|0|Rm(5)|0|imm4(4)|0|Rn(5)|Rd(5), i.e. (word & 0xbf208400) == 0x2e000000.
+    Enumerates all 2 x 4 x 16 x 2 = 256 combinations of Q=0..1, op2=0..3, imm4=0..15
+    across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering EXT v<d>.<8b|16b>, v<n>.<8b|16b>,
+    v<m>.<8b|16b>, #<imm4>, v31 registers, op2!=0 unallocated space, and Q=0 with imm4<3>==1 .long).
+    """
+    words: List[int] = []
+    for rd, rn, rm in ((1, 2, 3), (31, 31, 31)):
+        for q_bit in (0, 1):
+            for op2 in range(4):
+                for imm4 in range(16):
+                    word = (
+                        (q_bit << 30)
+                        | (0b101110 << 24)
+                        | (op2 << 22)
+                        | (rm << 16)
+                        | (imm4 << 11)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1335,6 +1360,16 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "with imm8 in {0x00, 0x01, 0x80, 0xff} (512 rows), totaling 3,040 rows.",
         ),
         generate_words=_generate_advsimd_modified_imm_words,
+    ),
+    "advsimd_ext": EncodingGroupSpec(
+        name="advsimd_ext",
+        title="Advanced SIMD extract — EXT (.8b / .16b) and op2!=0 / Q=0,imm4>=8 unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.12 Advanced SIMD extract: (word & 0xbf208400) == 0x2e000000.",
+            "Enumerates all 2 x 4 x 16 x 2 = 256 combinations of Q=0..1, op2=0..3, imm4=0..15",
+            "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering EXT .8b/.16b and .long space).",
+        ),
+        generate_words=_generate_advsimd_ext_words,
     ),
 }
 

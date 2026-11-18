@@ -2203,6 +2203,49 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             self.assertIn(("fmov", "v1.4h, #2.00000000"), mi_pairs)
             self.assertIn(("fmov", "v1.2d, #0.13281250"), mi_pairs)
 
+    def test_stage11b_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage11b_check", "encoding-fuzz.py")
+
+        self.assertEqual(enc_fuzz.classify_a64_encoding_group(0x6E024043), "AdvSIMD vector EXT")
+
+        self.assertIn("advsimd_ext", enc_table.ENCODING_GROUPS)
+        ext_words = enc_table.ENCODING_GROUPS["advsimd_ext"].generate_words()
+        self.assertEqual(len(ext_words), 256)
+        self.assertLessEqual(len(ext_words), 4096)
+        self.assertEqual(len(set(ext_words)), 256, "duplicate words in advsimd_ext")
+        for w in ext_words:
+            self.assertEqual(enc_fuzz.classify_a64_encoding_group(w), "AdvSIMD vector EXT")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_ext", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_ext failed: {stdout_txt}\n{stderr_txt}")
+            ext_comments, ext_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ext.tsv"))
+            self.assertEqual(len(ext_rows), 256)
+            self.assertTrue(any("encoding-table.py generate advsimd_ext" in c for c in ext_comments))
+            ext_mnems = {m for _, m, _ in ext_rows}
+            self.assertEqual(ext_mnems, {"ext", ".long"})
+            valid_ext = [(w, ops) for w, m, ops in ext_rows if m == "ext"]
+            self.assertEqual(len(valid_ext), 48)
+            ext_ops = {ops for _, ops in valid_ext}
+            self.assertIn("v1.8b, v2.8b, v3.8b, #0x0", ext_ops)
+            self.assertIn("v1.8b, v2.8b, v3.8b, #0x7", ext_ops)
+            self.assertIn("v1.16b, v2.16b, v3.16b, #0xf", ext_ops)
+            self.assertIn("v31.16b, v31.16b, v31.16b, #0xf", ext_ops)
+            # Q=0 with imm4<3>==1 must be unallocated (.long)
+            for w, m, _ in ext_rows:
+                q_bit = (w >> 30) & 1
+                imm4 = (w >> 11) & 0xF
+                if q_bit == 0 and (imm4 & 0b1000) != 0:
+                    self.assertEqual(m, ".long", f"word 0x{w:08x} should be .long when Q=0 and imm4>=8")
+            with open(os.path.join(tmp, "advsimd_ext.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_ext.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_ext.tsv must match reproducible generation")
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

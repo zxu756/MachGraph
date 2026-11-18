@@ -3692,6 +3692,11 @@ public struct A64InstructionDecoder: Sendable {
             )
         }
 
+        // 6. AdvSIMD Vector Extract (EXT, C4.1.95.12): (word & 0xBF20_8400) == 0x2E00_0000
+        if (word & 0xBF20_8400) == 0x2E00_0000 {
+            return decodeAdvSIMDVectorExt(word: word, at: address)
+        }
+
         return nil
     }
 
@@ -5068,5 +5073,35 @@ public struct A64InstructionDecoder: Sendable {
         default:
             return nil
         }
+    }
+
+    private func decodeAdvSIMDVectorExt(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let op2 = A64BitUtils.extract(word, 23, 22)
+        guard op2 == 0b00 else { return nil }
+
+        let imm4 = A64BitUtils.extract(word, 14, 11)
+        guard q || (imm4 & 0b1000) == 0 else { return nil }
+
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+        let arr = q ? "16b" : "8b"
+        let vd = A64Register.v(rd, arrangement: arr)
+        let vn = A64Register.v(rn, arrangement: arr)
+        let vm = A64Register.v(rm, arrangement: arr)
+        let immHex = String(format: "#0x%x", imm4)
+
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: .andVec,
+            mnemonicText: "ext",
+            operands: [.register(vd), .register(vn), .register(vm), .unsignedImmediate(UInt64(imm4))],
+            operandText: "\(vd.canonicalName), \(vn.canonicalName), \(vm.canonicalName), \(immHex)",
+            group: .simdAndFP,
+            readsRegisters: activeRegs([vn, vm]),
+            writesRegisters: [vd]
+        )
     }
 }
