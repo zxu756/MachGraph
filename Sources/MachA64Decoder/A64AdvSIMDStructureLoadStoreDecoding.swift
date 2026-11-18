@@ -6,17 +6,121 @@ import MachGraphModels
 extension A64InstructionDecoder {
     /// Decodes AdvSIMD load/store structure instructions (`0x0C...` / `0x4C...` / `0x0D...` / `0x4D...`).
     ///
-    /// Stage 13 implements Group 9 (AdvSIMD load/store single structure: `ld1`–`ld4`, `st1`–`st4`
-    /// single-lane forms and `ld1r`–`ld4r`, with no-offset and post-index addressing).
-    /// Group 21 (multiple structures, `bit[24] == 0`) remains `nil` here for Stage 13b.
+    /// Covers Group 21 (AdvSIMD load/store multiple structures: `ld1`–`ld4`, `st1`–`st4`, `bit[24] == 0`)
+    /// and Group 9 (AdvSIMD load/store single structure: `ld1`–`ld4`, `st1`–`st4` single-lane forms
+    /// and `ld1r`–`ld4r`, `bit[24] == 1`), across no-offset and post-index addressing modes.
     func decodeAdvSIMDLoadStoreStructure(
         word: UInt32,
         at address: VirtualAddress
     ) -> A64DecodedInstruction? {
+        if (word & 0xBF00_0000) == 0x0C00_0000 {
+            return decodeAdvSIMDLoadStoreMultipleStructures(word: word, at: address)
+        }
         if (word & 0xBF00_0000) == 0x0D00_0000 {
             return decodeAdvSIMDLoadStoreSingleStructure(word: word, at: address)
         }
         return nil
+    }
+
+    // MARK: - Group 21: AdvSIMD Load/Store Multiple Structures (No-Offset & Post-Index)
+
+    private func decodeAdvSIMDLoadStoreMultipleStructures(
+        word: UInt32,
+        at address: VirtualAddress
+    ) -> A64DecodedInstruction? {
+        let q = A64BitUtils.bit(word, 30)
+        let isPostIndex = A64BitUtils.flag(word, 23)
+        let isLoad = A64BitUtils.flag(word, 22)
+        let bit21 = A64BitUtils.bit(word, 21)
+        guard bit21 == 0 else { return nil }
+
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let opcode = A64BitUtils.extract(word, 15, 12)
+        let size = A64BitUtils.extract(word, 11, 10)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rt = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let selem: Int
+        let regCount: Int
+        switch opcode {
+        case 0b0000:
+            selem = 4; regCount = 4
+        case 0b0010:
+            selem = 1; regCount = 4
+        case 0b0100:
+            selem = 3; regCount = 3
+        case 0b0110:
+            selem = 1; regCount = 3
+        case 0b0111:
+            selem = 1; regCount = 1
+        case 0b1000:
+            selem = 2; regCount = 2
+        case 0b1010:
+            selem = 1; regCount = 2
+        default:
+            return nil
+        }
+
+        let arrangement: String
+        switch size {
+        case 0b00:
+            arrangement = (q == 1) ? "16b" : "8b"
+        case 0b01:
+            arrangement = (q == 1) ? "8h" : "4h"
+        case 0b10:
+            arrangement = (q == 1) ? "4s" : "2s"
+        case 0b11:
+            // `.1d` (Q == 0, size == 0b11) is only allocated for single-element structures (ld1 / st1).
+            guard q == 1 || selem == 1 else { return nil }
+            arrangement = (q == 1) ? "2d" : "1d"
+        default:
+            return nil
+        }
+
+        let totalTransferBytes = ((q == 1) ? 16 : 8) * regCount
+        guard let addressing = decodeAdvSIMDStructureAddressing(
+            isPostIndex: isPostIndex,
+            rn: rn,
+            rm: rm,
+            immediateBytes: totalTransferBytes
+        ) else {
+            return nil
+        }
+
+        let mnemonicText = "\(isLoad ? "ld" : "st")\(selem)"
+        let vectorRegs = makeAdvSIMDStructureRegisters(
+            firstIndex: rt,
+            count: regCount,
+            arrangement: arrangement
+        )
+        let registerListText = formatAdvSIMDStructureRegisterList(vectorRegs)
+        let operandText = "\(registerListText), \(addressing.operandText)"
+        let operands = vectorRegs.map(A64Operand.register) + addressing.operands
+
+        var rawReads: [A64Register] = [addressing.baseRegister]
+        if let offsetReg = addressing.offsetRegister {
+            rawReads.append(offsetReg)
+        }
+        if !isLoad {
+            rawReads.append(contentsOf: vectorRegs)
+        }
+
+        var rawWrites: [A64Register] = isLoad ? vectorRegs : []
+        if addressing.writesBase {
+            rawWrites.append(addressing.baseRegister)
+        }
+
+        return A64DecodedInstruction(
+            address: address,
+            rawWord: word,
+            mnemonic: isLoad ? .ins : .umov,
+            mnemonicText: mnemonicText,
+            operands: operands,
+            operandText: operandText,
+            group: .simdAndFP,
+            readsRegisters: uniqueActiveStructureRegisters(rawReads),
+            writesRegisters: uniqueActiveStructureRegisters(rawWrites)
+        )
     }
 
     // MARK: - Group 9: AdvSIMD Load/Store Single Structure (No-Offset & Post-Index)
