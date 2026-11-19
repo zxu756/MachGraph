@@ -1075,6 +1075,103 @@ def _generate_advsimd_table_lookup_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_three_different_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.18 Advanced SIMD three different:
+    0|Q(1)|U(1)|01110|size(2)|1|Rm(5)|opcode(4)|00|Rn(5)|Rd(5), i.e. (word & 0x9f200c00) == 0x0e200000.
+    Enumerates all 2 x 2 x 4 x 16 x 2 = 512 combinations of Q=0..1, U=0..1, size=0..3, opcode=0..15
+    across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering SADDL/UADDL, SADDW/UADDW, SSUBL/USUBL,
+    SSUBW/USUBW, ADDHN/RADDHN, SABAL/UABAL, SUBHN/RSUBHN, SABDL/UABDL, SMLAL/UMLAL, SQDMLAL, SMLSL/UMLSL,
+    SQDMLSL, SMULL/UMULL, SQDMULL, PMULL incl. size=11 .1q, *2 upper-half forms, and .long space).
+    """
+    words: List[int] = []
+    for rd, rn, rm in ((1, 2, 3), (31, 31, 31)):
+        for q_bit in (0, 1):
+            for u_bit in (0, 1):
+                for size in range(4):
+                    for opcode in range(16):
+                        word = (
+                            (q_bit << 30)
+                            | (u_bit << 29)
+                            | (0b01110 << 24)
+                            | (size << 22)
+                            | (1 << 21)
+                            | (rm << 16)
+                            | (opcode << 12)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+    return words
+
+
+def _generate_advsimd_vector_by_element_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.13 Advanced SIMD vector x indexed element:
+    0|Q(1)|U(1)|01111|size(2)|L(1)|M(1)|Rm4(4)|opcode(4)|H(1)|0|Rn(5)|Rd(5), i.e. (word & 0x9f000400) == 0x0f000000.
+    Enumerates all 2 x 2 x 4 x 16 x 2 x 2 x 2 x 2 = 4,096 combinations of Q=0..1, U=0..1, size=0..3,
+    opcode=0..15, L=0..1, M=0..1, H=0..1 across (Rd, Rn, Rm4) in {(1, 2, 3), (31, 31, 15)}
+    (covering FP16/FP32/FP64 FMLA/FMLS/FMUL/FMULX, FHM FMLAL/FMLSL/FMLAL2/FMLSL2, FCMLA #0/#90/#180/#270,
+    integer MLA/MLS/MUL/SQDMULH/SQRDMULH/SQRDMLAH/SQRDMLSH, widening SMLAL/UMLAL/SQDMLAL/SMLSL/UMLSL/SQDMLSL/
+    SMULL/UMULL/SQDMULL/*2, SDOT/UDOT .4b[idx], 4-bit v0..v15 vs 5-bit v0..v31 Rm, and .long space).
+    """
+    words: List[int] = []
+    for rd, rn, rm4 in ((1, 2, 3), (31, 31, 15)):
+        for q_bit in (0, 1):
+            for u_bit in (0, 1):
+                for size in range(4):
+                    for opcode in range(16):
+                        for l_bit in (0, 1):
+                            for m_bit in (0, 1):
+                                for h_bit in (0, 1):
+                                    word = (
+                                        (q_bit << 30)
+                                        | (u_bit << 29)
+                                        | (0b01111 << 24)
+                                        | (size << 22)
+                                        | (l_bit << 21)
+                                        | (m_bit << 20)
+                                        | (rm4 << 16)
+                                        | (opcode << 12)
+                                        | (h_bit << 11)
+                                        | (rn << 5)
+                                        | rd
+                                    )
+                                    words.append(word)
+    return words
+
+
+def _generate_advsimd_scalar_by_element_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.9 Advanced SIMD scalar x indexed element:
+    0|1|U(1)|11111|size(2)|L(1)|M(1)|Rm4(4)|opcode(4)|H(1)|0|Rn(5)|Rd(5), i.e. (word & 0xdf000400) == 0x5f000000.
+    Enumerates all 2 x 4 x 16 x 2 x 2 x 2 x 2 = 2,048 combinations of U=0..1, size=0..3, opcode=0..15,
+    L=0..1, M=0..1, H=0..1 across (Rd, Rn, Rm4) in {(1, 2, 3), (31, 31, 15)}
+    (covering scalar FP16/FP32/FP64 FMLA/FMLS/FMUL/FMULX, saturating widening SQDMLAL/SQDMLSL/SQDMULL,
+    saturating doubling/RDMA SQDMULH/SQRDMULH/SQRDMLAH/SQRDMLSH, 4-bit v0..v15 vs 5-bit v0..v31 Rm, and .long space).
+    """
+    words: List[int] = []
+    for rd, rn, rm4 in ((1, 2, 3), (31, 31, 15)):
+        for u_bit in (0, 1):
+            for size in range(4):
+                for opcode in range(16):
+                    for l_bit in (0, 1):
+                        for m_bit in (0, 1):
+                            for h_bit in (0, 1):
+                                word = (
+                                    (0b01 << 30)
+                                    | (u_bit << 29)
+                                    | (0b11111 << 24)
+                                    | (size << 22)
+                                    | (l_bit << 21)
+                                    | (m_bit << 20)
+                                    | (rm4 << 16)
+                                    | (opcode << 12)
+                                    | (h_bit << 11)
+                                    | (rn << 5)
+                                    | rd
+                                )
+                                words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1444,6 +1541,40 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering 1..4 table regs, v31->v0 wrap, and .long space).",
         ),
         generate_words=_generate_advsimd_table_lookup_words,
+    ),
+    "advsimd_three_different": EncodingGroupSpec(
+        name="advsimd_three_different",
+        title="Advanced SIMD three different — widening/narrowing integer & PMULL (incl. .1q and *2 upper-half forms) and unallocated space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.18 Advanced SIMD three different: (word & 0x9f200c00) == 0x0e200000.",
+            "Enumerates all 2 x 2 x 4 x 16 x 2 = 512 combinations of Q=0..1, U=0..1, size=0..3, opcode=0..15",
+            "across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering SADDL/UADDL, SADDW/UADDW, SSUBL/USUBL,",
+            "SSUBW/USUBW, ADDHN/RADDHN, SABAL/UABAL, SUBHN/RSUBHN, SABDL/UABDL, SMLAL/UMLAL, SQDMLAL, SMLSL/UMLSL,",
+            "SQDMLSL, SMULL/UMULL, SQDMULL, PMULL .8h/.1q, *2 upper-half forms, and .long space).",
+        ),
+        generate_words=_generate_advsimd_three_different_words,
+    ),
+    "advsimd_vector_by_element": EncodingGroupSpec(
+        name="advsimd_vector_by_element",
+        title="Advanced SIMD vector x indexed element — FP16/32/64, FHM, FCMA, DotProd, integer/widening/RDMA by element, and .long space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.13 Advanced SIMD vector x indexed element: (word & 0x9f000400) == 0x0f000000.",
+            "Enumerates all 2 x 2 x 4 x 16 x 2 x 2 x 2 x 2 = 4,096 combinations of Q=0..1, U=0..1, size=0..3,",
+            "opcode=0..15, L=0..1, M=0..1, H=0..1 across (Rd, Rn, Rm4) in {(1, 2, 3), (31, 31, 15)}",
+            "(covering 4-bit Rm v0..v15 for .h vs 5-bit Rm v0..v31 via M=Rm<4> for .s/.d/.4b/FCMLA, and .long space).",
+        ),
+        generate_words=_generate_advsimd_vector_by_element_words,
+    ),
+    "advsimd_scalar_by_element": EncodingGroupSpec(
+        name="advsimd_scalar_by_element",
+        title="Advanced SIMD scalar x indexed element — scalar FP16/32/64, saturating widening & RDMA by element, and .long space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.9 Advanced SIMD scalar x indexed element: (word & 0xdf000400) == 0x5f000000.",
+            "Enumerates all 2 x 4 x 16 x 2 x 2 x 2 x 2 = 2,048 combinations of U=0..1, size=0..3, opcode=0..15,",
+            "L=0..1, M=0..1, H=0..1 across (Rd, Rn, Rm4) in {(1, 2, 3), (31, 31, 15)}",
+            "(covering 4-bit Rm v0..v15 for .h vs 5-bit Rm v0..v31 via M=Rm<4> for .s/.d, and .long space).",
+        ),
+        generate_words=_generate_advsimd_scalar_by_element_words,
     ),
 }
 

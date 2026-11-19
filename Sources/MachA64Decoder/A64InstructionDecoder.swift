@@ -3244,6 +3244,12 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDScalarShiftByImmediate(word: word, at: address)
         }
 
+        // 5b. AdvSIMD Scalar x Indexed Element (C4.1.95.9):
+        //     (word & 0xDF00_0400) == 0x5F00_0000
+        if (word & 0xDF00_0400) == 0x5F00_0000 {
+            return decodeAdvSIMDScalarByElement(word: word, at: address)
+        }
+
         // 6. Common Advanced SIMD / NEON Vector Operations
         return decodeNEONVectorBlock(word: word, at: address)
     }
@@ -3707,6 +3713,18 @@ public struct A64InstructionDecoder: Sendable {
         //    (word & 0xBF20_8C00) == 0x0E00_0000
         if (word & 0xBF20_8C00) == 0x0E00_0000 {
             return decodeAdvSIMDVectorTableLookup(word: word, at: address)
+        }
+
+        // 9. AdvSIMD Vector Three-Register Different (C4.1.95.18):
+        //    (word & 0x9F20_0C00) == 0x0E20_0000
+        if (word & 0x9F20_0C00) == 0x0E20_0000 {
+            return decodeAdvSIMDVectorThreeDifferent(word: word, at: address)
+        }
+
+        // 10. AdvSIMD Vector x Indexed Element (C4.1.95.13):
+        //     (word & 0x9F00_0400) == 0x0F00_0000
+        if (word & 0x9F00_0400) == 0x0F00_0000 {
+            return decodeAdvSIMDVectorByElement(word: word, at: address)
         }
 
         return nil
@@ -5195,5 +5213,396 @@ public struct A64InstructionDecoder: Sendable {
             readsRegisters: reads,
             writesRegisters: [vd]
         )
+    }
+
+    private func decodeAdvSIMDVectorThreeDifferent(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let rm = UInt8(A64BitUtils.extract(word, 20, 16))
+        let opcode = A64BitUtils.extract(word, 15, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+        let suffix2 = q ? "2" : ""
+
+        func emitDiff(
+            text: String,
+            dstArr: String,
+            src1Arr: String,
+            src2Arr: String,
+            accumulatesRd: Bool
+        ) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: dstArr)
+            let vn = A64Register.v(rn, arrangement: src1Arr)
+            let vm = A64Register.v(rm, arrangement: src2Arr)
+            let reads = accumulatesRd ? activeRegs([vd, vn, vm]) : activeRegs([vn, vm])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: .andVec,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn), .register(vm)],
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [vd]
+            )
+        }
+
+        if opcode == 0b1110 {
+            guard !u else { return nil }
+            let dstArr: String
+            let srcArr: String
+            switch size {
+            case 0b00:
+                dstArr = "8h"
+                srcArr = q ? "16b" : "8b"
+            case 0b11:
+                dstArr = "1q"
+                srcArr = q ? "2d" : "1d"
+            default:
+                return nil
+            }
+            return emitDiff(
+                text: "pmull" + suffix2,
+                dstArr: dstArr,
+                src1Arr: srcArr,
+                src2Arr: srcArr,
+                accumulatesRd: false
+            )
+        }
+
+        let narrowArr: String
+        let wideArr: String
+        switch size {
+        case 0b00:
+            narrowArr = q ? "16b" : "8b"
+            wideArr = "8h"
+        case 0b01:
+            narrowArr = q ? "8h" : "4h"
+            wideArr = "4s"
+        case 0b10:
+            narrowArr = q ? "4s" : "2s"
+            wideArr = "2d"
+        default:
+            return nil
+        }
+
+        switch opcode {
+        case 0b0000:
+            return emitDiff(text: (u ? "uaddl" : "saddl") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b0001:
+            return emitDiff(text: (u ? "uaddw" : "saddw") + suffix2, dstArr: wideArr, src1Arr: wideArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b0010:
+            return emitDiff(text: (u ? "usubl" : "ssubl") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b0011:
+            return emitDiff(text: (u ? "usubw" : "ssubw") + suffix2, dstArr: wideArr, src1Arr: wideArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b0100:
+            return emitDiff(text: (u ? "raddhn" : "addhn") + suffix2, dstArr: narrowArr, src1Arr: wideArr, src2Arr: wideArr, accumulatesRd: q)
+        case 0b0101:
+            return emitDiff(text: (u ? "uabal" : "sabal") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: true)
+        case 0b0110:
+            return emitDiff(text: (u ? "rsubhn" : "subhn") + suffix2, dstArr: narrowArr, src1Arr: wideArr, src2Arr: wideArr, accumulatesRd: q)
+        case 0b0111:
+            return emitDiff(text: (u ? "uabdl" : "sabdl") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b1000:
+            return emitDiff(text: (u ? "umlal" : "smlal") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: true)
+        case 0b1001:
+            guard !u && (size == 0b01 || size == 0b10) else { return nil }
+            return emitDiff(text: "sqdmlal" + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: true)
+        case 0b1010:
+            return emitDiff(text: (u ? "umlsl" : "smlsl") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: true)
+        case 0b1011:
+            guard !u && (size == 0b01 || size == 0b10) else { return nil }
+            return emitDiff(text: "sqdmlsl" + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: true)
+        case 0b1100:
+            return emitDiff(text: (u ? "umull" : "smull") + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: false)
+        case 0b1101:
+            guard !u && (size == 0b01 || size == 0b10) else { return nil }
+            return emitDiff(text: "sqdmull" + suffix2, dstArr: wideArr, src1Arr: narrowArr, src2Arr: narrowArr, accumulatesRd: false)
+        default:
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDVectorByElement(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let lBit = A64BitUtils.extract(word, 21, 21)
+        let mBit = A64BitUtils.extract(word, 20, 20)
+        let rm4 = UInt8(A64BitUtils.extract(word, 19, 16))
+        let rm5 = UInt8((mBit << 4) | UInt32(rm4))
+        let opcode = A64BitUtils.extract(word, 15, 12)
+        let hBit = A64BitUtils.extract(word, 11, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let idx3 = (hBit << 2) | (lBit << 1) | mBit
+        let idx2 = (hBit << 1) | lBit
+        let idx1 = hBit
+        let suffix2 = q ? "2" : ""
+
+        func emitVecElem(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dstArr: String,
+            srcArr: String,
+            elemReg: UInt8,
+            elemArr: String,
+            lane: UInt32,
+            accumulatesRd: Bool,
+            rotAngle: UInt32? = nil
+        ) -> A64DecodedInstruction {
+            let vd = A64Register.v(rd, arrangement: dstArr)
+            let vn = A64Register.v(rn, arrangement: srcArr)
+            let vm = A64Register.v(elemReg, arrangement: elemArr)
+            let reads = accumulatesRd ? activeRegs([vd, vn, vm]) : activeRegs([vn, vm])
+            if let rot = rotAngle {
+                return A64DecodedInstruction(
+                    address: address,
+                    rawWord: word,
+                    mnemonic: mnemonic,
+                    mnemonicText: text,
+                    operands: [.register(vd), .register(vn), .register(vm), .unsignedImmediate(UInt64(rot))],
+                    operandText: "\(vd.canonicalName), \(vn.canonicalName), \(vm.canonicalName)[\(lane)], #\(rot)",
+                    group: .simdAndFP,
+                    readsRegisters: reads,
+                    writesRegisters: [vd]
+                )
+            }
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(vd), .register(vn), .register(vm)],
+                operandText: "\(vd.canonicalName), \(vn.canonicalName), \(vm.canonicalName)[\(lane)]",
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [vd]
+            )
+        }
+
+        func emitFPByElem(text: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b00:
+                let arr = q ? "8h" : "4h"
+                return emitVecElem(mnemonic: .fmul, text: text, dstArr: arr, srcArr: arr, elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                let arr = q ? "4s" : "2s"
+                return emitVecElem(mnemonic: .fmul, text: text, dstArr: arr, srcArr: arr, elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            case 0b11 where q && lBit == 0:
+                return emitVecElem(mnemonic: .fmul, text: text, dstArr: "2d", srcArr: "2d", elemReg: rm5, elemArr: "d", lane: idx1, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        func emitIntSameByElem(text: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b01:
+                let arr = q ? "8h" : "4h"
+                return emitVecElem(mnemonic: .andVec, text: text, dstArr: arr, srcArr: arr, elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                let arr = q ? "4s" : "2s"
+                return emitVecElem(mnemonic: .andVec, text: text, dstArr: arr, srcArr: arr, elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        func emitIntWideByElem(baseText: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b01:
+                return emitVecElem(mnemonic: .andVec, text: baseText + suffix2, dstArr: "4s", srcArr: q ? "8h" : "4h", elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                return emitVecElem(mnemonic: .andVec, text: baseText + suffix2, dstArr: "2d", srcArr: q ? "4s" : "2s", elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        func emitFCMLAByElem(rot: UInt32) -> A64DecodedInstruction? {
+            switch (size, q) {
+            case (0b01, false):
+                guard hBit == 0 else { return nil }
+                return emitVecElem(mnemonic: .fmul, text: "fcmla", dstArr: "4h", srcArr: "4h", elemReg: rm5, elemArr: "h", lane: lBit, accumulatesRd: true, rotAngle: rot)
+            case (0b01, true):
+                return emitVecElem(mnemonic: .fmul, text: "fcmla", dstArr: "8h", srcArr: "8h", elemReg: rm5, elemArr: "h", lane: idx2, accumulatesRd: true, rotAngle: rot)
+            case (0b10, true):
+                guard lBit == 0 else { return nil }
+                return emitVecElem(mnemonic: .fmul, text: "fcmla", dstArr: "4s", srcArr: "4s", elemReg: rm5, elemArr: "s", lane: hBit, accumulatesRd: true, rotAngle: rot)
+            default:
+                return nil
+            }
+        }
+
+        switch opcode {
+        case 0b0000:
+            if !u && size == 0b10 {
+                return emitVecElem(mnemonic: .fmul, text: "fmlal", dstArr: q ? "4s" : "2s", srcArr: q ? "4h" : "2h", elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: true)
+            }
+            if u {
+                return emitIntSameByElem(text: "mla", accumulatesRd: true)
+            }
+            return nil
+        case 0b0001:
+            return u ? emitFCMLAByElem(rot: 0) : emitFPByElem(text: "fmla", accumulatesRd: true)
+        case 0b0010:
+            return emitIntWideByElem(baseText: u ? "umlal" : "smlal", accumulatesRd: true)
+        case 0b0011:
+            return u ? emitFCMLAByElem(rot: 90) : emitIntWideByElem(baseText: "sqdmlal", accumulatesRd: true)
+        case 0b0100:
+            if !u && size == 0b10 {
+                return emitVecElem(mnemonic: .fmul, text: "fmlsl", dstArr: q ? "4s" : "2s", srcArr: q ? "4h" : "2h", elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: true)
+            }
+            if u {
+                return emitIntSameByElem(text: "mls", accumulatesRd: true)
+            }
+            return nil
+        case 0b0101:
+            return u ? emitFCMLAByElem(rot: 180) : emitFPByElem(text: "fmls", accumulatesRd: true)
+        case 0b0110:
+            return emitIntWideByElem(baseText: u ? "umlsl" : "smlsl", accumulatesRd: true)
+        case 0b0111:
+            return u ? emitFCMLAByElem(rot: 270) : emitIntWideByElem(baseText: "sqdmlsl", accumulatesRd: true)
+        case 0b1000:
+            if !u {
+                return emitIntSameByElem(text: "mul", accumulatesRd: false)
+            }
+            if size == 0b10 {
+                return emitVecElem(mnemonic: .fmul, text: "fmlal2", dstArr: q ? "4s" : "2s", srcArr: q ? "4h" : "2h", elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: true)
+            }
+            return nil
+        case 0b1001:
+            return emitFPByElem(text: u ? "fmulx" : "fmul", accumulatesRd: false)
+        case 0b1010:
+            return emitIntWideByElem(baseText: u ? "umull" : "smull", accumulatesRd: false)
+        case 0b1011:
+            guard !u else { return nil }
+            return emitIntWideByElem(baseText: "sqdmull", accumulatesRd: false)
+        case 0b1100:
+            if !u {
+                return emitIntSameByElem(text: "sqdmulh", accumulatesRd: false)
+            }
+            if size == 0b10 {
+                return emitVecElem(mnemonic: .fmul, text: "fmlsl2", dstArr: q ? "4s" : "2s", srcArr: q ? "4h" : "2h", elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: true)
+            }
+            return nil
+        case 0b1101:
+            return emitIntSameByElem(text: u ? "sqrdmlah" : "sqrdmulh", accumulatesRd: u)
+        case 0b1110:
+            guard size == 0b10 else { return nil }
+            return emitVecElem(mnemonic: .andVec, text: u ? "udot" : "sdot", dstArr: q ? "4s" : "2s", srcArr: q ? "16b" : "8b", elemReg: rm5, elemArr: "4b", lane: idx2, accumulatesRd: true)
+        case 0b1111:
+            guard u else { return nil }
+            return emitIntSameByElem(text: "sqrdmlsh", accumulatesRd: true)
+        default:
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDScalarByElement(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let lBit = A64BitUtils.extract(word, 21, 21)
+        let mBit = A64BitUtils.extract(word, 20, 20)
+        let rm4 = UInt8(A64BitUtils.extract(word, 19, 16))
+        let rm5 = UInt8((mBit << 4) | UInt32(rm4))
+        let opcode = A64BitUtils.extract(word, 15, 12)
+        let hBit = A64BitUtils.extract(word, 11, 11)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        let idx3 = (hBit << 2) | (lBit << 1) | mBit
+        let idx2 = (hBit << 1) | lBit
+        let idx1 = hBit
+
+        func emitScalarElem(
+            mnemonic: A64Mnemonic,
+            text: String,
+            sd: A64Register,
+            sn: A64Register,
+            elemReg: UInt8,
+            elemArr: String,
+            lane: UInt32,
+            accumulatesRd: Bool
+        ) -> A64DecodedInstruction {
+            let vm = A64Register.v(elemReg, arrangement: elemArr)
+            let reads = accumulatesRd ? activeRegs([sd, sn, vm]) : activeRegs([sn, vm])
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(sd), .register(sn), .register(vm)],
+                operandText: "\(sd.canonicalName), \(sn.canonicalName), \(vm.canonicalName)[\(lane)]",
+                group: .simdAndFP,
+                readsRegisters: reads,
+                writesRegisters: [sd]
+            )
+        }
+
+        func emitScalarFPByElem(text: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b00:
+                return emitScalarElem(mnemonic: .fmul, text: text, sd: .h(rd), sn: .h(rn), elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                return emitScalarElem(mnemonic: .fmul, text: text, sd: .s(rd), sn: .s(rn), elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            case 0b11 where lBit == 0:
+                return emitScalarElem(mnemonic: .fmul, text: text, sd: .d(rd), sn: .d(rn), elemReg: rm5, elemArr: "d", lane: idx1, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        func emitScalarSatWideByElem(text: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b01:
+                return emitScalarElem(mnemonic: .andVec, text: text, sd: .s(rd), sn: .h(rn), elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                return emitScalarElem(mnemonic: .andVec, text: text, sd: .d(rd), sn: .s(rn), elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        func emitScalarSatSameByElem(text: String, accumulatesRd: Bool) -> A64DecodedInstruction? {
+            switch size {
+            case 0b01:
+                return emitScalarElem(mnemonic: .andVec, text: text, sd: .h(rd), sn: .h(rn), elemReg: rm4, elemArr: "h", lane: idx3, accumulatesRd: accumulatesRd)
+            case 0b10:
+                return emitScalarElem(mnemonic: .andVec, text: text, sd: .s(rd), sn: .s(rn), elemReg: rm5, elemArr: "s", lane: idx2, accumulatesRd: accumulatesRd)
+            default:
+                return nil
+            }
+        }
+
+        switch (opcode, u) {
+        case (0b0001, false):
+            return emitScalarFPByElem(text: "fmla", accumulatesRd: true)
+        case (0b0011, false):
+            return emitScalarSatWideByElem(text: "sqdmlal", accumulatesRd: true)
+        case (0b0101, false):
+            return emitScalarFPByElem(text: "fmls", accumulatesRd: true)
+        case (0b0111, false):
+            return emitScalarSatWideByElem(text: "sqdmlsl", accumulatesRd: true)
+        case (0b1001, false):
+            return emitScalarFPByElem(text: "fmul", accumulatesRd: false)
+        case (0b1001, true):
+            return emitScalarFPByElem(text: "fmulx", accumulatesRd: false)
+        case (0b1011, false):
+            return emitScalarSatWideByElem(text: "sqdmull", accumulatesRd: false)
+        case (0b1100, false):
+            return emitScalarSatSameByElem(text: "sqdmulh", accumulatesRd: false)
+        case (0b1101, false):
+            return emitScalarSatSameByElem(text: "sqrdmulh", accumulatesRd: false)
+        case (0b1101, true):
+            return emitScalarSatSameByElem(text: "sqrdmlah", accumulatesRd: true)
+        case (0b1111, true):
+            return emitScalarSatSameByElem(text: "sqrdmlsh", accumulatesRd: true)
+        default:
+            return nil
+        }
     }
 }

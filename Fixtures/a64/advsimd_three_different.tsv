@@ -1,0 +1,524 @@
+# A64 encoding reference table: advsimd_three_different
+# ARM DDI 0487 C4.1.95.18 Advanced SIMD three different: (word & 0x9f200c00) == 0x0e200000.
+# Enumerates all 2 x 2 x 4 x 16 x 2 = 512 combinations of Q=0..1, U=0..1, size=0..3, opcode=0..15
+# across (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (covering SADDL/UADDL, SADDW/UADDW, SSUBL/USUBL,
+# SSUBW/USUBW, ADDHN/RADDHN, SABAL/UABAL, SUBHN/RSUBHN, SABDL/UABDL, SMLAL/UMLAL, SQDMLAL, SMLSL/UMLSL,
+# SQDMLSL, SMULL/UMULL, SQDMULL, PMULL .8h/.1q, *2 upper-half forms, and .long space).
+# Rows: 512 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e advsimd_three_different.s -o advsimd_three_different.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text advsimd_three_different.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate advsimd_three_different
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0x0e230041	saddl	v1.8h, v2.8b, v3.8b
+0x0e231041	saddw	v1.8h, v2.8h, v3.8b
+0x0e232041	ssubl	v1.8h, v2.8b, v3.8b
+0x0e233041	ssubw	v1.8h, v2.8h, v3.8b
+0x0e234041	addhn	v1.8b, v2.8h, v3.8h
+0x0e235041	sabal	v1.8h, v2.8b, v3.8b
+0x0e236041	subhn	v1.8b, v2.8h, v3.8h
+0x0e237041	sabdl	v1.8h, v2.8b, v3.8b
+0x0e238041	smlal	v1.8h, v2.8b, v3.8b
+0x0e239041	.long	0x0e239041
+0x0e23a041	smlsl	v1.8h, v2.8b, v3.8b
+0x0e23b041	.long	0x0e23b041
+0x0e23c041	smull	v1.8h, v2.8b, v3.8b
+0x0e23d041	.long	0x0e23d041
+0x0e23e041	pmull	v1.8h, v2.8b, v3.8b
+0x0e23f041	.long	0x0e23f041
+0x0e630041	saddl	v1.4s, v2.4h, v3.4h
+0x0e631041	saddw	v1.4s, v2.4s, v3.4h
+0x0e632041	ssubl	v1.4s, v2.4h, v3.4h
+0x0e633041	ssubw	v1.4s, v2.4s, v3.4h
+0x0e634041	addhn	v1.4h, v2.4s, v3.4s
+0x0e635041	sabal	v1.4s, v2.4h, v3.4h
+0x0e636041	subhn	v1.4h, v2.4s, v3.4s
+0x0e637041	sabdl	v1.4s, v2.4h, v3.4h
+0x0e638041	smlal	v1.4s, v2.4h, v3.4h
+0x0e639041	sqdmlal	v1.4s, v2.4h, v3.4h
+0x0e63a041	smlsl	v1.4s, v2.4h, v3.4h
+0x0e63b041	sqdmlsl	v1.4s, v2.4h, v3.4h
+0x0e63c041	smull	v1.4s, v2.4h, v3.4h
+0x0e63d041	sqdmull	v1.4s, v2.4h, v3.4h
+0x0e63e041	.long	0x0e63e041
+0x0e63f041	.long	0x0e63f041
+0x0ea30041	saddl	v1.2d, v2.2s, v3.2s
+0x0ea31041	saddw	v1.2d, v2.2d, v3.2s
+0x0ea32041	ssubl	v1.2d, v2.2s, v3.2s
+0x0ea33041	ssubw	v1.2d, v2.2d, v3.2s
+0x0ea34041	addhn	v1.2s, v2.2d, v3.2d
+0x0ea35041	sabal	v1.2d, v2.2s, v3.2s
+0x0ea36041	subhn	v1.2s, v2.2d, v3.2d
+0x0ea37041	sabdl	v1.2d, v2.2s, v3.2s
+0x0ea38041	smlal	v1.2d, v2.2s, v3.2s
+0x0ea39041	sqdmlal	v1.2d, v2.2s, v3.2s
+0x0ea3a041	smlsl	v1.2d, v2.2s, v3.2s
+0x0ea3b041	sqdmlsl	v1.2d, v2.2s, v3.2s
+0x0ea3c041	smull	v1.2d, v2.2s, v3.2s
+0x0ea3d041	sqdmull	v1.2d, v2.2s, v3.2s
+0x0ea3e041	.long	0x0ea3e041
+0x0ea3f041	.long	0x0ea3f041
+0x0ee30041	.long	0x0ee30041
+0x0ee31041	.long	0x0ee31041
+0x0ee32041	.long	0x0ee32041
+0x0ee33041	.long	0x0ee33041
+0x0ee34041	.long	0x0ee34041
+0x0ee35041	.long	0x0ee35041
+0x0ee36041	.long	0x0ee36041
+0x0ee37041	.long	0x0ee37041
+0x0ee38041	.long	0x0ee38041
+0x0ee39041	.long	0x0ee39041
+0x0ee3a041	.long	0x0ee3a041
+0x0ee3b041	.long	0x0ee3b041
+0x0ee3c041	.long	0x0ee3c041
+0x0ee3d041	.long	0x0ee3d041
+0x0ee3e041	pmull	v1.1q, v2.1d, v3.1d
+0x0ee3f041	.long	0x0ee3f041
+0x2e230041	uaddl	v1.8h, v2.8b, v3.8b
+0x2e231041	uaddw	v1.8h, v2.8h, v3.8b
+0x2e232041	usubl	v1.8h, v2.8b, v3.8b
+0x2e233041	usubw	v1.8h, v2.8h, v3.8b
+0x2e234041	raddhn	v1.8b, v2.8h, v3.8h
+0x2e235041	uabal	v1.8h, v2.8b, v3.8b
+0x2e236041	rsubhn	v1.8b, v2.8h, v3.8h
+0x2e237041	uabdl	v1.8h, v2.8b, v3.8b
+0x2e238041	umlal	v1.8h, v2.8b, v3.8b
+0x2e239041	.long	0x2e239041
+0x2e23a041	umlsl	v1.8h, v2.8b, v3.8b
+0x2e23b041	.long	0x2e23b041
+0x2e23c041	umull	v1.8h, v2.8b, v3.8b
+0x2e23d041	.long	0x2e23d041
+0x2e23e041	.long	0x2e23e041
+0x2e23f041	.long	0x2e23f041
+0x2e630041	uaddl	v1.4s, v2.4h, v3.4h
+0x2e631041	uaddw	v1.4s, v2.4s, v3.4h
+0x2e632041	usubl	v1.4s, v2.4h, v3.4h
+0x2e633041	usubw	v1.4s, v2.4s, v3.4h
+0x2e634041	raddhn	v1.4h, v2.4s, v3.4s
+0x2e635041	uabal	v1.4s, v2.4h, v3.4h
+0x2e636041	rsubhn	v1.4h, v2.4s, v3.4s
+0x2e637041	uabdl	v1.4s, v2.4h, v3.4h
+0x2e638041	umlal	v1.4s, v2.4h, v3.4h
+0x2e639041	.long	0x2e639041
+0x2e63a041	umlsl	v1.4s, v2.4h, v3.4h
+0x2e63b041	.long	0x2e63b041
+0x2e63c041	umull	v1.4s, v2.4h, v3.4h
+0x2e63d041	.long	0x2e63d041
+0x2e63e041	.long	0x2e63e041
+0x2e63f041	.long	0x2e63f041
+0x2ea30041	uaddl	v1.2d, v2.2s, v3.2s
+0x2ea31041	uaddw	v1.2d, v2.2d, v3.2s
+0x2ea32041	usubl	v1.2d, v2.2s, v3.2s
+0x2ea33041	usubw	v1.2d, v2.2d, v3.2s
+0x2ea34041	raddhn	v1.2s, v2.2d, v3.2d
+0x2ea35041	uabal	v1.2d, v2.2s, v3.2s
+0x2ea36041	rsubhn	v1.2s, v2.2d, v3.2d
+0x2ea37041	uabdl	v1.2d, v2.2s, v3.2s
+0x2ea38041	umlal	v1.2d, v2.2s, v3.2s
+0x2ea39041	.long	0x2ea39041
+0x2ea3a041	umlsl	v1.2d, v2.2s, v3.2s
+0x2ea3b041	.long	0x2ea3b041
+0x2ea3c041	umull	v1.2d, v2.2s, v3.2s
+0x2ea3d041	.long	0x2ea3d041
+0x2ea3e041	.long	0x2ea3e041
+0x2ea3f041	.long	0x2ea3f041
+0x2ee30041	.long	0x2ee30041
+0x2ee31041	.long	0x2ee31041
+0x2ee32041	.long	0x2ee32041
+0x2ee33041	.long	0x2ee33041
+0x2ee34041	.long	0x2ee34041
+0x2ee35041	.long	0x2ee35041
+0x2ee36041	.long	0x2ee36041
+0x2ee37041	.long	0x2ee37041
+0x2ee38041	.long	0x2ee38041
+0x2ee39041	.long	0x2ee39041
+0x2ee3a041	.long	0x2ee3a041
+0x2ee3b041	.long	0x2ee3b041
+0x2ee3c041	.long	0x2ee3c041
+0x2ee3d041	.long	0x2ee3d041
+0x2ee3e041	.long	0x2ee3e041
+0x2ee3f041	.long	0x2ee3f041
+0x4e230041	saddl2	v1.8h, v2.16b, v3.16b
+0x4e231041	saddw2	v1.8h, v2.8h, v3.16b
+0x4e232041	ssubl2	v1.8h, v2.16b, v3.16b
+0x4e233041	ssubw2	v1.8h, v2.8h, v3.16b
+0x4e234041	addhn2	v1.16b, v2.8h, v3.8h
+0x4e235041	sabal2	v1.8h, v2.16b, v3.16b
+0x4e236041	subhn2	v1.16b, v2.8h, v3.8h
+0x4e237041	sabdl2	v1.8h, v2.16b, v3.16b
+0x4e238041	smlal2	v1.8h, v2.16b, v3.16b
+0x4e239041	.long	0x4e239041
+0x4e23a041	smlsl2	v1.8h, v2.16b, v3.16b
+0x4e23b041	.long	0x4e23b041
+0x4e23c041	smull2	v1.8h, v2.16b, v3.16b
+0x4e23d041	.long	0x4e23d041
+0x4e23e041	pmull2	v1.8h, v2.16b, v3.16b
+0x4e23f041	.long	0x4e23f041
+0x4e630041	saddl2	v1.4s, v2.8h, v3.8h
+0x4e631041	saddw2	v1.4s, v2.4s, v3.8h
+0x4e632041	ssubl2	v1.4s, v2.8h, v3.8h
+0x4e633041	ssubw2	v1.4s, v2.4s, v3.8h
+0x4e634041	addhn2	v1.8h, v2.4s, v3.4s
+0x4e635041	sabal2	v1.4s, v2.8h, v3.8h
+0x4e636041	subhn2	v1.8h, v2.4s, v3.4s
+0x4e637041	sabdl2	v1.4s, v2.8h, v3.8h
+0x4e638041	smlal2	v1.4s, v2.8h, v3.8h
+0x4e639041	sqdmlal2	v1.4s, v2.8h, v3.8h
+0x4e63a041	smlsl2	v1.4s, v2.8h, v3.8h
+0x4e63b041	sqdmlsl2	v1.4s, v2.8h, v3.8h
+0x4e63c041	smull2	v1.4s, v2.8h, v3.8h
+0x4e63d041	sqdmull2	v1.4s, v2.8h, v3.8h
+0x4e63e041	.long	0x4e63e041
+0x4e63f041	.long	0x4e63f041
+0x4ea30041	saddl2	v1.2d, v2.4s, v3.4s
+0x4ea31041	saddw2	v1.2d, v2.2d, v3.4s
+0x4ea32041	ssubl2	v1.2d, v2.4s, v3.4s
+0x4ea33041	ssubw2	v1.2d, v2.2d, v3.4s
+0x4ea34041	addhn2	v1.4s, v2.2d, v3.2d
+0x4ea35041	sabal2	v1.2d, v2.4s, v3.4s
+0x4ea36041	subhn2	v1.4s, v2.2d, v3.2d
+0x4ea37041	sabdl2	v1.2d, v2.4s, v3.4s
+0x4ea38041	smlal2	v1.2d, v2.4s, v3.4s
+0x4ea39041	sqdmlal2	v1.2d, v2.4s, v3.4s
+0x4ea3a041	smlsl2	v1.2d, v2.4s, v3.4s
+0x4ea3b041	sqdmlsl2	v1.2d, v2.4s, v3.4s
+0x4ea3c041	smull2	v1.2d, v2.4s, v3.4s
+0x4ea3d041	sqdmull2	v1.2d, v2.4s, v3.4s
+0x4ea3e041	.long	0x4ea3e041
+0x4ea3f041	.long	0x4ea3f041
+0x4ee30041	.long	0x4ee30041
+0x4ee31041	.long	0x4ee31041
+0x4ee32041	.long	0x4ee32041
+0x4ee33041	.long	0x4ee33041
+0x4ee34041	.long	0x4ee34041
+0x4ee35041	.long	0x4ee35041
+0x4ee36041	.long	0x4ee36041
+0x4ee37041	.long	0x4ee37041
+0x4ee38041	.long	0x4ee38041
+0x4ee39041	.long	0x4ee39041
+0x4ee3a041	.long	0x4ee3a041
+0x4ee3b041	.long	0x4ee3b041
+0x4ee3c041	.long	0x4ee3c041
+0x4ee3d041	.long	0x4ee3d041
+0x4ee3e041	pmull2	v1.1q, v2.2d, v3.2d
+0x4ee3f041	.long	0x4ee3f041
+0x6e230041	uaddl2	v1.8h, v2.16b, v3.16b
+0x6e231041	uaddw2	v1.8h, v2.8h, v3.16b
+0x6e232041	usubl2	v1.8h, v2.16b, v3.16b
+0x6e233041	usubw2	v1.8h, v2.8h, v3.16b
+0x6e234041	raddhn2	v1.16b, v2.8h, v3.8h
+0x6e235041	uabal2	v1.8h, v2.16b, v3.16b
+0x6e236041	rsubhn2	v1.16b, v2.8h, v3.8h
+0x6e237041	uabdl2	v1.8h, v2.16b, v3.16b
+0x6e238041	umlal2	v1.8h, v2.16b, v3.16b
+0x6e239041	.long	0x6e239041
+0x6e23a041	umlsl2	v1.8h, v2.16b, v3.16b
+0x6e23b041	.long	0x6e23b041
+0x6e23c041	umull2	v1.8h, v2.16b, v3.16b
+0x6e23d041	.long	0x6e23d041
+0x6e23e041	.long	0x6e23e041
+0x6e23f041	.long	0x6e23f041
+0x6e630041	uaddl2	v1.4s, v2.8h, v3.8h
+0x6e631041	uaddw2	v1.4s, v2.4s, v3.8h
+0x6e632041	usubl2	v1.4s, v2.8h, v3.8h
+0x6e633041	usubw2	v1.4s, v2.4s, v3.8h
+0x6e634041	raddhn2	v1.8h, v2.4s, v3.4s
+0x6e635041	uabal2	v1.4s, v2.8h, v3.8h
+0x6e636041	rsubhn2	v1.8h, v2.4s, v3.4s
+0x6e637041	uabdl2	v1.4s, v2.8h, v3.8h
+0x6e638041	umlal2	v1.4s, v2.8h, v3.8h
+0x6e639041	.long	0x6e639041
+0x6e63a041	umlsl2	v1.4s, v2.8h, v3.8h
+0x6e63b041	.long	0x6e63b041
+0x6e63c041	umull2	v1.4s, v2.8h, v3.8h
+0x6e63d041	.long	0x6e63d041
+0x6e63e041	.long	0x6e63e041
+0x6e63f041	.long	0x6e63f041
+0x6ea30041	uaddl2	v1.2d, v2.4s, v3.4s
+0x6ea31041	uaddw2	v1.2d, v2.2d, v3.4s
+0x6ea32041	usubl2	v1.2d, v2.4s, v3.4s
+0x6ea33041	usubw2	v1.2d, v2.2d, v3.4s
+0x6ea34041	raddhn2	v1.4s, v2.2d, v3.2d
+0x6ea35041	uabal2	v1.2d, v2.4s, v3.4s
+0x6ea36041	rsubhn2	v1.4s, v2.2d, v3.2d
+0x6ea37041	uabdl2	v1.2d, v2.4s, v3.4s
+0x6ea38041	umlal2	v1.2d, v2.4s, v3.4s
+0x6ea39041	.long	0x6ea39041
+0x6ea3a041	umlsl2	v1.2d, v2.4s, v3.4s
+0x6ea3b041	.long	0x6ea3b041
+0x6ea3c041	umull2	v1.2d, v2.4s, v3.4s
+0x6ea3d041	.long	0x6ea3d041
+0x6ea3e041	.long	0x6ea3e041
+0x6ea3f041	.long	0x6ea3f041
+0x6ee30041	.long	0x6ee30041
+0x6ee31041	.long	0x6ee31041
+0x6ee32041	.long	0x6ee32041
+0x6ee33041	.long	0x6ee33041
+0x6ee34041	.long	0x6ee34041
+0x6ee35041	.long	0x6ee35041
+0x6ee36041	.long	0x6ee36041
+0x6ee37041	.long	0x6ee37041
+0x6ee38041	.long	0x6ee38041
+0x6ee39041	.long	0x6ee39041
+0x6ee3a041	.long	0x6ee3a041
+0x6ee3b041	.long	0x6ee3b041
+0x6ee3c041	.long	0x6ee3c041
+0x6ee3d041	.long	0x6ee3d041
+0x6ee3e041	.long	0x6ee3e041
+0x6ee3f041	.long	0x6ee3f041
+0x0e3f03ff	saddl	v31.8h, v31.8b, v31.8b
+0x0e3f13ff	saddw	v31.8h, v31.8h, v31.8b
+0x0e3f23ff	ssubl	v31.8h, v31.8b, v31.8b
+0x0e3f33ff	ssubw	v31.8h, v31.8h, v31.8b
+0x0e3f43ff	addhn	v31.8b, v31.8h, v31.8h
+0x0e3f53ff	sabal	v31.8h, v31.8b, v31.8b
+0x0e3f63ff	subhn	v31.8b, v31.8h, v31.8h
+0x0e3f73ff	sabdl	v31.8h, v31.8b, v31.8b
+0x0e3f83ff	smlal	v31.8h, v31.8b, v31.8b
+0x0e3f93ff	.long	0x0e3f93ff
+0x0e3fa3ff	smlsl	v31.8h, v31.8b, v31.8b
+0x0e3fb3ff	.long	0x0e3fb3ff
+0x0e3fc3ff	smull	v31.8h, v31.8b, v31.8b
+0x0e3fd3ff	.long	0x0e3fd3ff
+0x0e3fe3ff	pmull	v31.8h, v31.8b, v31.8b
+0x0e3ff3ff	.long	0x0e3ff3ff
+0x0e7f03ff	saddl	v31.4s, v31.4h, v31.4h
+0x0e7f13ff	saddw	v31.4s, v31.4s, v31.4h
+0x0e7f23ff	ssubl	v31.4s, v31.4h, v31.4h
+0x0e7f33ff	ssubw	v31.4s, v31.4s, v31.4h
+0x0e7f43ff	addhn	v31.4h, v31.4s, v31.4s
+0x0e7f53ff	sabal	v31.4s, v31.4h, v31.4h
+0x0e7f63ff	subhn	v31.4h, v31.4s, v31.4s
+0x0e7f73ff	sabdl	v31.4s, v31.4h, v31.4h
+0x0e7f83ff	smlal	v31.4s, v31.4h, v31.4h
+0x0e7f93ff	sqdmlal	v31.4s, v31.4h, v31.4h
+0x0e7fa3ff	smlsl	v31.4s, v31.4h, v31.4h
+0x0e7fb3ff	sqdmlsl	v31.4s, v31.4h, v31.4h
+0x0e7fc3ff	smull	v31.4s, v31.4h, v31.4h
+0x0e7fd3ff	sqdmull	v31.4s, v31.4h, v31.4h
+0x0e7fe3ff	.long	0x0e7fe3ff
+0x0e7ff3ff	.long	0x0e7ff3ff
+0x0ebf03ff	saddl	v31.2d, v31.2s, v31.2s
+0x0ebf13ff	saddw	v31.2d, v31.2d, v31.2s
+0x0ebf23ff	ssubl	v31.2d, v31.2s, v31.2s
+0x0ebf33ff	ssubw	v31.2d, v31.2d, v31.2s
+0x0ebf43ff	addhn	v31.2s, v31.2d, v31.2d
+0x0ebf53ff	sabal	v31.2d, v31.2s, v31.2s
+0x0ebf63ff	subhn	v31.2s, v31.2d, v31.2d
+0x0ebf73ff	sabdl	v31.2d, v31.2s, v31.2s
+0x0ebf83ff	smlal	v31.2d, v31.2s, v31.2s
+0x0ebf93ff	sqdmlal	v31.2d, v31.2s, v31.2s
+0x0ebfa3ff	smlsl	v31.2d, v31.2s, v31.2s
+0x0ebfb3ff	sqdmlsl	v31.2d, v31.2s, v31.2s
+0x0ebfc3ff	smull	v31.2d, v31.2s, v31.2s
+0x0ebfd3ff	sqdmull	v31.2d, v31.2s, v31.2s
+0x0ebfe3ff	.long	0x0ebfe3ff
+0x0ebff3ff	.long	0x0ebff3ff
+0x0eff03ff	.long	0x0eff03ff
+0x0eff13ff	.long	0x0eff13ff
+0x0eff23ff	.long	0x0eff23ff
+0x0eff33ff	.long	0x0eff33ff
+0x0eff43ff	.long	0x0eff43ff
+0x0eff53ff	.long	0x0eff53ff
+0x0eff63ff	.long	0x0eff63ff
+0x0eff73ff	.long	0x0eff73ff
+0x0eff83ff	.long	0x0eff83ff
+0x0eff93ff	.long	0x0eff93ff
+0x0effa3ff	.long	0x0effa3ff
+0x0effb3ff	.long	0x0effb3ff
+0x0effc3ff	.long	0x0effc3ff
+0x0effd3ff	.long	0x0effd3ff
+0x0effe3ff	pmull	v31.1q, v31.1d, v31.1d
+0x0efff3ff	.long	0x0efff3ff
+0x2e3f03ff	uaddl	v31.8h, v31.8b, v31.8b
+0x2e3f13ff	uaddw	v31.8h, v31.8h, v31.8b
+0x2e3f23ff	usubl	v31.8h, v31.8b, v31.8b
+0x2e3f33ff	usubw	v31.8h, v31.8h, v31.8b
+0x2e3f43ff	raddhn	v31.8b, v31.8h, v31.8h
+0x2e3f53ff	uabal	v31.8h, v31.8b, v31.8b
+0x2e3f63ff	rsubhn	v31.8b, v31.8h, v31.8h
+0x2e3f73ff	uabdl	v31.8h, v31.8b, v31.8b
+0x2e3f83ff	umlal	v31.8h, v31.8b, v31.8b
+0x2e3f93ff	.long	0x2e3f93ff
+0x2e3fa3ff	umlsl	v31.8h, v31.8b, v31.8b
+0x2e3fb3ff	.long	0x2e3fb3ff
+0x2e3fc3ff	umull	v31.8h, v31.8b, v31.8b
+0x2e3fd3ff	.long	0x2e3fd3ff
+0x2e3fe3ff	.long	0x2e3fe3ff
+0x2e3ff3ff	.long	0x2e3ff3ff
+0x2e7f03ff	uaddl	v31.4s, v31.4h, v31.4h
+0x2e7f13ff	uaddw	v31.4s, v31.4s, v31.4h
+0x2e7f23ff	usubl	v31.4s, v31.4h, v31.4h
+0x2e7f33ff	usubw	v31.4s, v31.4s, v31.4h
+0x2e7f43ff	raddhn	v31.4h, v31.4s, v31.4s
+0x2e7f53ff	uabal	v31.4s, v31.4h, v31.4h
+0x2e7f63ff	rsubhn	v31.4h, v31.4s, v31.4s
+0x2e7f73ff	uabdl	v31.4s, v31.4h, v31.4h
+0x2e7f83ff	umlal	v31.4s, v31.4h, v31.4h
+0x2e7f93ff	.long	0x2e7f93ff
+0x2e7fa3ff	umlsl	v31.4s, v31.4h, v31.4h
+0x2e7fb3ff	.long	0x2e7fb3ff
+0x2e7fc3ff	umull	v31.4s, v31.4h, v31.4h
+0x2e7fd3ff	.long	0x2e7fd3ff
+0x2e7fe3ff	.long	0x2e7fe3ff
+0x2e7ff3ff	.long	0x2e7ff3ff
+0x2ebf03ff	uaddl	v31.2d, v31.2s, v31.2s
+0x2ebf13ff	uaddw	v31.2d, v31.2d, v31.2s
+0x2ebf23ff	usubl	v31.2d, v31.2s, v31.2s
+0x2ebf33ff	usubw	v31.2d, v31.2d, v31.2s
+0x2ebf43ff	raddhn	v31.2s, v31.2d, v31.2d
+0x2ebf53ff	uabal	v31.2d, v31.2s, v31.2s
+0x2ebf63ff	rsubhn	v31.2s, v31.2d, v31.2d
+0x2ebf73ff	uabdl	v31.2d, v31.2s, v31.2s
+0x2ebf83ff	umlal	v31.2d, v31.2s, v31.2s
+0x2ebf93ff	.long	0x2ebf93ff
+0x2ebfa3ff	umlsl	v31.2d, v31.2s, v31.2s
+0x2ebfb3ff	.long	0x2ebfb3ff
+0x2ebfc3ff	umull	v31.2d, v31.2s, v31.2s
+0x2ebfd3ff	.long	0x2ebfd3ff
+0x2ebfe3ff	.long	0x2ebfe3ff
+0x2ebff3ff	.long	0x2ebff3ff
+0x2eff03ff	.long	0x2eff03ff
+0x2eff13ff	.long	0x2eff13ff
+0x2eff23ff	.long	0x2eff23ff
+0x2eff33ff	.long	0x2eff33ff
+0x2eff43ff	.long	0x2eff43ff
+0x2eff53ff	.long	0x2eff53ff
+0x2eff63ff	.long	0x2eff63ff
+0x2eff73ff	.long	0x2eff73ff
+0x2eff83ff	.long	0x2eff83ff
+0x2eff93ff	.long	0x2eff93ff
+0x2effa3ff	.long	0x2effa3ff
+0x2effb3ff	.long	0x2effb3ff
+0x2effc3ff	.long	0x2effc3ff
+0x2effd3ff	.long	0x2effd3ff
+0x2effe3ff	.long	0x2effe3ff
+0x2efff3ff	.long	0x2efff3ff
+0x4e3f03ff	saddl2	v31.8h, v31.16b, v31.16b
+0x4e3f13ff	saddw2	v31.8h, v31.8h, v31.16b
+0x4e3f23ff	ssubl2	v31.8h, v31.16b, v31.16b
+0x4e3f33ff	ssubw2	v31.8h, v31.8h, v31.16b
+0x4e3f43ff	addhn2	v31.16b, v31.8h, v31.8h
+0x4e3f53ff	sabal2	v31.8h, v31.16b, v31.16b
+0x4e3f63ff	subhn2	v31.16b, v31.8h, v31.8h
+0x4e3f73ff	sabdl2	v31.8h, v31.16b, v31.16b
+0x4e3f83ff	smlal2	v31.8h, v31.16b, v31.16b
+0x4e3f93ff	.long	0x4e3f93ff
+0x4e3fa3ff	smlsl2	v31.8h, v31.16b, v31.16b
+0x4e3fb3ff	.long	0x4e3fb3ff
+0x4e3fc3ff	smull2	v31.8h, v31.16b, v31.16b
+0x4e3fd3ff	.long	0x4e3fd3ff
+0x4e3fe3ff	pmull2	v31.8h, v31.16b, v31.16b
+0x4e3ff3ff	.long	0x4e3ff3ff
+0x4e7f03ff	saddl2	v31.4s, v31.8h, v31.8h
+0x4e7f13ff	saddw2	v31.4s, v31.4s, v31.8h
+0x4e7f23ff	ssubl2	v31.4s, v31.8h, v31.8h
+0x4e7f33ff	ssubw2	v31.4s, v31.4s, v31.8h
+0x4e7f43ff	addhn2	v31.8h, v31.4s, v31.4s
+0x4e7f53ff	sabal2	v31.4s, v31.8h, v31.8h
+0x4e7f63ff	subhn2	v31.8h, v31.4s, v31.4s
+0x4e7f73ff	sabdl2	v31.4s, v31.8h, v31.8h
+0x4e7f83ff	smlal2	v31.4s, v31.8h, v31.8h
+0x4e7f93ff	sqdmlal2	v31.4s, v31.8h, v31.8h
+0x4e7fa3ff	smlsl2	v31.4s, v31.8h, v31.8h
+0x4e7fb3ff	sqdmlsl2	v31.4s, v31.8h, v31.8h
+0x4e7fc3ff	smull2	v31.4s, v31.8h, v31.8h
+0x4e7fd3ff	sqdmull2	v31.4s, v31.8h, v31.8h
+0x4e7fe3ff	.long	0x4e7fe3ff
+0x4e7ff3ff	.long	0x4e7ff3ff
+0x4ebf03ff	saddl2	v31.2d, v31.4s, v31.4s
+0x4ebf13ff	saddw2	v31.2d, v31.2d, v31.4s
+0x4ebf23ff	ssubl2	v31.2d, v31.4s, v31.4s
+0x4ebf33ff	ssubw2	v31.2d, v31.2d, v31.4s
+0x4ebf43ff	addhn2	v31.4s, v31.2d, v31.2d
+0x4ebf53ff	sabal2	v31.2d, v31.4s, v31.4s
+0x4ebf63ff	subhn2	v31.4s, v31.2d, v31.2d
+0x4ebf73ff	sabdl2	v31.2d, v31.4s, v31.4s
+0x4ebf83ff	smlal2	v31.2d, v31.4s, v31.4s
+0x4ebf93ff	sqdmlal2	v31.2d, v31.4s, v31.4s
+0x4ebfa3ff	smlsl2	v31.2d, v31.4s, v31.4s
+0x4ebfb3ff	sqdmlsl2	v31.2d, v31.4s, v31.4s
+0x4ebfc3ff	smull2	v31.2d, v31.4s, v31.4s
+0x4ebfd3ff	sqdmull2	v31.2d, v31.4s, v31.4s
+0x4ebfe3ff	.long	0x4ebfe3ff
+0x4ebff3ff	.long	0x4ebff3ff
+0x4eff03ff	.long	0x4eff03ff
+0x4eff13ff	.long	0x4eff13ff
+0x4eff23ff	.long	0x4eff23ff
+0x4eff33ff	.long	0x4eff33ff
+0x4eff43ff	.long	0x4eff43ff
+0x4eff53ff	.long	0x4eff53ff
+0x4eff63ff	.long	0x4eff63ff
+0x4eff73ff	.long	0x4eff73ff
+0x4eff83ff	.long	0x4eff83ff
+0x4eff93ff	.long	0x4eff93ff
+0x4effa3ff	.long	0x4effa3ff
+0x4effb3ff	.long	0x4effb3ff
+0x4effc3ff	.long	0x4effc3ff
+0x4effd3ff	.long	0x4effd3ff
+0x4effe3ff	pmull2	v31.1q, v31.2d, v31.2d
+0x4efff3ff	.long	0x4efff3ff
+0x6e3f03ff	uaddl2	v31.8h, v31.16b, v31.16b
+0x6e3f13ff	uaddw2	v31.8h, v31.8h, v31.16b
+0x6e3f23ff	usubl2	v31.8h, v31.16b, v31.16b
+0x6e3f33ff	usubw2	v31.8h, v31.8h, v31.16b
+0x6e3f43ff	raddhn2	v31.16b, v31.8h, v31.8h
+0x6e3f53ff	uabal2	v31.8h, v31.16b, v31.16b
+0x6e3f63ff	rsubhn2	v31.16b, v31.8h, v31.8h
+0x6e3f73ff	uabdl2	v31.8h, v31.16b, v31.16b
+0x6e3f83ff	umlal2	v31.8h, v31.16b, v31.16b
+0x6e3f93ff	.long	0x6e3f93ff
+0x6e3fa3ff	umlsl2	v31.8h, v31.16b, v31.16b
+0x6e3fb3ff	.long	0x6e3fb3ff
+0x6e3fc3ff	umull2	v31.8h, v31.16b, v31.16b
+0x6e3fd3ff	.long	0x6e3fd3ff
+0x6e3fe3ff	.long	0x6e3fe3ff
+0x6e3ff3ff	.long	0x6e3ff3ff
+0x6e7f03ff	uaddl2	v31.4s, v31.8h, v31.8h
+0x6e7f13ff	uaddw2	v31.4s, v31.4s, v31.8h
+0x6e7f23ff	usubl2	v31.4s, v31.8h, v31.8h
+0x6e7f33ff	usubw2	v31.4s, v31.4s, v31.8h
+0x6e7f43ff	raddhn2	v31.8h, v31.4s, v31.4s
+0x6e7f53ff	uabal2	v31.4s, v31.8h, v31.8h
+0x6e7f63ff	rsubhn2	v31.8h, v31.4s, v31.4s
+0x6e7f73ff	uabdl2	v31.4s, v31.8h, v31.8h
+0x6e7f83ff	umlal2	v31.4s, v31.8h, v31.8h
+0x6e7f93ff	.long	0x6e7f93ff
+0x6e7fa3ff	umlsl2	v31.4s, v31.8h, v31.8h
+0x6e7fb3ff	.long	0x6e7fb3ff
+0x6e7fc3ff	umull2	v31.4s, v31.8h, v31.8h
+0x6e7fd3ff	.long	0x6e7fd3ff
+0x6e7fe3ff	.long	0x6e7fe3ff
+0x6e7ff3ff	.long	0x6e7ff3ff
+0x6ebf03ff	uaddl2	v31.2d, v31.4s, v31.4s
+0x6ebf13ff	uaddw2	v31.2d, v31.2d, v31.4s
+0x6ebf23ff	usubl2	v31.2d, v31.4s, v31.4s
+0x6ebf33ff	usubw2	v31.2d, v31.2d, v31.4s
+0x6ebf43ff	raddhn2	v31.4s, v31.2d, v31.2d
+0x6ebf53ff	uabal2	v31.2d, v31.4s, v31.4s
+0x6ebf63ff	rsubhn2	v31.4s, v31.2d, v31.2d
+0x6ebf73ff	uabdl2	v31.2d, v31.4s, v31.4s
+0x6ebf83ff	umlal2	v31.2d, v31.4s, v31.4s
+0x6ebf93ff	.long	0x6ebf93ff
+0x6ebfa3ff	umlsl2	v31.2d, v31.4s, v31.4s
+0x6ebfb3ff	.long	0x6ebfb3ff
+0x6ebfc3ff	umull2	v31.2d, v31.4s, v31.4s
+0x6ebfd3ff	.long	0x6ebfd3ff
+0x6ebfe3ff	.long	0x6ebfe3ff
+0x6ebff3ff	.long	0x6ebff3ff
+0x6eff03ff	.long	0x6eff03ff
+0x6eff13ff	.long	0x6eff13ff
+0x6eff23ff	.long	0x6eff23ff
+0x6eff33ff	.long	0x6eff33ff
+0x6eff43ff	.long	0x6eff43ff
+0x6eff53ff	.long	0x6eff53ff
+0x6eff63ff	.long	0x6eff63ff
+0x6eff73ff	.long	0x6eff73ff
+0x6eff83ff	.long	0x6eff83ff
+0x6eff93ff	.long	0x6eff93ff
+0x6effa3ff	.long	0x6effa3ff
+0x6effb3ff	.long	0x6effb3ff
+0x6effc3ff	.long	0x6effc3ff
+0x6effd3ff	.long	0x6effd3ff
+0x6effe3ff	.long	0x6effe3ff
+0x6efff3ff	.long	0x6efff3ff

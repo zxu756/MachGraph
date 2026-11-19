@@ -2303,6 +2303,119 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             ) as repo_fh:
                 self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_table_lookup.tsv must match reproducible generation")
 
+    def test_stage12a_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage12a_check", "encoding-fuzz.py")
+
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x4EA3C044),
+            "AdvSIMD vector three-register different",
+        )
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x0F801023),
+            "AdvSIMD vector indexed element",
+        )
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x5FA79212),
+            "AdvSIMD scalar indexed element",
+        )
+
+        self.assertIn("advsimd_three_different", enc_table.ENCODING_GROUPS)
+        td_words = enc_table.ENCODING_GROUPS["advsimd_three_different"].generate_words()
+        self.assertEqual(len(td_words), 512)
+        self.assertLessEqual(len(td_words), 4096)
+        self.assertEqual(len(set(td_words)), 512, "duplicate words in advsimd_three_different")
+        for w in td_words:
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD vector three-register different",
+            )
+
+        self.assertIn("advsimd_vector_by_element", enc_table.ENCODING_GROUPS)
+        vbe_words = enc_table.ENCODING_GROUPS["advsimd_vector_by_element"].generate_words()
+        self.assertEqual(len(vbe_words), 4096)
+        self.assertLessEqual(len(vbe_words), 4096)
+        self.assertEqual(len(set(vbe_words)), 4096, "duplicate words in advsimd_vector_by_element")
+        for w in vbe_words:
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD vector indexed element",
+            )
+
+        self.assertIn("advsimd_scalar_by_element", enc_table.ENCODING_GROUPS)
+        sbe_words = enc_table.ENCODING_GROUPS["advsimd_scalar_by_element"].generate_words()
+        self.assertEqual(len(sbe_words), 2048)
+        self.assertLessEqual(len(sbe_words), 4096)
+        self.assertEqual(len(set(sbe_words)), 2048, "duplicate words in advsimd_scalar_by_element")
+        for w in sbe_words:
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD scalar indexed element",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                [
+                    "generate",
+                    "advsimd_three_different",
+                    "advsimd_vector_by_element",
+                    "advsimd_scalar_by_element",
+                    "--out-dir",
+                    tmp,
+                ],
+            )
+            self.assertEqual(rc, 0, f"generate stage12a groups failed: {stdout_txt}\n{stderr_txt}")
+            td_comments, td_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_three_different.tsv"))
+            self.assertEqual(len(td_rows), 512)
+            self.assertTrue(any("encoding-table.py generate advsimd_three_different" in c for c in td_comments))
+            valid_td = [(w, m, ops) for w, m, ops in td_rows if m != ".long"]
+            self.assertEqual(len(valid_td), 296)
+            td_pairs = {(m, ops) for _, m, ops in valid_td}
+            self.assertIn(("saddl", "v1.8h, v2.8b, v3.8b"), td_pairs)
+            self.assertIn(("smull2", "v1.2d, v2.4s, v3.4s"), td_pairs)
+            self.assertIn(("pmull", "v1.1q, v2.1d, v3.1d"), td_pairs)
+            self.assertIn(("pmull2", "v31.1q, v31.2d, v31.2d"), td_pairs)
+            self.assertIn(("rsubhn2", "v31.4s, v31.2d, v31.2d"), td_pairs)
+            with open(os.path.join(tmp, "advsimd_three_different.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_three_different.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_three_different.tsv must match reproducible generation")
+
+            vbe_comments, vbe_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_vector_by_element.tsv"))
+            self.assertEqual(len(vbe_rows), 4096)
+            self.assertTrue(any("encoding-table.py generate advsimd_vector_by_element" in c for c in vbe_comments))
+            valid_vbe = [(w, m, ops) for w, m, ops in vbe_rows if m != ".long"]
+            self.assertEqual(len(valid_vbe), 1632)
+            vbe_pairs = {(m, ops) for _, m, ops in valid_vbe}
+            self.assertIn(("fmla", "v1.4h, v2.4h, v3.h[0]"), vbe_pairs)
+            self.assertIn(("fmul", "v31.4s, v31.4s, v31.s[3]"), vbe_pairs)
+            self.assertIn(("fmulx", "v31.2d, v31.2d, v31.d[1]"), vbe_pairs)
+            self.assertIn(("mul", "v31.8h, v31.8h, v15.h[7]"), vbe_pairs)
+            self.assertIn(("udot", "v31.4s, v31.16b, v31.4b[3]"), vbe_pairs)
+            self.assertIn(("fmlal2", "v31.2s, v31.2h, v15.h[7]"), vbe_pairs)
+            self.assertIn(("fcmla", "v31.8h, v31.8h, v31.h[3], #270"), vbe_pairs)
+            with open(os.path.join(tmp, "advsimd_vector_by_element.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_vector_by_element.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_vector_by_element.tsv must match reproducible generation")
+
+            sbe_comments, sbe_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_by_element.tsv"))
+            self.assertEqual(len(sbe_rows), 2048)
+            self.assertTrue(any("encoding-table.py generate advsimd_scalar_by_element" in c for c in sbe_comments))
+            valid_sbe = [(w, m, ops) for w, m, ops in sbe_rows if m != ".long"]
+            self.assertEqual(len(valid_sbe), 384)
+            sbe_pairs = {(m, ops) for _, m, ops in valid_sbe}
+            self.assertIn(("fmla", "h1, h2, v3.h[0]"), sbe_pairs)
+            self.assertIn(("fmul", "s31, s31, v31.s[3]"), sbe_pairs)
+            self.assertIn(("fmulx", "d31, d31, v31.d[1]"), sbe_pairs)
+            self.assertIn(("sqdmlal", "d31, s31, v31.s[3]"), sbe_pairs)
+            self.assertIn(("sqrdmlsh", "h31, h31, v15.h[7]"), sbe_pairs)
+            with open(os.path.join(tmp, "advsimd_scalar_by_element.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_scalar_by_element.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_scalar_by_element.tsv must match reproducible generation")
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 
