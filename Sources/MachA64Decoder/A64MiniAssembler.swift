@@ -464,6 +464,49 @@ public struct A64MiniAssembler: Sendable {
         return UInt64(bitPattern: signed)
     }
 
+    private static func parseDotRelativeByteOffset(_ token: String) -> Int64? {
+        let s = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s == "." {
+            return 0
+        }
+        let signAndBody: (isNeg: Bool, body: String)
+        if s.hasPrefix(".+-") {
+            signAndBody = (true, String(s.dropFirst(3)))
+        } else if s.hasPrefix(".+") {
+            signAndBody = (false, String(s.dropFirst(2)))
+        } else if s.hasPrefix(".-") {
+            signAndBody = (true, String(s.dropFirst(2)))
+        } else {
+            return nil
+        }
+
+        let clean = signAndBody.body.replacingOccurrences(of: "_", with: "")
+        guard !clean.isEmpty,
+              let first = clean.first,
+              first.isASCII && first.isNumber
+        else {
+            return nil
+        }
+
+        let mag: UInt64?
+        if clean.lowercased().hasPrefix("0x") {
+            mag = UInt64(clean.dropFirst(2), radix: 16)
+        } else if clean.lowercased().hasPrefix("0b") {
+            mag = UInt64(clean.dropFirst(2), radix: 2)
+        } else {
+            mag = UInt64(clean, radix: 10)
+        }
+        guard let u = mag else { return nil }
+
+        if signAndBody.isNeg {
+            if u == (UInt64(1) << 63) { return Int64.min }
+            guard u < (UInt64(1) << 63) else { return nil }
+            return -Int64(u)
+        }
+        guard u <= UInt64(Int64.max) else { return nil }
+        return Int64(u)
+    }
+
     private static func parseDoubleImmediate(_ token: String) -> Double? {
         var s = token.trimmingCharacters(in: .whitespacesAndNewlines)
         if s.hasPrefix("#") {
@@ -506,17 +549,16 @@ public struct A64MiniAssembler: Sendable {
             return delta
         }
 
-        // PC-relative dot syntax: "." or ".+8" or ".-12"
-        if trimmed == "." {
-            return 0
-        }
-        if trimmed.hasPrefix(".+") || trimmed.hasPrefix(".-") {
-            let relStr = String(trimmed.dropFirst())
-            guard let delta = Self.parseSignedInt64(relStr) else {
+        // PC-relative dot syntax: "." or ".+N" or ".-N" or ".+-N"
+        if trimmed == "." || trimmed.hasPrefix(".+") || trimmed.hasPrefix(".-") {
+            guard let delta = Self.parseDotRelativeByteOffset(trimmed) else {
                 throw err(line, src, "Invalid relative offset '\(trimmed)'")
             }
             if requireWordAligned && (delta & 3) != 0 {
                 throw err(line, src, "Relative branch offset \(delta) must be a multiple of 4")
+            }
+            guard delta >= -maxAbsRange && delta < maxAbsRange else {
+                throw err(line, src, "Relative branch offset \(delta) out of range")
             }
             return delta
         }
@@ -1012,6 +1054,15 @@ public struct A64MiniAssembler: Sendable {
             let targetAddr: VirtualAddress
             if let lbl = labels[targetToken] {
                 targetAddr = lbl
+            } else if targetToken == "." || targetToken.hasPrefix(".+") || targetToken.hasPrefix(".-") {
+                guard let dotDelta = Self.parseDotRelativeByteOffset(targetToken) else {
+                    throw err(line, src, "Invalid ADRP relative offset '\(targetToken)'")
+                }
+                let maxAdrpByteDelta: Int64 = (1 << 33)
+                guard dotDelta > -maxAdrpByteDelta && dotDelta < maxAdrpByteDelta else {
+                    throw err(line, src, "ADRP relative offset '\(targetToken)' exceeds ±4GB page range")
+                }
+                targetAddr = pc.adding(dotDelta)
             } else if targetToken.hasPrefix("#") {
                 guard let signedOff = Self.parseSignedInt64(targetToken) else {
                     throw err(line, src, "Invalid ADRP offset '\(targetToken)'")
