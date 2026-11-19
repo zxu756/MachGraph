@@ -1172,6 +1172,61 @@ def _generate_advsimd_scalar_by_element_words() -> List[int]:
     return words
 
 
+def _generate_advsimd_across_lanes_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.22 Advanced SIMD across lanes:
+    0|Q(1)|U(1)|01110|size(2)|11000|opcode(5)|10|Rn(5)|Rd(5), i.e. (word & 0x9f3e0c00) == 0x0e300800.
+    Enumerates all 2 x 2 x 4 x 32 x 2 = 1,024 combinations of Q=0..1, U=0..1, size=0..3, opcode=0..31
+    across (Rd, Rn) in {(1, 2), (31, 31)} (covering SADDLV/UADDLV, SMAXV/UMAXV, SMINV/UMINV, ADDV,
+    FP16 U=0 FMAXNMV/FMAXV/FMINNMV/FMINV .4h/.8h, FP32 U=1,Q=1 FMAXNMV/FMAXV/FMINNMV/FMINV .4s, and .long space).
+    """
+    words: List[int] = []
+    for rd, rn in ((1, 2), (31, 31)):
+        for q_bit in (0, 1):
+            for u_bit in (0, 1):
+                for size in range(4):
+                    for opcode in range(32):
+                        word = (
+                            (q_bit << 30)
+                            | (u_bit << 29)
+                            | (0b01110 << 24)
+                            | (size << 22)
+                            | (0b11000 << 17)
+                            | (opcode << 12)
+                            | (0b10 << 10)
+                            | (rn << 5)
+                            | rd
+                        )
+                        words.append(word)
+    return words
+
+
+def _generate_advsimd_scalar_pairwise_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.12 Advanced SIMD scalar pairwise:
+    0|1|U(1)|11110|size(2)|11000|opcode(5)|10|Rn(5)|Rd(5), i.e. (word & 0xdf3e0c00) == 0x5e300800.
+    Enumerates all 2 x 4 x 32 x 2 = 512 combinations of U=0..1, size=0..3, opcode=0..31
+    across (Rd, Rn) in {(1, 2), (31, 31)} (covering ADDP d, v.2d, FP16 U=0 FADDP/FMAXP/FMINP/FMAXNMP/FMINNMP
+    h, v.2h, FP32/FP64 U=1 FADDP/FMAXP/FMINP/FMAXNMP/FMINNMP s, v.2s / d, v.2d, and .long space).
+    """
+    words: List[int] = []
+    for rd, rn in ((1, 2), (31, 31)):
+        for u_bit in (0, 1):
+            for size in range(4):
+                for opcode in range(32):
+                    word = (
+                        (0b01 << 30)
+                        | (u_bit << 29)
+                        | (0b11110 << 24)
+                        | (size << 22)
+                        | (0b11000 << 17)
+                        | (opcode << 12)
+                        | (0b10 << 10)
+                        | (rn << 5)
+                        | rd
+                    )
+                    words.append(word)
+    return words
+
+
 ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
     "move_wide_imm": EncodingGroupSpec(
         name="move_wide_imm",
@@ -1575,6 +1630,28 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "(covering 4-bit Rm v0..v15 for .h vs 5-bit Rm v0..v31 via M=Rm<4> for .s/.d, and .long space).",
         ),
         generate_words=_generate_advsimd_scalar_by_element_words,
+    ),
+    "advsimd_across_lanes": EncodingGroupSpec(
+        name="advsimd_across_lanes",
+        title="Advanced SIMD across lanes — SADDLV/UADDLV, SMAXV/UMAXV, SMINV/UMINV, ADDV, FP16/FP32 FMAXNMV/FMAXV/FMINNMV/FMINV, and .long space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.22 Advanced SIMD across lanes: (word & 0x9f3e0c00) == 0x0e300800.",
+            "Enumerates all 2 x 2 x 4 x 32 x 2 = 1,024 combinations of Q=0..1, U=0..1, size=0..3, opcode=0..31",
+            "across (Rd, Rn) in {(1, 2), (31, 31)} (covering integer across-lanes, FP16 U=0 .4h/.8h,",
+            "FP32 U=1,Q=1 .4s, and .long unallocated space).",
+        ),
+        generate_words=_generate_advsimd_across_lanes_words,
+    ),
+    "advsimd_scalar_pairwise": EncodingGroupSpec(
+        name="advsimd_scalar_pairwise",
+        title="Advanced SIMD scalar pairwise — ADDP (d, v.2d), FP16/FP32/FP64 FADDP/FMAXP/FMINP/FMAXNMP/FMINNMP, and .long space",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.12 Advanced SIMD scalar pairwise: (word & 0xdf3e0c00) == 0x5e300800.",
+            "Enumerates all 2 x 4 x 32 x 2 = 512 combinations of U=0..1, size=0..3, opcode=0..31",
+            "across (Rd, Rn) in {(1, 2), (31, 31)} (covering ADDP d, v.2d, FP16 U=0 h, v.2h,",
+            "FP32/FP64 U=1 s, v.2s / d, v.2d, and .long unallocated space).",
+        ),
+        generate_words=_generate_advsimd_scalar_pairwise_words,
     ),
 }
 

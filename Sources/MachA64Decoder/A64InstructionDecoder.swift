@@ -3238,6 +3238,12 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDScalarTwoRegMisc(word: word, at: address)
         }
 
+        // 4b. AdvSIMD Scalar Pairwise (C4.1.95.12):
+        //     (word & 0xDF3E_0C00) == 0x5E30_0800
+        if (word & 0xDF3E_0C00) == 0x5E30_0800 {
+            return decodeAdvSIMDScalarPairwise(word: word, at: address)
+        }
+
         // 5. AdvSIMD Scalar Shift by Immediate (C4.1.95.8 / C4.1.95.9):
         //    (word & 0xDF80_0400) == 0x5F00_0400
         if (word & 0xDF80_0400) == 0x5F00_0400 {
@@ -3565,7 +3571,6 @@ public struct A64InstructionDecoder: Sendable {
     private func decodeNEONVectorBlock(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
         let q = A64BitUtils.flag(word, 30)
         let u = A64BitUtils.flag(word, 29)
-        let size = A64BitUtils.extract(word, 23, 22)
         let rn = UInt8(A64BitUtils.extract(word, 9, 5))
         let rd = UInt8(A64BitUtils.extract(word, 4, 0))
 
@@ -3678,24 +3683,9 @@ public struct A64InstructionDecoder: Sendable {
             return decodeAdvSIMDVectorTwoRegMisc(word: word, at: address)
         }
 
-        // 5. AdvSIMD Across Lanes (ADDV): (word & 0xBF3F_FC00) == 0x0E31_B800
-        if (word & 0xBF3F_FC00) == 0x0E31_B800 {
-            let dstScalar: A64Register
-            let srcArr: String
-            switch (size, q) {
-            case (0b00, false): dstScalar = .b(rd); srcArr = "8b"
-            case (0b00, true):  dstScalar = .b(rd); srcArr = "16b"
-            case (0b01, false): dstScalar = .h(rd); srcArr = "4h"
-            case (0b01, true):  dstScalar = .h(rd); srcArr = "8h"
-            case (0b10, true):  dstScalar = .s(rd); srcArr = "4s"
-            default: return nil
-            }
-            let vn = A64Register.v(rn, arrangement: srcArr)
-            return A64DecodedInstruction(
-                address: address, rawWord: word, mnemonic: .addv,
-                operands: [.register(dstScalar), .register(vn)],
-                group: .simdAndFP, readsRegisters: [vn], writesRegisters: [dstScalar]
-            )
+        // 5. AdvSIMD Across Lanes (C4.1.95.22): (word & 0x9F3E_0C00) == 0x0E30_0800
+        if (word & 0x9F3E_0C00) == 0x0E30_0800 {
+            return decodeAdvSIMDAcrossLanes(word: word, at: address)
         }
 
         // 6. AdvSIMD Vector Extract (EXT, C4.1.95.12): (word & 0xBF20_8400) == 0x2E00_0000
@@ -5601,6 +5591,159 @@ public struct A64InstructionDecoder: Sendable {
             return emitScalarSatSameByElem(text: "sqrdmlah", accumulatesRd: true)
         case (0b1111, true):
             return emitScalarSatSameByElem(text: "sqrdmlsh", accumulatesRd: true)
+        default:
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDAcrossLanes(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let q = A64BitUtils.flag(word, 30)
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let opcode = A64BitUtils.extract(word, 16, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func emitAcross(
+            mnemonic: A64Mnemonic,
+            text: String?,
+            dstScalar: A64Register,
+            srcArr: String
+        ) -> A64DecodedInstruction {
+            let vn = A64Register.v(rn, arrangement: srcArr)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(dstScalar), .register(vn)],
+                group: .simdAndFP,
+                readsRegisters: [vn],
+                writesRegisters: [dstScalar]
+            )
+        }
+
+        switch opcode {
+        case 0b00011:
+            let dstScalar: A64Register
+            let srcArr: String
+            switch (size, q) {
+            case (0b00, false): dstScalar = .h(rd); srcArr = "8b"
+            case (0b00, true):  dstScalar = .h(rd); srcArr = "16b"
+            case (0b01, false): dstScalar = .s(rd); srcArr = "4h"
+            case (0b01, true):  dstScalar = .s(rd); srcArr = "8h"
+            case (0b10, true):  dstScalar = .d(rd); srcArr = "4s"
+            default: return nil
+            }
+            return emitAcross(mnemonic: .addv, text: u ? "uaddlv" : "saddlv", dstScalar: dstScalar, srcArr: srcArr)
+
+        case 0b01010, 0b11010, 0b11011:
+            if opcode == 0b11011 && u { return nil }
+            let dstScalar: A64Register
+            let srcArr: String
+            switch (size, q) {
+            case (0b00, false): dstScalar = .b(rd); srcArr = "8b"
+            case (0b00, true):  dstScalar = .b(rd); srcArr = "16b"
+            case (0b01, false): dstScalar = .h(rd); srcArr = "4h"
+            case (0b01, true):  dstScalar = .h(rd); srcArr = "8h"
+            case (0b10, true):  dstScalar = .s(rd); srcArr = "4s"
+            default: return nil
+            }
+            let text: String?
+            if opcode == 0b11011 {
+                text = nil
+            } else if opcode == 0b01010 {
+                text = u ? "umaxv" : "smaxv"
+            } else {
+                text = u ? "uminv" : "sminv"
+            }
+            return emitAcross(mnemonic: .addv, text: text, dstScalar: dstScalar, srcArr: srcArr)
+
+        case 0b01100, 0b01111:
+            guard size == 0b00 || size == 0b10 else { return nil }
+            let dstScalar: A64Register
+            let srcArr: String
+            if !u {
+                dstScalar = .h(rd)
+                srcArr = q ? "8h" : "4h"
+            } else {
+                guard q else { return nil }
+                dstScalar = .s(rd)
+                srcArr = "4s"
+            }
+            let isMin = (size == 0b10)
+            let isNM = (opcode == 0b01100)
+            let mnem: A64Mnemonic
+            let text: String
+            switch (isMin, isNM) {
+            case (false, true):  mnem = .fmaxnm; text = "fmaxnmv"
+            case (false, false): mnem = .fmax;   text = "fmaxv"
+            case (true, true):   mnem = .fminnm; text = "fminnmv"
+            case (true, false):  mnem = .fmin;   text = "fminv"
+            }
+            return emitAcross(mnemonic: mnem, text: text, dstScalar: dstScalar, srcArr: srcArr)
+
+        default:
+            return nil
+        }
+    }
+
+    private func decodeAdvSIMDScalarPairwise(word: UInt32, at address: VirtualAddress) -> A64DecodedInstruction? {
+        let u = A64BitUtils.flag(word, 29)
+        let size = A64BitUtils.extract(word, 23, 22)
+        let opcode = A64BitUtils.extract(word, 16, 12)
+        let rn = UInt8(A64BitUtils.extract(word, 9, 5))
+        let rd = UInt8(A64BitUtils.extract(word, 4, 0))
+
+        func emitPairwise(
+            mnemonic: A64Mnemonic,
+            text: String,
+            dstScalar: A64Register,
+            srcArr: String
+        ) -> A64DecodedInstruction {
+            let vn = A64Register.v(rn, arrangement: srcArr)
+            return A64DecodedInstruction(
+                address: address,
+                rawWord: word,
+                mnemonic: mnemonic,
+                mnemonicText: text,
+                operands: [.register(dstScalar), .register(vn)],
+                group: .simdAndFP,
+                readsRegisters: [vn],
+                writesRegisters: [dstScalar]
+            )
+        }
+
+        switch opcode {
+        case 0b11011:
+            guard !u && size == 0b11 else { return nil }
+            return emitPairwise(mnemonic: .addv, text: "addp", dstScalar: .d(rd), srcArr: "2d")
+
+        case 0b01100, 0b01101, 0b01111:
+            let szHi = (size >> 1) & 1
+            let szLo = size & 1
+            let dstScalar: A64Register
+            let srcArr: String
+            if !u {
+                guard szLo == 0 else { return nil }
+                dstScalar = .h(rd)
+                srcArr = "2h"
+            } else {
+                dstScalar = (szLo == 0) ? .s(rd) : .d(rd)
+                srcArr = (szLo == 0) ? "2s" : "2d"
+            }
+            let mnem: A64Mnemonic
+            let text: String
+            switch (szHi, opcode) {
+            case (0, 0b01100): mnem = .fmaxnm; text = "fmaxnmp"
+            case (0, 0b01101): mnem = .fadd;   text = "faddp"
+            case (0, 0b01111): mnem = .fmax;   text = "fmaxp"
+            case (1, 0b01100): mnem = .fminnm; text = "fminnmp"
+            case (1, 0b01111): mnem = .fmin;   text = "fminp"
+            default: return nil
+            }
+            return emitPairwise(mnemonic: mnem, text: text, dstScalar: dstScalar, srcArr: srcArr)
+
         default:
             return nil
         }

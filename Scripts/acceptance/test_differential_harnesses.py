@@ -2416,6 +2416,92 @@ class TestItem14EncodingTableHarness(unittest.TestCase):
             ) as repo_fh:
                 self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_scalar_by_element.tsv must match reproducible generation")
 
+    def test_stage12b_encoding_groups_registered_and_unique_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage12b_check", "encoding-fuzz.py")
+
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x6E30A864),
+            "AdvSIMD vector across lanes",
+        )
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x5EF1B800),
+            "AdvSIMD scalar pairwise",
+        )
+
+        self.assertIn("advsimd_across_lanes", enc_table.ENCODING_GROUPS)
+        al_words = enc_table.ENCODING_GROUPS["advsimd_across_lanes"].generate_words()
+        self.assertEqual(len(al_words), 1024)
+        self.assertLessEqual(len(al_words), 4096)
+        self.assertEqual(len(set(al_words)), 1024, "duplicate words in advsimd_across_lanes")
+        for w in al_words:
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD vector across lanes",
+            )
+
+        self.assertIn("advsimd_scalar_pairwise", enc_table.ENCODING_GROUPS)
+        sp_words = enc_table.ENCODING_GROUPS["advsimd_scalar_pairwise"].generate_words()
+        self.assertEqual(len(sp_words), 512)
+        self.assertLessEqual(len(sp_words), 4096)
+        self.assertEqual(len(set(sp_words)), 512, "duplicate words in advsimd_scalar_pairwise")
+        for w in sp_words:
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD scalar pairwise",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                [
+                    "generate",
+                    "advsimd_across_lanes",
+                    "advsimd_scalar_pairwise",
+                    "--out-dir",
+                    tmp,
+                ],
+            )
+            self.assertEqual(rc, 0, f"generate stage12b groups failed: {stdout_txt}\n{stderr_txt}")
+            al_comments, al_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_across_lanes.tsv"))
+            self.assertEqual(len(al_rows), 1024)
+            self.assertTrue(any("encoding-table.py generate advsimd_across_lanes" in c for c in al_comments))
+            valid_al = [(w, m, ops) for w, m, ops in al_rows if m != ".long"]
+            self.assertEqual(len(valid_al), 94)
+            al_pairs = {(m, ops) for _, m, ops in valid_al}
+            self.assertIn(("saddlv", "h1, v2.8b"), al_pairs)
+            self.assertIn(("uaddlv", "d1, v2.4s"), al_pairs)
+            self.assertIn(("umaxv", "b1, v2.16b"), al_pairs)
+            self.assertIn(("addv", "s1, v2.4s"), al_pairs)
+            self.assertIn(("fmaxnmv", "h1, v2.4h"), al_pairs)
+            self.assertIn(("fminv", "s1, v2.4s"), al_pairs)
+            self.assertIn(("uminv", "s31, v31.4s"), al_pairs)
+            self.assertIn(("fmaxv", "s31, v31.4s"), al_pairs)
+            with open(os.path.join(tmp, "advsimd_across_lanes.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_across_lanes.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_across_lanes.tsv must match reproducible generation")
+
+            sp_comments, sp_rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_scalar_pairwise.tsv"))
+            self.assertEqual(len(sp_rows), 512)
+            self.assertTrue(any("encoding-table.py generate advsimd_scalar_pairwise" in c for c in sp_comments))
+            valid_sp = [(w, m, ops) for w, m, ops in sp_rows if m != ".long"]
+            self.assertEqual(len(valid_sp), 32)
+            sp_pairs = {(m, ops) for _, m, ops in valid_sp}
+            self.assertIn(("addp", "d1, v2.2d"), sp_pairs)
+            self.assertIn(("addp", "d31, v31.2d"), sp_pairs)
+            self.assertIn(("faddp", "h1, v2.2h"), sp_pairs)
+            self.assertIn(("faddp", "s1, v2.2s"), sp_pairs)
+            self.assertIn(("faddp", "d31, v31.2d"), sp_pairs)
+            self.assertIn(("fmaxnmp", "h1, v2.2h"), sp_pairs)
+            self.assertIn(("fmaxp", "s31, v31.2s"), sp_pairs)
+            self.assertIn(("fminnmp", "d1, v2.2d"), sp_pairs)
+            self.assertIn(("fminp", "d31, v31.2d"), sp_pairs)
+            with open(os.path.join(tmp, "advsimd_scalar_pairwise.tsv"), "rb") as gen_fh, open(
+                os.path.join(REPO_ROOT, "Fixtures", "a64", "advsimd_scalar_pairwise.tsv"), "rb"
+            ) as repo_fh:
+                self.assertEqual(gen_fh.read(), repo_fh.read(), "advsimd_scalar_pairwise.tsv must match reproducible generation")
+
     def test_encoding_table_check_exit_codes_0_1_2_and_mismatch_listing(self):
         enc_table = self._mod()
 

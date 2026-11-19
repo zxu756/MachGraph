@@ -3186,4 +3186,135 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(rowCount == 2048)
         #expect(mismatches.isEmpty, "Group 26 advsimd_scalar_by_element mismatches: \(mismatches.joined(separator: "; "))")
     }
+
+    @Test("Stage 12b Group 20: AdvSIMD vector across lanes (SADDLV/UADDLV, SMAXV/UMAXV, SMINV/UMINV, ADDV, FP16/FP32 FMAXNMV/FMAXV/FMINNMV/FMINV) matches all 1,024 rows of advsimd_across_lanes.tsv")
+    func advsimdAcrossLanesDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x6E30_A864, "umaxv b4, v3.16b", [.v(3, arrangement: "16b")], [.b(4)]), // /bin/csh baseline example
+            (0x2E30_3B65, "uaddlv h5, v27.8b", [.v(27, arrangement: "8b")], [.h(5)]), // seed 20261117 fuzz example
+            (0x6E30_AA45, "umaxv b5, v18.16b", [.v(18, arrangement: "16b")], [.b(5)]), // seed 17 fuzz example
+            (0x2E71_A842, "uminv h2, v2.4h", [.v(2, arrangement: "4h")], [.h(2)]), // /bin/zsh corpus example
+            (0x4EB0_3841, "saddlv d1, v2.4s", [.v(2, arrangement: "4s")], [.d(1)]), // widening .4s -> d
+            (0x0E30_C841, "fmaxnmv h1, v2.4h", [.v(2, arrangement: "4h")], [.h(1)]), // FP16 U=0, Q=0, size=00
+            (0x4EB0_F841, "fminv h1, v2.8h", [.v(2, arrangement: "8h")], [.h(1)]), // FP16 U=0, Q=1, size=10
+            (0x6E30_FBF1, "fmaxv s17, v31.4s", [.v(31, arrangement: "4s")], [.s(17)]), // FP32 U=1, Q=1, size=00
+            (0x6EB0_CBFF, "fminnmv s31, v31.4s", [.v(31, arrangement: "4s")], [.s(31)]), // FP32 U=1, Q=1, size=10, (31,31)
+            (0x4EB1_BBFF, "addv s31, v31.4s", [.v(31, arrangement: "4s")], [.s(31)]), // ADDV preserved
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+        #expect(decoder.decode(word: 0x4EB1_BBFF, at: pc).mnemonic == .addv)
+
+        // Unallocated counterexamples (Q=0 .2s integer, U=1 ADDV, U=1 Q=0 FP32, U=0 size=01 FP16, size=11 integer/FP) must remain .inst:
+        for badWord: UInt32 in [0x0EB1_B841, 0x2E31_B841, 0x0EB0_A841, 0x2E30_F841, 0x4E70_C841, 0x6EF0_F841, 0x4EF0_3841] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_across_lanes"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 1024)
+        #expect(mismatches.isEmpty, "Group 20 advsimd_across_lanes mismatches: \(mismatches.joined(separator: "; "))")
+    }
+
+    @Test("Stage 12b Group 24: AdvSIMD scalar pairwise (ADDP d, v.2d and FP16/FP32/FP64 FADDP/FMAXP/FMINP/FMAXNMP/FMINNMP) matches all 512 rows of advsimd_scalar_pairwise.tsv")
+    func advsimdScalarPairwiseDecodingAndTableParity() throws {
+        let pc = VirtualAddress(0x1_0000_1000)
+
+        let sampleCases: [(UInt32, String, [A64Register], [A64Register])] = [
+            (0x5EF1_B800, "addp d0, v0.2d", [.v(0, arrangement: "2d")], [.d(0)]), // /usr/bin/afscexpand baseline example
+            (0x7E70_D842, "faddp d2, v2.2d", [.v(2, arrangement: "2d")], [.d(2)]), // /usr/bin/assetutil corpus example
+            (0x7E30_D820, "faddp s0, v1.2s", [.v(1, arrangement: "2s")], [.s(0)]), // FP32 FADDP example
+            (0x5E30_D841, "faddp h1, v2.2h", [.v(2, arrangement: "2h")], [.h(1)]), // FP16 U=0, size=00 FADDP
+            (0x5E30_C841, "fmaxnmp h1, v2.2h", [.v(2, arrangement: "2h")], [.h(1)]), // FP16 FMAXNMP
+            (0x5EB0_F841, "fminp h1, v2.2h", [.v(2, arrangement: "2h")], [.h(1)]), // FP16 FMINP
+            (0x7E30_FBFF, "fmaxp s31, v31.2s", [.v(31, arrangement: "2s")], [.s(31)]), // FP32 FMAXP (31,31)
+            (0x7EB0_C841, "fminnmp s1, v2.2s", [.v(2, arrangement: "2s")], [.s(1)]), // FP32 FMINNMP
+            (0x7E70_C841, "fmaxnmp d1, v2.2d", [.v(2, arrangement: "2d")], [.d(1)]), // FP64 FMAXNMP
+            (0x7EF0_FBFF, "fminp d31, v31.2d", [.v(31, arrangement: "2d")], [.d(31)]), // FP64 FMINP (31,31)
+        ]
+        for (word, expected, expectedReads, expectedWrites) in sampleCases {
+            let decoded = decoder.decode(word: word, at: pc)
+            #expect(decoded.mnemonic != .unknown, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.formattedDisassembly == expected, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.readsRegisters == expectedReads, "word=0x\(String(word, radix: 16))")
+            #expect(decoded.writesRegisters == expectedWrites, "word=0x\(String(word, radix: 16))")
+        }
+
+        // Unallocated counterexamples (size!=11 or U=1 ADDP, U=0 size=01 FP16, szHi=1 opcode=01101, integer across-lanes opcodes) must remain .inst:
+        for badWord: UInt32 in [0x5EB1_B841, 0x7EF1_B841, 0x5E70_D841, 0x5EB0_D841, 0x7EB0_D841, 0x7EF0_D841, 0x5E30_A841] {
+            let decoded = decoder.decode(word: badWord, at: pc)
+            #expect(decoded.mnemonic == .unknown, "word=0x\(String(badWord, radix: 16))")
+            #expect(decoded.mnemonicText == ".inst", "word=0x\(String(badWord, radix: 16))")
+        }
+
+        let rawText = try String(contentsOf: RepoFixtures.a64TableURL("advsimd_scalar_pairwise"), encoding: .utf8)
+        var rowCount = 0
+        var mismatches: [String] = []
+        for line in rawText.split(whereSeparator: \.isNewline) {
+            if line.hasPrefix("#") { continue }
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            let parts = line.split(separator: "\t", maxSplits: 2)
+            let wordHex = parts[0].hasPrefix("0x") ? parts[0].dropFirst(2) : parts[0][...]
+            let word = try #require(UInt32(wordHex, radix: 16))
+            let expectedMnem = String(parts[1])
+            let expectedOps = parts.count > 2 ? String(parts[2]).split(separator: ";", maxSplits: 1)[0].trimmingCharacters(in: .whitespaces) : ""
+            let decoded = decoder.decode(word: word, at: pc)
+            rowCount += 1
+
+            if expectedMnem == ".long" {
+                if decoded.mnemonic != .unknown || decoded.mnemonicText != ".inst" {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected .inst got '%@'", word, decoded.formattedDisassembly))
+                    }
+                }
+            } else {
+                let expectedText = expectedOps.isEmpty ? expectedMnem : "\(expectedMnem) \(expectedOps)"
+                if decoded.formattedDisassembly != expectedText || decoded.mnemonic == .unknown {
+                    if mismatches.count < 12 {
+                        mismatches.append(String(format: "0x%08x expected '%@' got '%@'", word, expectedText, decoded.formattedDisassembly))
+                    }
+                }
+            }
+        }
+        #expect(rowCount == 512)
+        #expect(mismatches.isEmpty, "Group 24 advsimd_scalar_pairwise mismatches: \(mismatches.joined(separator: "; "))")
+    }
 }
