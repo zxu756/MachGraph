@@ -771,6 +771,18 @@ public struct A64MiniAssembler: Sendable {
             }
             return base | UInt32(rd.index)
 
+        case "pacia", "pacda":
+            guard operands.count == 2 else { throw err(line, src, "\(mnemonic) requires <Xd>, <Xn|sp>") }
+            let rd = try requireReg(operands[0], line: line, src: src)
+            let rn = try requireReg(operands[1], line: line, src: src)
+            guard (rd.bank == .gp64 || (rd.bank == .zeroRegister && rd.bitWidth == 64)),
+                  (rn.bank == .gp64 || (rn.bank == .stackPointer && rn.bitWidth == 64))
+            else {
+                throw err(line, src, "\(mnemonic) requires 64-bit <Xd|xzr>, <Xn|sp>")
+            }
+            let base: UInt32 = (mnemonic == "pacda") ? 0xDAC1_0800 : 0xDAC1_0000
+            return base | (UInt32(rn.index) << 5) | UInt32(rd.index)
+
         // Exception Generation & Permanently Undefined
         case "udf":
             guard operands.count == 1,
@@ -924,9 +936,9 @@ public struct A64MiniAssembler: Sendable {
 
         // Scalar Floating-Point & Common Vector Ops
         case "fmov", "fadd", "fsub", "fmul", "fdiv", "fnmul", "fmadd", "fmsub",
-             "fabs", "fneg", "fsqrt", "fmin", "fmax", "fcmp", "fcmpe", "fccmp", "fcsel",
+             "fabs", "fneg", "fsqrt", "frintp", "frintm", "fmin", "fmax", "fcmp", "fcmpe", "fccmp", "fcsel",
              "fcvt", "scvtf", "ucvtf", "fcvtzs", "fcvtzu",
-             "movi", "dup", "addv", "cmeq":
+             "movi", "dup", "umov", "ins", "addv", "cmeq":
             return try encodeFloatingPointOrSIMD(mnemonic: mnemonic, operands: operands, line: line, src: src)
 
         default:
@@ -1031,6 +1043,44 @@ public struct A64MiniAssembler: Sendable {
         guard operands.count == 2 || operands.count == 3 else {
             throw err(line, src, "MOV expects <Rd>, <Rm|#imm>")
         }
+
+        // Vector byte-wise MOV <Vd>.8b|<Vd>.16b, <Vn>.8b|<Vn>.16b (preferred alias of ORR <Vd>.T, <Vn>.T, <Vn>.T)
+        if operands.count == 2,
+           let vd = A64RegisterParser.parse(operands[0]),
+           vd.bank == .simdVector,
+           (vd.vectorArrangement == "8b" || vd.vectorArrangement == "16b"),
+           let vn = A64RegisterParser.parse(operands[1]),
+           vn.bank == .simdVector,
+           vd.vectorArrangement == vn.vectorArrangement {
+            return try encodeLogicalOrVector(
+                mnemonic: "orr",
+                operands: [operands[0], operands[1], operands[1]],
+                line: line,
+                src: src
+            )
+        }
+
+        // Element-to-GP MOV <Wd>, <Vn>.s[i] / MOV <Xd>, <Vn>.d[i] (preferred alias of UMOV)
+        if operands.count == 2, Self.parseVectorElementOperand(operands[1]) != nil {
+            return try encodeElementToGP(
+                mnemonic: "mov",
+                operands: operands,
+                allowByteAndHalf: false,
+                line: line,
+                src: src
+            )
+        }
+
+        // GP-to-Element MOV <Vd>.b|h|s[i], <Wn> / MOV <Vd>.d[i], <Xn> (preferred alias of INS)
+        if operands.count == 2, Self.parseVectorElementOperand(operands[0]) != nil {
+            return try encodeGPToElement(
+                mnemonic: "mov",
+                operands: operands,
+                line: line,
+                src: src
+            )
+        }
+
         let rd = try requireReg(operands[0], line: line, src: src)
         guard rd.isGeneralPurpose else {
             throw err(line, src, "MOV requires general-purpose destination register")
@@ -2073,7 +2123,7 @@ public struct A64MiniAssembler: Sendable {
             let o0: UInt32 = (mnemonic == "fmsub") ? (1 << 15) : 0
             return 0x1F00_0000 | (ft << 22) | (UInt32(rm.index) << 16) | o0 | (UInt32(ra.index) << 10) | (UInt32(rn.index) << 5) | UInt32(rd.index)
 
-        case "fabs", "fneg", "fsqrt", "fcvt":
+        case "fabs", "fneg", "fsqrt", "fcvt", "frintp", "frintm":
             guard operands.count == 2 else { throw err(line, src, "\(mnemonic) expects 2 operands") }
             let rd = try requireReg(operands[0], line: line, src: src)
             let rn = try requireReg(operands[1], line: line, src: src)
@@ -2085,9 +2135,11 @@ public struct A64MiniAssembler: Sendable {
             let ftSrc = try ftypeBits(for: rn, line: line, src: src)
             let opc: UInt32
             switch mnemonic {
-            case "fabs":  opc = 0b000001
-            case "fneg":  opc = 0b000010
-            case "fsqrt": opc = 0b000011
+            case "fabs":   opc = 0b000001
+            case "fneg":   opc = 0b000010
+            case "fsqrt":  opc = 0b000011
+            case "frintp": opc = 0b001001
+            case "frintm": opc = 0b001010
             default: // fcvt
                 switch rd.bank {
                 case .simdSingle: opc = 0b000100
@@ -2167,11 +2219,54 @@ public struct A64MiniAssembler: Sendable {
             return sf | 0x1E38_0000 | (ft << 22) | (opc << 16) | (UInt32(fpRn.index) << 5) | UInt32(gpRd.index)
 
         case "movi":
-            guard operands.count == 2,
+            guard (operands.count == 2 || operands.count == 3),
                   let dst = A64RegisterParser.parse(operands[0]),
                   let val = Self.parseSignedOrUnsigned64(operands[1])
             else {
-                throw err(line, src, "MOVI expects <Vd.arr|Dd>, #<imm>")
+                throw err(line, src, "MOVI expects <Vd.arr|Dd>, #<imm>{, lsl #<shift>}")
+            }
+            if operands.count == 3 {
+                guard dst.bank == .simdVector,
+                      let arr = dst.vectorArrangement,
+                      (arr == "2s" || arr == "4s")
+                else {
+                    if dst.isSIMD {
+                        throw MachGraphError.assemblerUnsupported(mnemonic: mnemonic, form: Self.normalizeStatementForm(src))
+                    }
+                    throw err(line, src, "Shifted MOVI expects <Vd.2s|Vd.4s>, #<imm8>, lsl #<0|8|16|24>")
+                }
+                let shiftParts = operands[2]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased()
+                    .split(whereSeparator: { $0 == " " || $0 == "\t" })
+                guard shiftParts.count == 2 else {
+                    throw err(line, src, "Invalid shift clause '\(operands[2])' in MOVI")
+                }
+                let shiftKind = String(shiftParts[0])
+                let shiftArg = String(shiftParts[1])
+                guard shiftArg.hasPrefix("#"), let shiftAmt = Self.parseSignedInt64(shiftArg) else {
+                    throw err(line, src, "Invalid shift amount '\(operands[2])' in MOVI")
+                }
+                if shiftKind == "msl" {
+                    if shiftAmt == 8 || shiftAmt == 16 {
+                        throw MachGraphError.assemblerUnsupported(mnemonic: mnemonic, form: Self.normalizeStatementForm(src))
+                    }
+                    throw err(line, src, "MOVI MSL shift amount must be #8 or #16")
+                }
+                guard shiftKind == "lsl" else {
+                    throw err(line, src, "Unsupported shift modifier '\(shiftKind)' in MOVI")
+                }
+                guard shiftAmt == 0 || shiftAmt == 8 || shiftAmt == 16 || shiftAmt == 24 else {
+                    throw err(line, src, "MOVI 32-bit LSL shift amount must be #0, #8, #16, or #24")
+                }
+                guard val <= 0xFF else {
+                    throw err(line, src, "MOVI byte immediate must be 0..255")
+                }
+                let qBit: UInt32 = (arr == "4s") ? (1 << 30) : 0
+                let cmode = UInt32((shiftAmt / 8) << 1)
+                let abc = UInt32((val >> 5) & 0x7) << 16
+                let defgh = UInt32(val & 0x1F) << 5
+                return qBit | 0x0F00_0400 | abc | (cmode << 12) | defgh | UInt32(dst.index)
             }
             if dst.bank == .simdDouble || (dst.bank == .simdVector && dst.vectorArrangement == "2d") {
                 guard let imm8 = A64BitUtils.compressSIMDByteMaskImmediate(val) else {
@@ -2199,8 +2294,40 @@ public struct A64MiniAssembler: Sendable {
             return qBit | 0x0F00_0400 | abc | (cmode << 12) | defgh | UInt32(dst.index)
 
         case "dup":
-            guard operands.count == 2 else { throw err(line, src, "DUP expects <Vd.arr>, <Rn>") }
+            guard operands.count == 2 else { throw err(line, src, "DUP expects <Vd.arr>, <Rn|Vn.Ts[index]>") }
             let vd = try requireReg(operands[0], line: line, src: src)
+            if let elem = Self.parseVectorElementOperand(operands[1]) {
+                guard vd.bank == .simdVector else {
+                    if vd.isSIMD {
+                        throw MachGraphError.assemblerUnsupported(mnemonic: mnemonic, form: Self.normalizeStatementForm(src))
+                    }
+                    throw err(line, src, "DUP element expects vector destination <Vd.arr>")
+                }
+                let qBit: UInt32
+                let expectedElem: String
+                switch vd.vectorArrangement {
+                case "8b":  qBit = 0;         expectedElem = "b"
+                case "16b": qBit = (1 << 30); expectedElem = "b"
+                case "4h":  qBit = 0;         expectedElem = "h"
+                case "8h":  qBit = (1 << 30); expectedElem = "h"
+                case "2s":  qBit = 0;         expectedElem = "s"
+                case "4s":  qBit = (1 << 30); expectedElem = "s"
+                case "2d":  qBit = (1 << 30); expectedElem = "d"
+                default:
+                    throw MachGraphError.assemblerUnsupported(mnemonic: mnemonic, form: Self.normalizeStatementForm(src))
+                }
+                guard elem.elementType == expectedElem else {
+                    throw err(line, src, "DUP \(vd.canonicalName) requires .\(expectedElem)[index] element source")
+                }
+                let (imm5, _) = try encodeAdvSIMDElementImm5(
+                    elementType: elem.elementType,
+                    lane: elem.lane,
+                    mnemonic: mnemonic,
+                    line: line,
+                    src: src
+                )
+                return qBit | 0x0E00_0400 | (imm5 << 16) | (UInt32(elem.regIndex) << 5) | UInt32(vd.index)
+            }
             let rn = try requireReg(operands[1], line: line, src: src)
             guard vd.bank == .simdVector, rn.isGeneralPurpose && !rn.isStackPointer else {
                 throw err(line, src, "DUP inline assembler expects <Vd.arr>, <Wn|Xn>")
@@ -2223,6 +2350,23 @@ public struct A64MiniAssembler: Sendable {
                 throw err(line, src, "DUP \(vd.canonicalName) requires \(expectedGPBits)-bit general register")
             }
             return qBit | 0x0E00_0C00 | (imm5 << 16) | (UInt32(rn.index) << 5) | UInt32(vd.index)
+
+        case "umov":
+            return try encodeElementToGP(
+                mnemonic: mnemonic,
+                operands: operands,
+                allowByteAndHalf: true,
+                line: line,
+                src: src
+            )
+
+        case "ins":
+            return try encodeGPToElement(
+                mnemonic: mnemonic,
+                operands: operands,
+                line: line,
+                src: src
+            )
 
         case "addv":
             guard operands.count == 2 else { throw err(line, src, "ADDV expects <B/H/Sd>, <Vn.arr>") }
@@ -2282,5 +2426,143 @@ public struct A64MiniAssembler: Sendable {
         default:
             throw err(line, src, "Unsupported FP/SIMD mnemonic '\(mnemonic)'")
         }
+    }
+
+    // MARK: - AdvSIMD Copy Element Helpers
+
+    private static func parseVectorElementOperand(_ rawToken: String) -> (regIndex: UInt8, elementType: String, lane: UInt64)? {
+        let lower = rawToken
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "")
+        guard lower.hasPrefix("v"),
+              lower.hasSuffix("]"),
+              let dotIdx = lower.firstIndex(of: "."),
+              let openBracket = lower[dotIdx...].firstIndex(of: "["),
+              dotIdx < openBracket
+        else {
+            return nil
+        }
+        let numStr = lower[lower.index(after: lower.startIndex)..<dotIdx]
+        guard !numStr.isEmpty,
+              numStr.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let regIdx = UInt8(numStr, radix: 10),
+              regIdx <= 31
+        else {
+            return nil
+        }
+        let elemType = String(lower[lower.index(after: dotIdx)..<openBracket])
+        let closeBracket = lower.index(before: lower.endIndex)
+        let laneStr = lower[lower.index(after: openBracket)..<closeBracket]
+            .trimmingCharacters(in: .whitespaces)
+        let lane: UInt64?
+        if laneStr.hasPrefix("0x") {
+            let hex = laneStr.dropFirst(2)
+            lane = hex.isEmpty ? nil : UInt64(hex, radix: 16)
+        } else if !laneStr.isEmpty && laneStr.allSatisfy({ $0.isASCII && $0.isNumber }) {
+            lane = UInt64(laneStr, radix: 10)
+        } else {
+            lane = nil
+        }
+        guard let validLane = lane else { return nil }
+        return (regIdx, elemType, validLane)
+    }
+
+    private func encodeAdvSIMDElementImm5(
+        elementType: String,
+        lane: UInt64,
+        mnemonic: String,
+        line: Int,
+        src: String
+    ) throws -> (imm5: UInt32, is64BitElement: Bool) {
+        switch elementType {
+        case "b":
+            guard lane < 16 else {
+                throw err(line, src, "Vector .b lane index \(lane) out of range 0..15")
+            }
+            return (UInt32((lane << 1) | 0b00001), false)
+        case "h":
+            guard lane < 8 else {
+                throw err(line, src, "Vector .h lane index \(lane) out of range 0..7")
+            }
+            return (UInt32((lane << 2) | 0b00010), false)
+        case "s":
+            guard lane < 4 else {
+                throw err(line, src, "Vector .s lane index \(lane) out of range 0..3")
+            }
+            return (UInt32((lane << 3) | 0b00100), false)
+        case "d":
+            guard lane < 2 else {
+                throw err(line, src, "Vector .d lane index \(lane) out of range 0..1")
+            }
+            return (UInt32((lane << 4) | 0b01000), true)
+        default:
+            throw MachGraphError.assemblerUnsupported(mnemonic: mnemonic, form: Self.normalizeStatementForm(src))
+        }
+    }
+
+    private func encodeElementToGP(
+        mnemonic: String,
+        operands: [String],
+        allowByteAndHalf: Bool,
+        line: Int,
+        src: String
+    ) throws -> UInt32 {
+        guard operands.count == 2 else {
+            throw err(line, src, "\(mnemonic) expects <Wd|Xd>, <Vn.Ts[index]>")
+        }
+        let rd = try requireReg(operands[0], line: line, src: src)
+        guard rd.isGeneralPurpose && !rd.isStackPointer else {
+            throw err(line, src, "\(mnemonic) destination must be Wd/Xd or WZR/XZR")
+        }
+        guard let elem = Self.parseVectorElementOperand(operands[1]) else {
+            throw err(line, src, "\(mnemonic) expects vector element source <Vn.b|h|s|d[index]>")
+        }
+        if !allowByteAndHalf && elem.elementType != "s" && elem.elementType != "d" {
+            throw err(line, src, "MOV from vector element requires .s[index] or .d[index]; use UMOV/SMOV for .b/.h")
+        }
+        let (imm5, is64BitElem) = try encodeAdvSIMDElementImm5(
+            elementType: elem.elementType,
+            lane: elem.lane,
+            mnemonic: mnemonic,
+            line: line,
+            src: src
+        )
+        let expectedBits = is64BitElem ? 64 : 32
+        guard rd.bitWidth == expectedBits else {
+            throw err(line, src, "\(mnemonic) with .\(elem.elementType) element requires \(expectedBits)-bit destination register")
+        }
+        let qBit: UInt32 = is64BitElem ? (1 << 30) : 0
+        return qBit | 0x0E00_3C00 | (imm5 << 16) | (UInt32(elem.regIndex) << 5) | UInt32(rd.index)
+    }
+
+    private func encodeGPToElement(
+        mnemonic: String,
+        operands: [String],
+        line: Int,
+        src: String
+    ) throws -> UInt32 {
+        guard operands.count == 2 else {
+            throw err(line, src, "\(mnemonic) expects <Vd.Ts[index]>, <Wn|Xn>")
+        }
+        guard let elem = Self.parseVectorElementOperand(operands[0]) else {
+            throw err(line, src, "\(mnemonic) expects vector element destination <Vd.b|h|s|d[index]>")
+        }
+        let rn = try requireReg(operands[1], line: line, src: src)
+        guard rn.isGeneralPurpose && !rn.isStackPointer else {
+            throw err(line, src, "\(mnemonic) source must be Wn/Xn or WZR/XZR")
+        }
+        let (imm5, is64BitElem) = try encodeAdvSIMDElementImm5(
+            elementType: elem.elementType,
+            lane: elem.lane,
+            mnemonic: mnemonic,
+            line: line,
+            src: src
+        )
+        let expectedBits = is64BitElem ? 64 : 32
+        guard rn.bitWidth == expectedBits else {
+            throw err(line, src, "\(mnemonic) with .\(elem.elementType) element requires \(expectedBits)-bit source register")
+        }
+        return 0x4E00_1C00 | (imm5 << 16) | (UInt32(rn.index) << 5) | UInt32(elem.regIndex)
     }
 }

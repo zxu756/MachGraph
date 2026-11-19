@@ -306,6 +306,7 @@ public enum A64AssemblerOperandClassifier {
         "ret", "br", "blr", "braaz", "brabz", "blraaz", "blrabz",
         "braa", "brab", "blraa", "blrab",
         "paciza", "pacizb", "autiza", "autizb", "xpaci", "xpacd",
+        "pacia", "pacda",
         // Exceptions & undefined
         "udf", "svc", "hvc", "smc", "brk", "hlt",
         // Direct, compare, test branches & PC-relative
@@ -335,9 +336,9 @@ public enum A64AssemblerOperandClassifier {
         "ldadd", "ldadda", "ldaddal", "ldaddl",
         // Scalar FP & implemented NEON vector ops
         "fmov", "fadd", "fsub", "fmul", "fdiv", "fnmul", "fmadd", "fmsub",
-        "fabs", "fneg", "fsqrt", "fmin", "fmax", "fcmp", "fcmpe", "fccmp", "fcsel",
+        "fabs", "fneg", "fsqrt", "frintp", "frintm", "fmin", "fmax", "fcmp", "fcmpe", "fccmp", "fcsel",
         "fcvt", "scvtf", "ucvtf", "fcvtzs", "fcvtzu",
-        "movi", "dup", "addv", "cmeq",
+        "movi", "dup", "umov", "ins", "addv", "cmeq",
     ]
 
     /// Returns `true` if `classes` may proceed to `A64MiniAssembler`'s encoder for an implemented `mnemonic`,
@@ -372,7 +373,7 @@ public enum A64AssemblerOperandClassifier {
                 && classes[2].isScalarFPOrSIMD
                 && classes[3].isScalarFPOrSIMD
 
-        case "fabs", "fneg", "fsqrt", "fcvt":
+        case "fabs", "fneg", "fsqrt", "fcvt", "frintp", "frintm":
             return classes.count == 2
                 && classes[0].isScalarFPOrSIMD
                 && classes[1].isScalarFPOrSIMD
@@ -407,22 +408,41 @@ public enum A64AssemblerOperandClassifier {
                 && classes[1].isScalarFPOrSIMD
 
         case "movi":
-            guard classes.count == 2, classes[1] == .immediate else { return false }
-            switch classes[0] {
-            case .scalarD,
-                 .vector("8b"), .vector("16b"), .vector("2s"), .vector("4s"), .vector("2d"):
-                return true
-            default:
-                return false
+            if classes.count == 2 && classes[1] == .immediate {
+                switch classes[0] {
+                case .scalarD,
+                     .vector("8b"), .vector("16b"), .vector("2s"), .vector("4s"), .vector("2d"):
+                    return true
+                default:
+                    return false
+                }
             }
+            if classes.count == 3 && classes[1] == .immediate && classes[2] == .shiftOrExtend {
+                return classes[0] == .vector("2s") || classes[0] == .vector("4s")
+            }
+            return false
 
         case "dup":
-            guard classes.count == 2, classes[1].isGP else { return false }
-            switch classes[0] {
-            case .vector("8b"), .vector("16b"),
-                 .vector("4h"), .vector("8h"),
-                 .vector("2s"), .vector("4s"),
-                 .vector("2d"):
+            guard classes.count == 2 else { return false }
+            if classes[1].isGP {
+                switch classes[0] {
+                case .vector("8b"), .vector("16b"),
+                     .vector("4h"), .vector("8h"),
+                     .vector("2s"), .vector("4s"),
+                     .vector("2d"):
+                    return true
+                default:
+                    return false
+                }
+            }
+            switch (classes[0], classes[1]) {
+            case (.vector("8b"), .vectorElement("b")),
+                 (.vector("16b"), .vectorElement("b")),
+                 (.vector("4h"), .vectorElement("h")),
+                 (.vector("8h"), .vectorElement("h")),
+                 (.vector("2s"), .vectorElement("s")),
+                 (.vector("4s"), .vectorElement("s")),
+                 (.vector("2d"), .vectorElement("d")):
                 return true
             default:
                 return false
@@ -453,6 +473,31 @@ public enum A64AssemblerOperandClassifier {
             guard classes.count == 3 else { return false }
             return (classes[0] == .vector("8b") && classes[1] == .vector("8b") && classes[2] == .vector("8b"))
                 || (classes[0] == .vector("16b") && classes[1] == .vector("16b") && classes[2] == .vector("16b"))
+
+        case "mov":
+            guard classes.count == 2 else { return false }
+            return (classes[0] == .vector("8b") && classes[1] == .vector("8b"))
+                || (classes[0] == .vector("16b") && classes[1] == .vector("16b"))
+                || (classes[0] == .gpW && classes[1] == .vectorElement("s"))
+                || (classes[0] == .gpX && classes[1] == .vectorElement("d"))
+                || (classes[0] == .vectorElement("b") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("h") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("s") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("d") && classes[1] == .gpX)
+
+        case "ins":
+            guard classes.count == 2 else { return false }
+            return (classes[0] == .vectorElement("b") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("h") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("s") && classes[1] == .gpW)
+                || (classes[0] == .vectorElement("d") && classes[1] == .gpX)
+
+        case "umov":
+            guard classes.count == 2 else { return false }
+            return (classes[0] == .gpW && classes[1] == .vectorElement("b"))
+                || (classes[0] == .gpW && classes[1] == .vectorElement("h"))
+                || (classes[0] == .gpW && classes[1] == .vectorElement("s"))
+                || (classes[0] == .gpX && classes[1] == .vectorElement("d"))
 
         case "ldr":
             if classes.count == 2 && classes[0].isScalarFPOrSIMD {
