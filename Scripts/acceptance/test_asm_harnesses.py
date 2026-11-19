@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for MachGraph M2 assembler acceptance harnesses (`known-mnemonics.py`, `asm-roundtrip.py`)."""
+"""Unit tests for MachGraph M2 assembler acceptance harnesses (`known-mnemonics.py`, `asm-roundtrip.py`, `asm-clang.py`)."""
 
 import contextlib
 import hashlib
@@ -9,6 +9,7 @@ import json
 import os
 import re
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,7 @@ def _load_script_module(module_name: str, filename: str):
 
 known_mnemonics = _load_script_module("known_mnemonics_mod", "known-mnemonics.py")
 asm_roundtrip = _load_script_module("asm_roundtrip_mod", "asm-roundtrip.py")
+asm_clang = _load_script_module("asm_clang_mod", "asm-clang.py")
 
 
 class _NoXcrunTestCase(unittest.TestCase):
@@ -768,6 +770,395 @@ class TestAsmRoundtripExecutionAndVerdicts(_NoXcrunTestCase):
                 self.assertEqual(asm_roundtrip.main(["quick", "--unknown-flag"]), 2)
                 self.assertEqual(asm_roundtrip.main(["--write-baseline", "quick"]), 2)
                 self.assertEqual(asm_roundtrip.main(["--baseline-commit", "2ee33ed", "quick"]), 2)
+
+
+def _build_synthetic_macho64_object(words_le: list[int]) -> bytes:
+    """Build a minimal 64-bit Mach-O MH_OBJECT with a single (__TEXT,__text) section."""
+    text_bytes = b"".join(struct.pack("<I", w) for w in words_le)
+    header_size = 32
+    seg_cmd_size = 72 + 80  # LC_SEGMENT_64 + 1 section_64
+    text_off = header_size + seg_cmd_size
+
+    mach_header = struct.pack(
+        "<IIIIIIII",
+        0xFEEDFACF,  # MH_MAGIC_64
+        0x0100000C,  # CPU_TYPE_ARM64
+        0x80000002,  # CPU_SUBTYPE_ARM64E
+        0x1,         # MH_OBJECT
+        1,           # ncmds
+        seg_cmd_size,
+        0,
+        0,
+    )
+    seg_cmd = struct.pack(
+        "<II16sQQQQiiII",
+        0x19,        # LC_SEGMENT_64
+        seg_cmd_size,
+        b"\x00" * 16,
+        0,
+        len(text_bytes),
+        text_off,
+        len(text_bytes),
+        7,
+        7,
+        1,           # nsects = 1
+        0,
+    )
+    sect_64 = struct.pack(
+        "<16s16sQQIIIIIIII",
+        b"__text\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        b"__TEXT\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+        0,                # addr
+        len(text_bytes),  # size
+        text_off,         # offset
+        2,                # align (2^2 = 4)
+        0,                # reloff
+        0,                # nreloc
+        0x80000400,       # S_REGULAR | S_ATTR_PURE_INSTRUCTIONS
+        0,
+        0,
+        0,
+    )
+    return mach_header + seg_cmd + sect_64 + text_bytes
+
+
+class TestAsmClangSharedFormsAndPCRelativeRewrite(_NoXcrunTestCase):
+    """Verify shared form function identity and PC-relative target rewriting rules."""
+
+    def test_shared_canonical_form_function_identity(self) -> None:
+        self.assertIs(asm_clang.format_instruction_form, asm_roundtrip.format_instruction_form)
+        self.assertIs(asm_clang.split_mnemonic_and_operands, asm_roundtrip.split_mnemonic_and_operands)
+
+    def test_pc_relative_rewrite_positive_negative_bcond_tbz_literal_vs_bracket_ldr_and_adrp_skip(self) -> None:
+        pc = 0x100001000
+        cases = [
+            # b / bl positive, zero, negative
+            ("b 0x100001000", pc, "b .+0"),
+            ("bl 0x1000010e8", pc, "bl .+232"),
+            ("b 0x100000ff0", pc, "b .-16"),
+            # b.<cond> positive and negative
+            ("b.eq 0x100000ff4", pc, "b.eq .-12"),
+            ("b.hs 0x100001008", pc, "b.hs .+8"),
+            # cbz / cbnz
+            ("cbz x0, 0x100001020", pc, "cbz x0, .+32"),
+            ("cbnz w5, 0x100000ff8", pc, "cbnz w5, .-8"),
+            # tbz / tbnz (three operands)
+            ("tbz w1, #3, 0x100000fc0", pc, "tbz w1, #3, .-64"),
+            ("tbnz x2, #0x28, 0x100001010", pc, "tbnz x2, #0x28, .+16"),
+            # adr byte-granular positive and negative
+            ("adr x8, 0x100001005", pc, "adr x8, .+5"),
+            ("adr x8, 0x100000ffd", pc, "adr x8, .-3"),
+            # Literal (bracketless) ldr / ldrsw / prfm ARE rewritten
+            ("ldr x0, 0x100000fe8", pc, "ldr x0, .-24"),
+            ("ldr d2, 0x100001040", pc, "ldr d2, .+64"),
+            ("ldrsw x0, 0x100001008", pc, "ldrsw x0, .+8"),
+            ("prfm pldl1keep, 0x100001020", pc, "prfm pldl1keep, .+32"),
+            # Bracketed ldr / ldrsw / prfm are NOT rewritten
+            ("ldr x0, [x1, #8]", pc, "ldr x0, [x1, #8]"),
+            ("ldr x0, [x1], #8", pc, "ldr x0, [x1], #8"),
+            ("ldr q0, [sp, #0x10]!", pc, "ldr q0, [sp, #0x10]!"),
+            ("ldrsw x0, [x1, #4]", pc, "ldrsw x0, [x1, #4]"),
+            ("prfm pldl1keep, [x0, #0x40]", pc, "prfm pldl1keep, [x0, #0x40]"),
+            # Non-PC-relative instructions unchanged
+            ("mov x0, #42", pc, "mov x0, #42"),
+            ("add x0, x1, #0x1000", pc, "add x0, x1, #0x1000"),
+            # adrp skipped (returns None)
+            ("adrp x8, 0x100002000", pc, None),
+        ]
+        for stmt, addr, expected in cases:
+            with self.subTest(stmt=stmt):
+                self.assertEqual(asm_clang.rewrite_pc_relative_for_clang(stmt, addr), expected)
+
+
+class TestAsmClangCorpusMode(_NoXcrunTestCase):
+    """Verify first-occurrence form selection, Mach-O object word extraction, and corpus clang comparison."""
+
+    def test_select_first_by_form_skips_inst_separates_adrp_and_keeps_first_across_files(self) -> None:
+        f1_rows = asm_roundtrip.parse_disasm_text_section(
+            "; Section __TEXT,__text @ 0x1000\n"
+            "0x0000000000001000\tdeadbeef\t.inst\t0xdeadbeef\n"
+            "0x0000000000001004\td2800540\tmov\tx0, #0x2a\n"
+            "0x0000000000001008\td2800021\tmov\tx1, #1\n"
+            "0x000000000000100c\tb0000008\tadrp\tx8, 0x00002000\n"
+        )
+        f2_rows = asm_roundtrip.parse_disasm_text_section(
+            "; Section __TEXT,__text @ 0x2000\n"
+            "0x0000000000002000\td2800062\tmov\tx2, #3\n"
+            "0x0000000000002004\t54ffffa0\tb.eq\t0x00001ff8\n"
+            "0x0000000000002008\t90000009\tadrp\tx9, 0x00002000\n"
+        )
+        active, adrp_skipped = asm_clang.select_first_by_form([("f1", f1_rows), ("f2", f2_rows)])
+        self.assertEqual(len(adrp_skipped), 1)
+        self.assertEqual(adrp_skipped[0].form, "adrp X, N")
+        self.assertEqual(adrp_skipped[0].word_hex, "b0000008")
+        self.assertEqual([s.form for s in active], ["mov X, #N", "b.eq N"])
+        # Kept first occurrence `mov x0, #0x2a` from f1, not `mov x1, #1` or `mov x2, #3`
+        self.assertEqual(active[0].word_hex, "d2800540")
+        self.assertEqual(active[0].clang_text, "mov x0, #0x2a")
+        self.assertEqual(active[1].word_hex, "54ffffa0")
+        self.assertEqual(active[1].clang_text, "b.eq .-12")
+
+    def test_read_macho_text_words_parses_synthetic_64bit_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            obj_p = os.path.join(tmp, "sample.o")
+            with open(obj_p, "wb") as fh:
+                fh.write(_build_synthetic_macho64_object([0xD503201F, 0x54FFFFA0, 0xD65F03C0]))
+            self.assertEqual(asm_clang.read_macho_text_words(obj_p), ["d503201f", "54ffffa0", "d65f03c0"])
+
+    def test_corpus_mode_pass_and_batch_rejection_isolates_per_line_and_recompiles_survivors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_p = os.path.join(tmp, "prog.bin")
+            _write_fake_macho(bin_p, b"prog-corpus")
+            disasm_txt = (
+                "; Section __TEXT,__text @ 0x1000\n"
+                "0x0000000000001000\td503201f\tnop\t\n"
+                "0x0000000000001004\tb0000008\tadrp\tx8, 0x00002000\n"
+                "0x0000000000001008\t54ffffa0\tb.eq\t0x00000ffc\n"
+                "0x000000000000100c\tdeadbeef\t.inst\t0xdeadbeef\n"
+            )
+            fake_mg = _write_fake_machgraph(
+                tmp,
+                {bin_p: disasm_txt},
+                real_home=os.path.expanduser("~"),
+            )
+
+            # 1) All non-adrp forms match -> exit 0
+            word_table = {
+                "nop": "d503201f",
+                "b.eq .-12": "54ffffa0",
+            }
+
+            def fake_clang_pass(lines):
+                return asm_clang.ClangCompileResult(ok=True, words=[word_table[ln] for ln in lines], error="")
+
+            json_pass = os.path.join(tmp, "corpus_pass.json")
+            out_pass = io.StringIO()
+            with mock.patch.object(differential, "select_arm64_slice", return_value="arm64e"), contextlib.redirect_stdout(
+                out_pass
+            ):
+                rc = asm_clang.main(
+                    [bin_p, "--machgraph", fake_mg, "--json-out", json_pass],
+                    clang_runner=fake_clang_pass,
+                    llvm_version="Apple clang version 21.0.0 (test)",
+                )
+            self.assertEqual(rc, 0, out_pass.getvalue())
+            with open(json_pass, "r", encoding="utf-8") as jfh:
+                doc = json.load(jfh)
+            self.assertEqual(doc["mode"], "corpus")
+            self.assertTrue(doc["passed"])
+            self.assertEqual(doc["summary"]["total_forms"], 3)
+            self.assertEqual(doc["summary"]["adrp_skipped"], 1)
+            self.assertEqual(doc["summary"]["compared_forms"], 2)
+            self.assertEqual(doc["summary"]["matched"], 2)
+            self.assertEqual(doc["summary"]["mismatched"], 0)
+            self.assertEqual(doc["summary"]["clang_rejected"], 0)
+            self.assertEqual(doc["environment"]["llvm_version"], "Apple clang version 21.0.0 (test)")
+            self.assertTrue(doc["environment"]["machgraph_commit"])
+            self.assertTrue(doc["environment"]["macos_version"])
+
+            # 2) Batch fails due to 1 rejected line -> isolates per line, drops rejected, recompiles survivors
+            disasm_fail = (
+                "; Section __TEXT,__text @ 0x1000\n"
+                "0x0000000000001000\td503201f\tnop\t\n"
+                "0x0000000000001004\t1e602108\tfcmp\td8, #0\n"
+                "0x0000000000001008\t3861d812\tldrb\tw18, [x0, w1, sxtw]\n"
+            )
+            fake_mg_fail = _write_fake_machgraph(tmp, {bin_p: disasm_fail})
+            clang_calls = []
+
+            def fake_clang_mixed(lines):
+                clang_calls.append(list(lines))
+                if "fcmp d8, #0" in lines:
+                    return asm_clang.ClangCompileResult(
+                        ok=False, words=[], error="expected compatible register or floating-point constant"
+                    )
+                mapping = {
+                    "nop": "d503201f",
+                    "ldrb w18, [x0, w1, sxtw]": "3861c812",  # deliberate mismatch vs 3861d812
+                }
+                return asm_clang.ClangCompileResult(ok=True, words=[mapping[ln] for ln in lines], error="")
+
+            json_fail = os.path.join(tmp, "corpus_fail.json")
+            out_fail = io.StringIO()
+            with mock.patch.object(differential, "select_arm64_slice", return_value="arm64e"), contextlib.redirect_stdout(
+                out_fail
+            ):
+                rc_fail = asm_clang.main(
+                    [bin_p, "--machgraph", fake_mg_fail, "--json-out", json_fail],
+                    clang_runner=fake_clang_mixed,
+                    llvm_version="Apple clang version 21.0.0 (test)",
+                )
+            self.assertEqual(rc_fail, 1)
+            # First call: all 3 lines; next 3 calls: 1 line each; final call: 2 surviving lines re-batched
+            self.assertEqual(clang_calls[0], ["nop", "fcmp d8, #0", "ldrb w18, [x0, w1, sxtw]"])
+            self.assertEqual(clang_calls[-1], ["nop", "ldrb w18, [x0, w1, sxtw]"])
+            with open(json_fail, "r", encoding="utf-8") as jffh:
+                fdoc = json.load(jffh)
+            self.assertFalse(fdoc["passed"])
+            self.assertEqual(fdoc["summary"]["matched"], 1)
+            self.assertEqual(fdoc["summary"]["mismatched"], 1)
+            self.assertEqual(fdoc["summary"]["clang_rejected"], 1)
+            self.assertEqual(fdoc["mismatched"][0]["word"], "3861d812")
+            self.assertEqual(fdoc["mismatched"][0]["clang_word"], "3861c812")
+            self.assertEqual(fdoc["clang_rejected"][0]["form"], "fcmp D, #N")
+
+
+class TestAsmClangCaseMode(_NoXcrunTestCase):
+    """Verify `.s` semicolon rejection, usage exit codes, and all case-mode verdict cells."""
+
+    def test_semicolon_and_usage_errors_exit_2_without_invoking_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            semi_1 = os.path.join(tmp, "semi1.s")
+            with open(semi_1, "w", encoding="utf-8") as fh:
+                fh.write("// header\nmov x0, #1; ret\n")
+
+            semi_2 = os.path.join(tmp, "semi2.s")
+            with open(semi_2, "w", encoding="utf-8") as fh:
+                fh.write("nop ; darwin comment\n")
+
+            empty_s = os.path.join(tmp, "empty.s")
+            with open(empty_s, "w", encoding="utf-8") as fh:
+                fh.write("// only comments\n\n")
+
+            def _never_clang(_lines):
+                raise AssertionError("clang_runner must not be called on usage error")
+
+            with contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(asm_clang.main([semi_1], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main([semi_2], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main([empty_s], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main([], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main(["quick", semi_1], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main([semi_1, semi_2], clang_runner=_never_clang, llvm_version="test"), 2)
+                self.assertEqual(asm_clang.main(["quick", "--bad-opt"], clang_runner=_never_clang, llvm_version="test"), 2)
+
+    def test_case_mode_verdict_matrix_pass_and_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cases_s = os.path.join(tmp, "cases.s")
+            with open(cases_s, "w", encoding="utf-8") as fh:
+                fh.write(
+                    "// Header comment\n"
+                    "\n"
+                    "mov x0, #42\n"
+                    "adrp x8, .+4096\n"
+                    "ld1 {v0.4s}, [x0]\n"
+                    "bogus_insn x0\n"
+                )
+
+            call_log = os.path.join(tmp, "mg_calls.jsonl")
+            mg_pass = _write_fake_machgraph(
+                tmp,
+                {},
+                asm_behavior={
+                    "by_stmt": {
+                        "mov x0, #42": {"status": "ok", "word": "d2800540"},
+                        "adrp x8, .+4096": {"status": "ok", "word": "b0000008"},
+                        "ld1 {v0.4s}, [x0]": {
+                            "status": "unsupported",
+                            "mnemonic": "ld1",
+                            "form": "ld1 { V.Ns }, [X]",
+                        },
+                        "bogus_insn x0": {"status": "error", "reason": "Unknown ARM64 mnemonic 'bogus_insn'"},
+                    }
+                },
+                call_log_path=call_log,
+                real_home=os.path.expanduser("~"),
+            )
+
+            clang_seen = []
+
+            def fake_clang_cases(lines):
+                self.assertEqual(len(lines), 1, "Case mode must compile one line per object file")
+                stmt = lines[0]
+                clang_seen.append(stmt)
+                if stmt == "mov x0, #42":
+                    return asm_clang.ClangCompileResult(ok=True, words=["d2800540"], error="")
+                if stmt == "adrp x8, .+4096":
+                    return asm_clang.ClangCompileResult(
+                        ok=False, words=[], error="ADR/ADRP relocations must be GOT relative"
+                    )
+                if stmt == "ld1 {v0.4s}, [x0]":
+                    return asm_clang.ClangCompileResult(ok=True, words=["4c407800"], error="")
+                return asm_clang.ClangCompileResult(ok=False, words=[], error="unrecognized instruction mnemonic")
+
+            # 1) PASS when rows are match / clang_unverifiable / unsupported / both_rejected
+            json_ok = os.path.join(tmp, "cases_ok.json")
+            out_ok = io.StringIO()
+            with contextlib.redirect_stdout(out_ok):
+                rc_ok = asm_clang.main(
+                    [cases_s, "--machgraph", mg_pass, "--json-out", json_ok],
+                    clang_runner=fake_clang_cases,
+                    llvm_version="Apple clang version 21.0.0 (test)",
+                )
+            self.assertEqual(rc_ok, 0, out_ok.getvalue())
+            self.assertIn("ADR/ADRP relocations must be GOT relative", out_ok.getvalue())
+            self.assertEqual(len(clang_seen), 4)
+
+            with open(call_log, "r", encoding="utf-8") as lfh:
+                mg_calls = [json.loads(ln)["argv"] for ln in lfh if ln.strip()]
+            self.assertEqual(len(mg_calls), 1)
+            self.assertEqual(mg_calls[0], ["asm", "--at", "0", "--json"])
+
+            with open(json_ok, "r", encoding="utf-8") as jfh:
+                cdoc = json.load(jfh)
+            self.assertEqual(cdoc["mode"], "cases")
+            self.assertTrue(cdoc["passed"])
+            self.assertEqual(cdoc["summary"]["total"], 4)
+            self.assertEqual(cdoc["summary"]["match"], 1)
+            self.assertEqual(cdoc["summary"]["clang_unverifiable"], 1)
+            self.assertEqual(cdoc["summary"]["unsupported"], 1)
+            self.assertEqual(cdoc["summary"]["both_rejected"], 1)
+            self.assertEqual(cdoc["summary"]["failures"], 0)
+
+            # 2) FAIL when MachGraph ok word != clang word
+            mg_word_diff = _write_fake_machgraph(
+                tmp,
+                {},
+                asm_behavior={
+                    "by_stmt": {
+                        "mov x0, #42": {"status": "ok", "word": "d2800541"},
+                        "adrp x8, .+4096": {"status": "ok", "word": "b0000008"},
+                        "ld1 {v0.4s}, [x0]": {
+                            "status": "unsupported",
+                            "mnemonic": "ld1",
+                            "form": "ld1 { V.Ns }, [X]",
+                        },
+                        "bogus_insn x0": {"status": "error", "reason": "Unknown ARM64 mnemonic 'bogus_insn'"},
+                    }
+                },
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc_diff = asm_clang.main(
+                    [cases_s, "--machgraph", mg_word_diff],
+                    clang_runner=fake_clang_cases,
+                    llvm_version="Apple clang version 21.0.0 (test)",
+                )
+            self.assertEqual(rc_diff, 1)
+
+            # 3) FAIL when MachGraph reports error on a line clang accepts
+            mg_err_on_valid = _write_fake_machgraph(
+                tmp,
+                {},
+                asm_behavior={
+                    "by_stmt": {
+                        "mov x0, #42": {"status": "error", "reason": "broken parser"},
+                        "adrp x8, .+4096": {"status": "ok", "word": "b0000008"},
+                        "ld1 {v0.4s}, [x0]": {
+                            "status": "unsupported",
+                            "mnemonic": "ld1",
+                            "form": "ld1 { V.Ns }, [X]",
+                        },
+                        "bogus_insn x0": {"status": "error", "reason": "Unknown ARM64 mnemonic 'bogus_insn'"},
+                    }
+                },
+            )
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc_err = asm_clang.main(
+                    [cases_s, "--machgraph", mg_err_on_valid],
+                    clang_runner=fake_clang_cases,
+                    llvm_version="Apple clang version 21.0.0 (test)",
+                )
+            self.assertEqual(rc_err, 1)
 
 
 if __name__ == "__main__":
