@@ -83,3 +83,39 @@ ldaprb w1, [x2]
 fcvtns w1, s2
 // Fixtures/a64/scalar_fp_one_source.tsv @ 0x1e264041
 frinta s1, s2
+
+// --- Part 3: Post-446900a merged reference tables (17 rows added, load_store_exclusive_casp 0x080420c2 omitted per clang word-equality rule) ---
+// Fixtures/a64/advsimd_across_lanes.tsv @ 0x0e303841
+saddlv h1, v2.8b
+// Fixtures/a64/advsimd_ext.tsv @ 0x2e030041
+ext v1.8b, v2.8b, v3.8b, #0x0
+// Fixtures/a64/advsimd_ldst_multi.tsv @ 0x0c000041
+st4 { v1.8b, v2.8b, v3.8b, v4.8b }, [x2]
+// Fixtures/a64/advsimd_ldst_single.tsv @ 0x0d000041
+st1 { v1.b }[0], [x2]
+// Fixtures/a64/advsimd_modified_imm.tsv @ 0x0f001401
+orr v1.2s, #0x0
+// Fixtures/a64/advsimd_permute.tsv @ 0x0e031841
+uzp1 v1.8b, v2.8b, v3.8b
+// Fixtures/a64/advsimd_scalar_by_element.tsv @ 0x5f031041
+fmla h1, h2, v3.h[0]
+// Fixtures/a64/advsimd_scalar_copy.tsv @ 0x5e010441
+mov b1, v2.b[0]
+// Fixtures/a64/advsimd_scalar_pairwise.tsv @ 0x5e30c841
+fmaxnmp h1, v2.2h
+// Fixtures/a64/advsimd_table_lookup.tsv @ 0x0e030041
+tbl v1.8b, { v2.16b }, v3.8b
+// Fixtures/a64/advsimd_three_different.tsv @ 0x0e230041
+saddl v1.8h, v2.8b, v3.8b
+// Fixtures/a64/advsimd_vector_by_element.tsv @ 0x0f031041
+fmla v1.4h, v2.4h, v3.h[0]
+// Fixtures/a64/barriers.tsv @ 0xd503301f
+msr S0_3_C3_C0_0, xzr
+// Fixtures/a64/crypto_aes.tsv @ 0x4e284841
+aese v1.16b, v2.16b
+// Fixtures/a64/crypto_sha.tsv @ 0x5e030041
+sha1c q1, s2, v3.4s
+// Fixtures/a64/crypto_sha3.tsv @ 0xce031041
+eor3 v1.16b, v2.16b, v3.16b, v4.16b
+// Fixtures/a64/scalar_fp_three_source.tsv @ 0x1f231041
+fnmadd s1, s2, s3, s4
