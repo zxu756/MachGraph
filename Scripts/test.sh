@@ -177,8 +177,49 @@ case "$MODE" in
                     echo "==> [milestone 1] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
                 fi
                 ;;
+            2|m2|M2)
+                echo "==> [milestone 2] Scoped unit tests for M2-touched modules"
+                run_scope \
+                    MachA64Decoder \
+                    MachHeadlessCLI
+                echo "==> [milestone 2] Acceptance harness unit tests"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/test_differential_harnesses.py"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/test_asm_harnesses.py"
+                echo "==> [milestone 2] Building release MachGraph CLI binary"
+                swift build -c release --product MachGraph >/dev/null
+                REL_BIN="$ROOT_DIR/.build/release/MachGraph"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m2-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                fi
+                echo "==> [milestone 2] Running Scripts/acceptance/differential.py standard -> $OUT_LABEL/differential-standard.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/differential.py" standard --machgraph "$REL_BIN" | tee "$OUT_DIR/differential-standard.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/encoding-table.py check --all -> $OUT_LABEL/encoding-table-check.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/encoding-table.py" check --all --machgraph "$REL_BIN" | tee "$OUT_DIR/encoding-table-check.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/encoding-fuzz.py --seed 20261117 -> $OUT_LABEL/encoding-fuzz-20261117.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/encoding-fuzz.py" --seed 20261117 --count 100000 --machgraph "$REL_BIN" | tee "$OUT_DIR/encoding-fuzz-20261117.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/encoding-fuzz.py --seed 17 -> $OUT_LABEL/encoding-fuzz-17.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/encoding-fuzz.py" --seed 17 --count 100000 --machgraph "$REL_BIN" | tee "$OUT_DIR/encoding-fuzz-17.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/asm-roundtrip.py standard -> $OUT_LABEL/asm-roundtrip-standard.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/asm-roundtrip.py" standard --machgraph "$REL_BIN" | tee "$OUT_DIR/asm-roundtrip-standard.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/asm-clang.py standard -> $OUT_LABEL/asm-clang-standard.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/asm-clang.py" standard --machgraph "$REL_BIN" | tee "$OUT_DIR/asm-clang-standard.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/asm-clang.py Fixtures/asm-cases.s -> $OUT_LABEL/asm-clang-cases.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/asm-clang.py" "Fixtures/asm-cases.s" --machgraph "$REL_BIN" | tee "$OUT_DIR/asm-clang-cases.txt"
+                echo "==> [milestone 2] Running Scripts/acceptance/known-mnemonics.py check -> $OUT_LABEL/known-mnemonics-check.txt"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/known-mnemonics.py" check | tee "$OUT_DIR/known-mnemonics-check.txt"
+                if [ "$RECORD" -eq 1 ]; then
+                    echo "==> [milestone 2] Recorded logs under reports/"
+                else
+                    echo "==> [milestone 2] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
+                ;;
             *)
-                echo "Error: unsupported milestone '$MS' (supported: 0, 1)." >&2
+                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2)." >&2
                 exit 2
                 ;;
         esac
