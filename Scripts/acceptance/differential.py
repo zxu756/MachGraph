@@ -13,11 +13,13 @@ Normalization rules:
     as of M2 Stage 6; generic Neon syntax is enforced on reference output).
   - Operands: imported from `operand_normalization.py` (rules O1-O4 only,
     evaluated on every mnemonic-agreed instruction without affecting mnemonic
-    counts or pass/fail exit status).
+    counts; non-`full` runs require `operand_mismatch == 0` and `full` requires
+    at least `99.99%` operand agreement).
 
 Exit status:
-  0 when crashes/failures == 0, missing_addresses == 0, and wrong_instructions == 0
-    (and `standard` unknown counts do not exceed the M1 baseline ceilings);
+  0 when crashes/failures == 0, missing_addresses == 0, wrong_instructions == 0,
+    operand agreement meets the tier gate (`0` mismatches, or `>= 99.99%` on `full`),
+    and `standard` unknown counts do not exceed `STANDARD_UNKNOWN_CEILINGS` (`0`);
   1 otherwise.
 """
 
@@ -58,10 +60,11 @@ from operand_normalization import (  # noqa: E402
 QUICK_FILES = ["/bin/ls"]
 STANDARD_FILES = ["/bin/ls", "/usr/bin/ssh", "/usr/bin/vim"]
 STANDARD_UNKNOWN_CEILINGS = {
-    "/bin/ls": 1,
-    "/usr/bin/ssh": 1596,
-    "/usr/bin/vim": 142,
+    "/bin/ls": 0,
+    "/usr/bin/ssh": 0,
+    "/usr/bin/vim": 0,
 }
+FULL_MIN_OPERAND_AGREEMENT_PPM = 999900  # 99.99% minimum operand agreement on `full` corpus
 FULL_SCAN_ROOTS = ["/bin", "/usr/bin", "/usr/sbin", "/usr/libexec"]
 MACHO_MAGICS = {
     b"\xca\xfe\xba\xbe",
@@ -725,8 +728,13 @@ def main() -> int:
 
         file_pct = (100.0 * r["agree"] / r["total"]) if r["total"] else 100.0
         op_file_pct = (100.0 * row_op_equal / row_op_compared) if row_op_compared else 100.0
-        if print_each_file or r["wrong_total"] > 0 or r["missing"] > 0:
-            tag = "PASS" if (r["wrong_total"] == 0 and r["missing"] == 0) else "FAIL"
+        row_failed = (
+            r["wrong_total"] > 0
+            or r["missing"] > 0
+            or (corpus_name != "full" and row_op_mismatch > 0)
+        )
+        if print_each_file or row_failed:
+            tag = "FAIL" if row_failed else "PASS"
             print(
                 f"[{tag}] {path} ({r['arch']}): total={r['total']} agree={r['agree']} "
                 f"({file_pct:.2f}%) operand_equal={row_op_equal}/{row_op_compared} ({op_file_pct:.2f}%) "
@@ -812,11 +820,20 @@ def main() -> int:
         for k, cnt in unknown_counts.most_common()
     ]
 
+    operand_ok = (
+        (
+            total_operand_compared == 0
+            or (1_000_000 * total_operand_equal >= FULL_MIN_OPERAND_AGREEMENT_PPM * total_operand_compared)
+        )
+        if corpus_name == "full"
+        else (total_operand_mismatch == 0)
+    )
     passed = (
         len(failures) == 0
         and total_missing == 0
         and total_wrong == 0
         and len(ceiling_violations) == 0
+        and operand_ok
         and compared_files > 0
     )
 

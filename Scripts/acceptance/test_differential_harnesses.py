@@ -1465,13 +1465,17 @@ class TestItem13DifferentialOperandComparisonAndReporting(unittest.TestCase):
                 rc = differential.main()
 
             stdout_txt = out_buf.getvalue()
-            self.assertEqual(rc, 0, f"Operand differences must not alter mnemonic pass verdict:\n{stdout_txt}")
+            self.assertEqual(
+                rc,
+                1,
+                f"Operand differences on non-full runs must fail overall verdict while leaving mnemonic counts untouched:\n{stdout_txt}",
+            )
             self.assertIn("operands=6/10 (60.0000%) mismatch=4 (files=2)", stdout_txt)
 
             with open(report_json, "r", encoding="utf-8") as fh:
                 payload = json.load(fh)
 
-            self.assertEqual(payload["verdict"], "PASS")
+            self.assertEqual(payload["verdict"], "FAIL")
             self.assertEqual(len(payload["operand_normalization_rules"]), 4)
 
             summary = payload["summary"]
@@ -3069,6 +3073,168 @@ class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
             ):
                 self.assertEqual(mnem_counts.get(expected_mnem), 2, f"unexpected count for {expected_mnem}")
             self.assertEqual(mnem_counts.get(".long"), 300)
+
+
+class TestStage17bCeilingsAndOperandVerdict(unittest.TestCase):
+    """M2 Stage 17b: `STANDARD_UNKNOWN_CEILINGS` are all 0 and operand mismatches fail `differential.py`."""
+
+    def _fake_env(self):
+        return {
+            "macos_product_name": "macOS",
+            "macos_version": "27.0.1",
+            "macos_build": "26A434",
+            "machine": "arm64",
+            "llvm_objdump_version": "Apple LLVM version 21.0.0",
+            "machgraph_commit": "0123456789abcdef0123456789abcdef01234567",
+            "worktree_clean": True,
+            "machgraph_binary": ".build/release/MachGraph",
+        }
+
+    def _make_row(self, path: str, total: int = 100, agree: int = 100, op_equal: int = 100, unknown_total: int = 0):
+        op_mismatch = agree - op_equal
+        return {
+            "path": path,
+            "arch": "arm64e",
+            "total": total,
+            "agree": agree,
+            "operand_compared": agree,
+            "operand_equal": op_equal,
+            "operand_mismatch": op_mismatch,
+            "unknown_total": unknown_total,
+            "reference_long_machgraph_inst": 0,
+            "wrong_total": 0,
+            "missing": 0,
+            "machgraph_only_inst": 0,
+            "machgraph_only_wrong": 0,
+            "missing_examples": [],
+            "unknown": {"add": unknown_total} if unknown_total else {},
+            "wrong_pairs": {},
+            "wrong_pair_examples": {},
+            "wrong_shapes": {},
+            "wrong_shape_examples": {},
+            "operand_diffs": {"add|add|V.4s, V.4s, V.4s|V.4s, V.4s, V.4s": op_mismatch} if op_mismatch else {},
+            "operand_diff_examples": (
+                {
+                    "add|add|V.4s, V.4s, V.4s|V.4s, V.4s, V.4s": [
+                        {
+                            "file": path,
+                            "address": "0x1000",
+                            "word": "4ea28420",
+                            "llvm": "add v0.4s, v1.4s, v2.4s",
+                            "machgraph": "add v0.4s, v2.4s, v1.4s",
+                        }
+                    ]
+                }
+                if op_mismatch
+                else {}
+            ),
+            "non_utf8_reference": False,
+            "non_utf8_machgraph": False,
+            "exit_code": 0,
+            "seconds": 0.01,
+        }
+
+    def test_standard_unknown_ceilings_are_zero_and_enforced(self):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        mod = _load_script_module("differential_s17b_ceil", "differential.py")
+        self.assertEqual(
+            mod.STANDARD_UNKNOWN_CEILINGS,
+            {
+                "/bin/ls": 0,
+                "/usr/bin/ssh": 0,
+                "/usr/bin/vim": 0,
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_mg = _make_fake_machgraph_script(tmp, "")
+            out_ok = os.path.join(tmp, "std-ok.json")
+            out_fail = os.path.join(tmp, "std-fail.json")
+
+            with mock.patch.object(mod, "verify_reference_generic_neon_syntax", return_value=None), mock.patch.object(
+                mod, "collect_environment_metadata", return_value=self._fake_env()
+            ), mock.patch.object(
+                mod,
+                "compare_one_binary",
+                side_effect=lambda p, _mg, _h: self._make_row(p, total=10, agree=10, op_equal=10, unknown_total=0),
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", "standard", "--workers", "1", "--machgraph", fake_mg, "--json-out", out_ok]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc_ok = mod.main()
+            self.assertEqual(rc_ok, 0)
+
+            def one_ssh_unknown(p: str, _mg: str, _h: str):
+                if p == "/usr/bin/ssh":
+                    return self._make_row(p, total=10, agree=9, op_equal=9, unknown_total=1)
+                return self._make_row(p, total=10, agree=10, op_equal=10, unknown_total=0)
+
+            err_buf = io.StringIO()
+            with mock.patch.object(mod, "verify_reference_generic_neon_syntax", return_value=None), mock.patch.object(
+                mod, "collect_environment_metadata", return_value=self._fake_env()
+            ), mock.patch.object(
+                mod, "compare_one_binary", side_effect=one_ssh_unknown
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", "standard", "--workers", "1", "--machgraph", fake_mg, "--json-out", out_fail]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(err_buf):
+                rc_fail = mod.main()
+            self.assertEqual(rc_fail, 1)
+            self.assertIn("/usr/bin/ssh: unknown=1 exceeds baseline ceiling 0", err_buf.getvalue())
+
+    def test_operand_mismatch_fails_standard_and_custom_and_enforces_9999_on_full(self):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        mod = _load_script_module("differential_s17b_ops", "differential.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            fake_mg = _make_fake_machgraph_script(tmp, "")
+            fake_csh = os.path.join(tmp, "csh")
+            with open(fake_csh, "wb") as fh:
+                fh.write(b"\xcf\xfa\xed\xfe" + b"\x00" * 60)
+
+            # Custom single-binary run (e.g. /bin/csh) must fail when operand_mismatch > 0
+            out_custom = os.path.join(tmp, "custom.json")
+            with mock.patch.object(mod, "verify_reference_generic_neon_syntax", return_value=None), mock.patch.object(
+                mod, "collect_environment_metadata", return_value=self._fake_env()
+            ), mock.patch.object(
+                mod,
+                "compare_one_binary",
+                side_effect=lambda p, _mg, _h: self._make_row(p, total=20, agree=20, op_equal=19, unknown_total=0),
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", fake_csh, "--machgraph", fake_mg, "--json-out", out_custom]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc_custom = mod.main()
+            self.assertEqual(rc_custom, 1)
+
+            # Full corpus passes at 99.99% (9999 / 10000) and fails below 99.99% (9998 / 10000)
+            with mock.patch.object(mod, "verify_reference_generic_neon_syntax", return_value=None), mock.patch.object(
+                mod, "collect_environment_metadata", return_value=self._fake_env()
+            ), mock.patch.object(
+                mod, "discover_full_candidates", return_value=[fake_csh]
+            ), mock.patch.object(
+                mod,
+                "compare_one_binary",
+                side_effect=lambda p, _mg, _h: self._make_row(p, total=10000, agree=10000, op_equal=9999, unknown_total=0),
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", "full", "--workers", "1", "--machgraph", fake_mg]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc_full_9999 = mod.main()
+            self.assertEqual(rc_full_9999, 0)
+
+            with mock.patch.object(mod, "verify_reference_generic_neon_syntax", return_value=None), mock.patch.object(
+                mod, "collect_environment_metadata", return_value=self._fake_env()
+            ), mock.patch.object(
+                mod, "discover_full_candidates", return_value=[fake_csh]
+            ), mock.patch.object(
+                mod,
+                "compare_one_binary",
+                side_effect=lambda p, _mg, _h: self._make_row(p, total=10000, agree=10000, op_equal=9998, unknown_total=0),
+            ), mock.patch.object(
+                sys, "argv", ["differential.py", "full", "--workers", "1", "--machgraph", fake_mg]
+            ), redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+                rc_full_9998 = mod.main()
+            self.assertEqual(rc_full_9998, 1)
 
 
 if __name__ == "__main__":
