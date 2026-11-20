@@ -1,0 +1,37 @@
+# A64 encoding reference table: crypto_sha3
+# ARM DDI 0487 C4.1.95.4 Cryptographic four-register ((word & 0xff800000) == 0xce000000) and XAR ((word & 0xffe00000) == 0xce800000).
+# Enumerates all 4 x 2 = 8 combinations of Op0=0..3 (bits[22:21]) and bit[15]=0..1 in 0xce000000 across
+# 2 register tuples (Rd, Rn, Rm, Ra) in {(1, 2, 3, 4), (31, 31, 31, 31)} (16 rows), plus XAR imm6 in {0, 1, 32, 63}
+# (bits[15:10]) in 0xce800000 across 2 register tuples (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (8 rows), totaling 24 rows.
+# Reference decodes 12 rows (eor3: 2, bcax: 2, xar: 8) and prints .long for 12 rows (including apple-m1 unsupported sm3ss1
+# and bit[15]=1 / Op0=0b11 counterexamples).
+# Rows: 24 (max allowed: 4096)
+# Reference tool version: Apple LLVM version 21.0.0
+# Assembly command: xcrun clang -arch arm64e crypto_sha3.s -o crypto_sha3.macho
+# Reference command: xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text crypto_sha3.macho
+# Generation command: python3 -I Scripts/acceptance/encoding-table.py generate crypto_sha3
+# Format: <machine_word_hex>\t<llvm_objdump_mnemonic>[\t<llvm_objdump_operands>]
+0xce031041	eor3	v1.16b, v2.16b, v3.16b, v4.16b
+0xce1f7fff	eor3	v31.16b, v31.16b, v31.16b, v31.16b
+0xce039041	.long	0xce039041
+0xce1fffff	.long	0xce1fffff
+0xce231041	bcax	v1.16b, v2.16b, v3.16b, v4.16b
+0xce3f7fff	bcax	v31.16b, v31.16b, v31.16b, v31.16b
+0xce239041	.long	0xce239041
+0xce3fffff	.long	0xce3fffff
+0xce431041	.long	0xce431041
+0xce5f7fff	.long	0xce5f7fff
+0xce439041	.long	0xce439041
+0xce5fffff	.long	0xce5fffff
+0xce631041	.long	0xce631041
+0xce7f7fff	.long	0xce7f7fff
+0xce639041	.long	0xce639041
+0xce7fffff	.long	0xce7fffff
+0xce830041	xar	v1.2d, v2.2d, v3.2d, #0x0
+0xce9f03ff	xar	v31.2d, v31.2d, v31.2d, #0x0
+0xce830441	xar	v1.2d, v2.2d, v3.2d, #0x1
+0xce9f07ff	xar	v31.2d, v31.2d, v31.2d, #0x1
+0xce838041	xar	v1.2d, v2.2d, v3.2d, #0x20
+0xce9f83ff	xar	v31.2d, v31.2d, v31.2d, #0x20
+0xce83fc41	xar	v1.2d, v2.2d, v3.2d, #0x3f
+0xce9fffff	xar	v31.2d, v31.2d, v31.2d, #0x3f

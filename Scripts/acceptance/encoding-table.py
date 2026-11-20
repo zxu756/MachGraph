@@ -86,6 +86,196 @@ class EncodingGroupSpec:
     generate_words: Callable[[], List[int]]
 
 
+# M2 第 13 段：第 9 组 AdvSIMD 单结构加载存储
+def _generate_advsimd_ldst_single_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.12 / C4.1.94.13 AdvSIMD load/store single structure: (word & 0xbf000000) == 0x0d000000."""
+    words: List[int] = []
+    addr_modes = ((0, 0), (1, 31), (1, 3))
+    reg_pairs = ((1, 2), (31, 31))
+    for q_bit in (0, 1):
+        for l_bit in (0, 1):
+            for r_bit in (0, 1):
+                for opcode in range(8):
+                    for s_bit in (0, 1):
+                        for size in range(4):
+                            for post_bit, rm in addr_modes:
+                                for rt, rn in reg_pairs:
+                                    word = (
+                                        (q_bit << 30)
+                                        | 0x0D000000
+                                        | (post_bit << 23)
+                                        | (l_bit << 22)
+                                        | (r_bit << 21)
+                                        | (rm << 16)
+                                        | (opcode << 13)
+                                        | (s_bit << 12)
+                                        | (size << 10)
+                                        | (rn << 5)
+                                        | rt
+                                    )
+                                    words.append(word)
+
+    for q_bit in (0, 1):
+        for l_bit in (0, 1):
+            for r_bit in (0, 1):
+                for opcode in range(8):
+                    for s_bit in (0, 1):
+                        for size in range(4):
+                            word = (
+                                (q_bit << 30)
+                                | 0x0D000000
+                                | (l_bit << 22)
+                                | (r_bit << 21)
+                                | (1 << 16)
+                                | (opcode << 13)
+                                | (s_bit << 12)
+                                | (size << 10)
+                                | (2 << 5)
+                                | 1
+                            )
+                            words.append(word)
+    return words
+
+
+# M2 第 13b 段：第 21 组 AdvSIMD 多结构加载存储
+def _generate_advsimd_ldst_multi_words() -> List[int]:
+    """ARM DDI 0487 C4.1.94.10 / C4.1.94.11 AdvSIMD load/store multiple structures: (word & 0xbf000000) == 0x0c000000."""
+    words: List[int] = []
+    addr_modes = ((0, 0), (1, 31), (1, 3))
+    reg_pairs = ((1, 2), (31, 31))
+    for q_bit in (0, 1):
+        for l_bit in (0, 1):
+            for opcode in range(16):
+                for size in range(4):
+                    for post_bit, rm in addr_modes:
+                        for rt, rn in reg_pairs:
+                            word = (
+                                (q_bit << 30)
+                                | 0x0C000000
+                                | (post_bit << 23)
+                                | (l_bit << 22)
+                                | (rm << 16)
+                                | (opcode << 12)
+                                | (size << 10)
+                                | (rn << 5)
+                                | rt
+                            )
+                            words.append(word)
+
+    # Must-be-zero unallocated counterexamples (3 x 256 = 768 rows):
+    # - no-offset form (bit[23]=0) requires bits[21:16] == 0: sample bit[16]=1 and bit[21]=1;
+    # - post-indexed form (bit[23]=1) requires bit[21] == 0: sample bit[21]=1 (with Rm=31).
+    mbz_variants = (
+        (0, 0, 1),
+        (0, 1, 0),
+        (1, 1, 31),
+    )
+    for post_bit, bit21, rm in mbz_variants:
+        for q_bit in (0, 1):
+            for l_bit in (0, 1):
+                for opcode in range(16):
+                    for size in range(4):
+                        word = (
+                            (q_bit << 30)
+                            | 0x0C000000
+                            | (post_bit << 23)
+                            | (l_bit << 22)
+                            | (bit21 << 21)
+                            | (rm << 16)
+                            | (opcode << 12)
+                            | (size << 10)
+                            | (2 << 5)
+                            | 1
+                        )
+                        words.append(word)
+    return words
+
+
+# M2 第 14 段：第 17 组 Crypto AES
+def _generate_crypto_aes_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.1 Cryptographic AES: (word & 0xff3e0c00) == 0x4e280800."""
+    words: List[int] = []
+    reg_pairs = ((1, 2), (31, 31))
+    for size in range(4):
+        for opcode in range(32):
+            for rd, rn in reg_pairs:
+                word = (
+                    0x4E280800
+                    | (size << 22)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+    return words
+
+
+# M2 第 14 段：第 23 组 Crypto 四寄存器和 XAR（SHA3）
+def _generate_crypto_sha3_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.4 Cryptographic four-register ((word & 0xff800000) == 0xce000000) & XAR ((word & 0xffe00000) == 0xce800000)."""
+    words: List[int] = []
+    four_reg_tuples = ((1, 2, 3, 4), (31, 31, 31, 31))
+    for op0 in range(4):
+        for bit15 in (0, 1):
+            for rd, rn, rm, ra in four_reg_tuples:
+                word = (
+                    0xCE000000
+                    | (op0 << 21)
+                    | (rm << 16)
+                    | (bit15 << 15)
+                    | (ra << 10)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+
+    xar_reg_tuples = ((1, 2, 3), (31, 31, 31))
+    for imm6 in (0, 1, 32, 63):
+        for rd, rn, rm in xar_reg_tuples:
+            word = (
+                0xCE800000
+                | (rm << 16)
+                | (imm6 << 10)
+                | (rn << 5)
+                | rd
+            )
+            words.append(word)
+    return words
+
+
+# M2 第 14 段：第 25 组 Crypto SHA（SHA1 与 SHA256）
+def _generate_crypto_sha_words() -> List[int]:
+    """ARM DDI 0487 C4.1.95.2 / C4.1.95.3 Cryptographic three-register ((word & 0xff208c00) == 0x5e000000) & two-register ((word & 0xff3e0c00) == 0x5e280800) SHA."""
+    words: List[int] = []
+    three_reg_tuples = ((1, 2, 3), (31, 31, 31))
+    for size in range(4):
+        for opcode in range(8):
+            for rd, rn, rm in three_reg_tuples:
+                word = (
+                    0x5E000000
+                    | (size << 22)
+                    | (rm << 16)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+
+    two_reg_pairs = ((1, 2), (31, 31))
+    for size in range(4):
+        for opcode in range(32):
+            for rd, rn in two_reg_pairs:
+                word = (
+                    0x5E280800
+                    | (size << 22)
+                    | (opcode << 12)
+                    | (rn << 5)
+                    | rd
+                )
+                words.append(word)
+    return words
+
+
 def _generate_move_wide_imm_words() -> List[int]:
     """ARM DDI 0487 C4.1.92.5 Move wide (immediate): bits[28:23] == 0b100101."""
     words: List[int] = []
@@ -1652,6 +1842,74 @@ ENCODING_GROUPS: Dict[str, EncodingGroupSpec] = {
             "FP32/FP64 U=1 s, v.2s / d, v.2d, and .long unallocated space).",
         ),
         generate_words=_generate_advsimd_scalar_pairwise_words,
+    ),
+    "advsimd_ldst_single": EncodingGroupSpec(
+        name="advsimd_ldst_single",
+        title="Advanced SIMD load/store single structure (no-offset & post-indexed) — LD1..LD4, ST1..ST4 single-lane, and LD1R..LD4R",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.12 / C4.1.94.13 AdvSIMD load/store single structure: (word & 0xbf000000) == 0x0d000000.",
+            "Enumerates all 2 x 2 x 2 x 8 x 2 x 4 = 512 non-register combinations of Q=0..1, L=0..1, R=0..1,",
+            "opcode=0..7, S=0..1, size=0..3 across 3 addressing modes: no-offset (bit[23]=0, bits[20:16]=0),",
+            "post-indexed immediate (bit[23]=1, Rm=31), and post-indexed register (bit[23]=1, Rm=3),",
+            "and 2 register pairs: (Rt, Rn) in {(1, 2), (31, 31)} (covering v31->v0 wraparound and [sp] base, 3,072 rows);",
+            "plus all 512 (Q, L, R, opcode, S, size) combinations in no-offset form (bit[23]=0) with non-zero bits[20:16]=0b00001",
+            "and (Rt, Rn) = (1, 2) (must-be-zero unallocated counterexamples, 512 rows), totaling 3,584 rows.",
+        ),
+        generate_words=_generate_advsimd_ldst_single_words,
+    ),
+    "advsimd_ldst_multi": EncodingGroupSpec(
+        name="advsimd_ldst_multi",
+        title="Advanced SIMD load/store multiple structures (no-offset & post-indexed) — LD1..LD4 (1..4 regs) and ST1..ST4",
+        header_notes=(
+            "ARM DDI 0487 C4.1.94.10 / C4.1.94.11 AdvSIMD load/store multiple structures: (word & 0xbf000000) == 0x0c000000.",
+            "Enumerates all 2 x 2 x 16 x 4 = 256 non-register combinations of Q=0..1, L=0..1, opcode=0..15, size=0..3",
+            "across 3 addressing modes: no-offset (bit[23]=0, bits[21:16]=0), post-indexed immediate (bit[23]=1, bit[21]=0, Rm=31),",
+            "and post-indexed register (bit[23]=1, bit[21]=0, Rm=3), and 2 register pairs: (Rt, Rn) in {(1, 2), (31, 31)}",
+            "(covering v31->v0 wraparound and [sp] base, 1,536 rows);",
+            "plus 3 x 256 = 768 must-be-zero unallocated counterexamples with (Rt, Rn) = (1, 2):",
+            "no-offset bit[16]=1 (256 rows), no-offset bit[21]=1 (256 rows), and post-indexed bit[21]=1 (Rm=31, 256 rows),",
+            "totaling 2,304 rows.",
+        ),
+        generate_words=_generate_advsimd_ldst_multi_words,
+    ),
+    "crypto_aes": EncodingGroupSpec(
+        name="crypto_aes",
+        title="Cryptographic AES — AESE, AESD, AESMC, and AESIMC",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.1 Cryptographic AES: (word & 0xff3e0c00) == 0x4e280800.",
+            "Enumerates all 4 x 32 = 128 non-register combinations of size=0..3 (bits[23:22]) and opcode=0..31 (bits[16:12])",
+            "across 2 register pairs: (Rd, Rn) in {(1, 2), (31, 31)}, totaling 256 rows.",
+            "Reference decodes 8 rows (size=0b00, opcode in 0b00100..0b00111: aese, aesd, aesmc, aesimc) and prints .long for 248 rows.",
+        ),
+        generate_words=_generate_crypto_aes_words,
+    ),
+    "crypto_sha3": EncodingGroupSpec(
+        name="crypto_sha3",
+        title="Cryptographic four-register & XAR (FEAT_SHA3) — EOR3, BCAX, and XAR",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.4 Cryptographic four-register ((word & 0xff800000) == 0xce000000) and XAR ((word & 0xffe00000) == 0xce800000).",
+            "Enumerates all 4 x 2 = 8 combinations of Op0=0..3 (bits[22:21]) and bit[15]=0..1 in 0xce000000 across",
+            "2 register tuples (Rd, Rn, Rm, Ra) in {(1, 2, 3, 4), (31, 31, 31, 31)} (16 rows), plus XAR imm6 in {0, 1, 32, 63}",
+            "(bits[15:10]) in 0xce800000 across 2 register tuples (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (8 rows), totaling 24 rows.",
+            "Reference decodes 12 rows (eor3: 2, bcax: 2, xar: 8) and prints .long for 12 rows (including apple-m1 unsupported sm3ss1",
+            "and bit[15]=1 / Op0=0b11 counterexamples).",
+        ),
+        generate_words=_generate_crypto_sha3_words,
+    ),
+    "crypto_sha": EncodingGroupSpec(
+        name="crypto_sha",
+        title="Cryptographic SHA1 & SHA256 — SHA1C/P/M/H/SU0/SU1 and SHA256H/H2/SU0/SU1",
+        header_notes=(
+            "ARM DDI 0487 C4.1.95.2 Cryptographic three-register SHA ((word & 0xff208c00) == 0x5e000000) and",
+            "C4.1.95.3 Cryptographic two-register SHA ((word & 0xff3e0c00) == 0x5e280800).",
+            "Enumerates all 4 x 8 = 32 combinations of size=0..3 (bits[23:22]) and opcode=0..7 (bits[14:12]) in 0x5e000000",
+            "across 2 register tuples (Rd, Rn, Rm) in {(1, 2, 3), (31, 31, 31)} (64 rows), plus all 4 x 32 = 128 combinations",
+            "of size=0..3 and opcode=0..31 (bits[16:12]) in 0x5e280800 across 2 register pairs (Rd, Rn) in {(1, 2), (31, 31)} (256 rows),",
+            "totaling 320 rows.",
+            "Reference decodes 20 rows (sha1c, sha1p, sha1m, sha1su0, sha256h, sha256h2, sha256su1, sha1h, sha1su1, sha256su0 x 2)",
+            "and prints .long for 300 rows.",
+        ),
+        generate_words=_generate_crypto_sha_words,
     ),
 }
 

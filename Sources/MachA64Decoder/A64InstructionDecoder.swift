@@ -34,6 +34,9 @@ public struct A64InstructionDecoder: Sendable {
                 return decoded
             }
         } else if (op0 & 0b0111) == 0b0111 {
+            if let crypto = decodeCryptographic(word: word, at: address) {
+                return crypto
+            }
             if let decoded = decodeSIMDAndFloatingPoint(word: word, at: address) {
                 return decoded
             }
@@ -1536,6 +1539,11 @@ public struct A64InstructionDecoder: Sendable {
         at address: VirtualAddress,
         symbolLookup: (@Sendable (VirtualAddress) -> String?)?
     ) -> A64DecodedInstruction? {
+        // 0. AdvSIMD Load/Store Structures (Single & Multiple): bit[31] == 0, bits[29:25] == 0b00110
+        if (word & 0xBE00_0000) == 0x0C00_0000 {
+            return decodeAdvSIMDLoadStoreStructure(word: word, at: address)
+        }
+
         // 1. Load Register (PC-relative literal): bits[29:27] == 0b011, bits[25:24] == 0b00
         if (word & 0x3B00_0000) == 0x1800_0000 {
             return decodeLoadLiteral(word: word, at: address, symbolLookup: symbolLookup)

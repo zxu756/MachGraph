@@ -2839,5 +2839,237 @@ class TestItem15EncodingFuzzHarness(unittest.TestCase):
             self.assertEqual(rc_op_fail, 1)
 
 
+class TestStage13AdvSIMDLoadStoreSingleTable(unittest.TestCase):
+    """M2 Stage 13 (Group 9): `advsimd_ldst_single` encoding table registration, row bounds, and reference generation."""
+
+    def _mod(self):
+        return _load_script_module("encoding_table_stage13_mod", "encoding-table.py")
+
+    def _invoke(self, mod, argv):
+        import io
+        from contextlib import redirect_stderr, redirect_stdout
+
+        out_buf = io.StringIO()
+        err_buf = io.StringIO()
+        try:
+            with redirect_stdout(out_buf), redirect_stderr(err_buf):
+                rc = mod.main(argv)
+        except SystemExit as exc:
+            rc = exc.code if isinstance(exc.code, int) else 1
+        return rc, out_buf.getvalue(), err_buf.getvalue()
+
+    def test_stage13_advsimd_ldst_single_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage13_check", "encoding-fuzz.py")
+
+        for sample_word in (0x0D9F8100, 0x4D408500, 0x0D0C0B0A, 0x0D0E0F10, 0x4D2C6DFC):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "AdvSIMD load/store single structure",
+            )
+        self.assertEqual(
+            enc_fuzz.classify_a64_encoding_group(0x4C008161),
+            "AdvSIMD load/store multiple structures",
+        )
+
+        self.assertIn("advsimd_ldst_single", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["advsimd_ldst_single"].generate_words()
+        self.assertEqual(len(words), 3584)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in advsimd_ldst_single")
+        for w in words:
+            self.assertEqual(w & 0xBF000000, 0x0D000000)
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD load/store single structure",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_ldst_single", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_ldst_single failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ldst_single.tsv"))
+            self.assertEqual(len(rows), 3584)
+            self.assertTrue(any("encoding-table.py generate advsimd_ldst_single" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in ("ld1", "ld2", "ld3", "ld4", "st1", "st2", "st3", "st4"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 180)
+            for expected_rep in ("ld1r", "ld2r", "ld3r", "ld4r"):
+                self.assertEqual(mnem_counts.get(expected_rep), 48)
+            self.assertEqual(mnem_counts.get(".long"), 3584 - 1632)
+
+    def test_stage13b_advsimd_ldst_multi_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage13b_check", "encoding-fuzz.py")
+
+        for sample_word in (0x4C008161, 0x4C400140, 0x0C0B0A09, 0x0C0D0E0F):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "AdvSIMD load/store multiple structures",
+            )
+
+        self.assertIn("advsimd_ldst_multi", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["advsimd_ldst_multi"].generate_words()
+        self.assertEqual(len(words), 2304)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in advsimd_ldst_multi")
+        for w in words:
+            self.assertEqual(w & 0xBF000000, 0x0C000000)
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(w),
+                "AdvSIMD load/store multiple structures",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "advsimd_ldst_multi", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate advsimd_ldst_multi failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "advsimd_ldst_multi.tsv"))
+            self.assertEqual(len(rows), 2304)
+            self.assertTrue(any("encoding-table.py generate advsimd_ldst_multi" in c for c in comments))
+            mnem_counts = {}
+            mbz_rows = 0
+            for w, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+                is_post = ((w >> 23) & 1) == 1
+                bit21 = (w >> 21) & 1
+                rm = (w >> 16) & 0x1F
+                if bit21 != 0 or (not is_post and rm != 0):
+                    mbz_rows += 1
+                    self.assertEqual(m, ".long", f"must-be-zero violation word 0x{w:08x} decoded as {m}")
+            self.assertEqual(mbz_rows, 768)
+            for expected_mnem in ("ld1", "st1"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 192)
+            for expected_mnem in ("ld2", "ld3", "ld4", "st2", "st3", "st4"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 42)
+            self.assertEqual(mnem_counts.get(".long"), 2304 - 636)
+
+    def test_stage14_crypto_aes_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_aes_check", "encoding-fuzz.py")
+
+        for sample_word in (0x4E284840, 0x4E28782C):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto AES",
+            )
+
+        self.assertIn("crypto_aes", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_aes"].generate_words()
+        self.assertEqual(len(words), 256)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_aes")
+        for w in words:
+            self.assertEqual(w & 0xFF3E0C00, 0x4E280800)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_aes", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_aes failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_aes.tsv"))
+            self.assertEqual(len(rows), 256)
+            self.assertTrue(any("encoding-table.py generate crypto_aes" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in ("aese", "aesd", "aesmc", "aesimc"):
+                self.assertEqual(mnem_counts.get(expected_mnem), 2)
+            self.assertEqual(mnem_counts.get(".long"), 248)
+
+    def test_stage14_crypto_sha3_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_sha3_check", "encoding-fuzz.py")
+
+        for sample_word in (0xCE104ABC, 0xCE3206CF, 0xCE834960):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto four-register / SHA3 (EOR3/BCAX/SM3/XAR)",
+            )
+
+        self.assertIn("crypto_sha3", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_sha3"].generate_words()
+        self.assertEqual(len(words), 24)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_sha3")
+        for w in words:
+            self.assertTrue(
+                (w & 0xFF800000) == 0xCE000000 or (w & 0xFFE00000) == 0xCE800000,
+                f"unexpected word 0x{w:08x} in crypto_sha3",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_sha3", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_sha3 failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_sha3.tsv"))
+            self.assertEqual(len(rows), 24)
+            self.assertTrue(any("encoding-table.py generate crypto_sha3" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            self.assertEqual(mnem_counts.get("eor3"), 2)
+            self.assertEqual(mnem_counts.get("bcax"), 2)
+            self.assertEqual(mnem_counts.get("xar"), 8)
+            self.assertEqual(mnem_counts.get(".long"), 12)
+
+    def test_stage14_crypto_sha_registered_and_within_row_limit(self):
+        enc_table = self._mod()
+        enc_fuzz = _load_script_module("encoding_fuzz_stage14_sha_check", "encoding-fuzz.py")
+
+        for sample_word in (0x5E044272, 0x5E282820, 0x5E1A0052):
+            self.assertEqual(
+                enc_fuzz.classify_a64_encoding_group(sample_word),
+                "Crypto SHA (SHA1/SHA256)",
+            )
+
+        self.assertIn("crypto_sha", enc_table.ENCODING_GROUPS)
+        words = enc_table.ENCODING_GROUPS["crypto_sha"].generate_words()
+        self.assertEqual(len(words), 320)
+        self.assertLessEqual(len(words), 4096)
+        self.assertEqual(len(set(words)), len(words), "duplicate words in crypto_sha")
+        for w in words:
+            self.assertTrue(
+                (w & 0xFF208C00) == 0x5E000000 or (w & 0xFF3E0C00) == 0x5E280800,
+                f"unexpected word 0x{w:08x} in crypto_sha",
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, stdout_txt, stderr_txt = self._invoke(
+                enc_table,
+                ["generate", "crypto_sha", "--out-dir", tmp],
+            )
+            self.assertEqual(rc, 0, f"generate crypto_sha failed: {stdout_txt}\n{stderr_txt}")
+            comments, rows = enc_table.load_reference_table(os.path.join(tmp, "crypto_sha.tsv"))
+            self.assertEqual(len(rows), 320)
+            self.assertTrue(any("encoding-table.py generate crypto_sha" in c for c in comments))
+            mnem_counts = {}
+            for _, m, _ in rows:
+                mnem_counts[m] = mnem_counts.get(m, 0) + 1
+            for expected_mnem in (
+                "sha1c",
+                "sha1p",
+                "sha1m",
+                "sha1su0",
+                "sha256h",
+                "sha256h2",
+                "sha256su1",
+                "sha1h",
+                "sha1su1",
+                "sha256su0",
+            ):
+                self.assertEqual(mnem_counts.get(expected_mnem), 2, f"unexpected count for {expected_mnem}")
+            self.assertEqual(mnem_counts.get(".long"), 300)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
