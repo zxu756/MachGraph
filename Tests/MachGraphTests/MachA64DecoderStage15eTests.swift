@@ -140,11 +140,16 @@ struct MachA64DecoderStage15eTests {
 
     @Test("15e(4): Shifted movi Vd.2s/4s, #imm8, lsl #0/8/16/24 matches clang-compiled arm64e words and keeps msl/4h/8h unsupported")
     func shiftedMovi32BitImmediateMatchesClangAndRejectsUnimplementedShifts() throws {
-        // Corpus example (/usr/bin/ssh @ 0x10003c0c8): 4f006441 -> movi v1.4s, #2, lsl #24
+        // Corpus example (/usr/bin/ssh @ 0x10003c0c8): 4f006441 -> movi v1.4s, #0x2, lsl #24
+        // (Stage 11a Group 11 aligned AdvSIMD modified-immediate disassembly with LLVM's hex #0x2;
+        // decimal #2 input must also continue assembling to the exact same machine word.)
         try assertExactRoundTrip(
             word: 0x4F00_6441,
-            expectedText: "movi v1.4s, #2, lsl #24",
+            expectedText: "movi v1.4s, #0x2, lsl #24",
             at: VirtualAddress(0x1_0003_C0C8)
+        )
+        #expect(
+            try assembler.assembleSingle("movi v1.4s, #2, lsl #24", at: VirtualAddress(0x1_0003_C0C8)) == 0x4F00_6441
         )
 
         // Expected machine words below were obtained by assembling each instruction with:

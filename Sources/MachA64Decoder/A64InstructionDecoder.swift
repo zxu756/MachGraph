@@ -1262,7 +1262,7 @@ public struct A64InstructionDecoder: Sendable {
             }
 
             let sysEnc = UInt16((word >> 5) & 0xFFFF)
-            let sysName = "S0_3_C3_C\(crm)_\(op2)"
+            let sysName = A64SystemOpHelpers.barrierFallbackSysRegName(crm: crm, op2: op2)
             let xtReg = A64Register.x(rt, allowSP: false)
             return A64DecodedInstruction(
                 address: address,

@@ -1896,6 +1896,21 @@ public struct A64SysPreferredAlias: Sendable, Equatable {
 }
 
 public enum A64SystemOpHelpers {
+    public static func barrierFallbackSysRegName(crm: UInt32, op2: UInt32) -> String {
+        "S0_3_C3_C\(crm & 0xF)_\(op2 & 0x7)"
+    }
+
+    public static let allBarrierFallbackSysRegLowerNames: Set<String> = {
+        var names: Set<String> = []
+        names.reserveCapacity(128)
+        for crm: UInt32 in 0..<16 {
+            for op2: UInt32 in 0..<8 {
+                names.insert(barrierFallbackSysRegName(crm: crm, op2: op2).lowercased())
+            }
+        }
+        return names
+    }()
+
     public static func pstateFieldName(op1: UInt32, op2: UInt32) -> String? {
         switch (op1, op2) {
         case (0b000, 0b101): return "SPSel"
@@ -1909,6 +1924,18 @@ public enum A64SystemOpHelpers {
         default: return nil
         }
     }
+
+    public static let allPstateFieldLowerNames: Set<String> = {
+        var names: Set<String> = []
+        for op1: UInt32 in 0..<8 {
+            for op2: UInt32 in 0..<8 {
+                if let field = pstateFieldName(op1: op1, op2: op2) {
+                    names.insert(field.lowercased())
+                }
+            }
+        }
+        return names
+    }()
 
     /// Preferred architectural / Apple LLVM alias for `SYS` (`op0 == 0b01`, `L == 0`) by instruction bitfields.
     public static func sysPreferredAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> A64SysPreferredAlias? {

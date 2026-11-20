@@ -752,12 +752,38 @@ public struct A64MiniAssembler: Sendable {
 
         case "msr":
             guard operands.count == 2 else { throw err(line, src, "MSR expects <sysreg>, <Xt>") }
-            guard let sysEnc = A64SystemRegisterTable.encoding(forName: operands[0]) else {
+            let lowerSysReg = operands[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let secondTrimmed = operands[1].trimmingCharacters(in: .whitespacesAndNewlines)
+            if secondTrimmed.hasPrefix("#") {
+                if A64SystemOpHelpers.allPstateFieldLowerNames.contains(lowerSysReg) {
+                    guard let imm = Self.parseSignedOrUnsigned64(secondTrimmed), imm >= 0, imm <= 15 else {
+                        throw err(line, src, "Invalid PSTATE immediate '\(operands[1])'")
+                    }
+                    throw MachGraphError.assemblerUnsupported(
+                        mnemonic: mnemonic,
+                        form: Self.normalizeStatementForm(src)
+                    )
+                }
                 throw err(line, src, "Unknown system register '\(operands[0])'")
             }
-            let xt = try requireReg(operands[1], line: line, src: src)
-            guard xt.bitWidth == 64 && !xt.isStackPointer else { throw err(line, src, "MSR source must be Xn or XZR") }
-            return 0xD500_0000 | (UInt32(sysEnc) << 5) | UInt32(xt.index)
+            if let sysEnc = A64SystemRegisterTable.encoding(forName: operands[0]) {
+                let xt = try requireReg(operands[1], line: line, src: src)
+                guard xt.bitWidth == 64 && !xt.isStackPointer else {
+                    throw err(line, src, "MSR source must be Xn or XZR")
+                }
+                return 0xD500_0000 | (UInt32(sysEnc) << 5) | UInt32(xt.index)
+            }
+            if A64SystemOpHelpers.allBarrierFallbackSysRegLowerNames.contains(lowerSysReg) {
+                let xt = try requireReg(operands[1], line: line, src: src)
+                guard xt.bitWidth == 64 && !xt.isStackPointer else {
+                    throw err(line, src, "MSR source must be Xn or XZR")
+                }
+                throw MachGraphError.assemblerUnsupported(
+                    mnemonic: mnemonic,
+                    form: Self.normalizeStatementForm(src)
+                )
+            }
+            throw err(line, src, "Unknown system register '\(operands[0])'")
 
         // Returns & Register Branches (Standard + PAC)
         case "ret":
