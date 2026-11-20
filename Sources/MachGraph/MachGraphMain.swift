@@ -61,11 +61,14 @@ struct MachGraphApplication {
         if MachCLIRunner.isHeadlessInvocation(arguments: userArgs) {
             do {
                 let runner = MachCLIRunner()
-                let output = try await runner.execute(arguments: userArgs)
-                if !output.isEmpty {
-                    print(output)
+                let outcome = try await runner.run(arguments: userArgs)
+                if !outcome.output.isEmpty {
+                    print(outcome.output)
                 }
-                Foundation.exit(0)
+                if !outcome.stderr.isEmpty {
+                    FileHandle.standardError.write(Data((outcome.stderr + "\n").utf8))
+                }
+                Foundation.exit(outcome.exitCode)
             } catch {
                 failAndExit(error, arguments: userArgs, fallbackLanguage: activeLanguage)
             }

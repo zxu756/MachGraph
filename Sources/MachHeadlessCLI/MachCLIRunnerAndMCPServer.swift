@@ -50,6 +50,19 @@ public struct MachDesktopLaunchRequest: Sendable, Equatable {
     }
 }
 
+/// Outcome of a headless CLI invocation that may emit normal stdout results while returning a non-zero exit code.
+public struct MachCLIOutcome: Sendable, Equatable {
+    public let output: String
+    public let stderr: String
+    public let exitCode: Int32
+
+    public init(output: String, stderr: String = "", exitCode: Int32 = 0) {
+        self.output = output
+        self.stderr = stderr
+        self.exitCode = exitCode
+    }
+}
+
 // MARK: - Headless Binary Inspection & Reverse-Engineering CLI (`MachCLIRunner`)
 
 public struct MachCLIRunner: Sendable {
@@ -143,6 +156,13 @@ public struct MachCLIRunner: Sendable {
             summaryZH: "汇编内联 ARM64 补丁并重新计算临时代码签名"
         ),
         CLISubcommandSpec(
+            primaryName: "asm",
+            usageArgsEN: "[--asm \"<insn>; <insn>\"] [--at <0x...>] [--json]",
+            usageArgsZH: "[--asm \"<insn>; <insn>\"] [--at <0x...>] [--json]",
+            summaryEN: "Assemble ARM64 statements into machine words without reading or writing files (reads stdin if --asm is omitted; 'label:' is local to its own statement)",
+            summaryZH: "把 ARM64 语句汇编成机器码，不读写任何文件；不给 --asm 时从标准输入读（语句开头的 '标签:' 只在本条语句里有效，不跨语句）"
+        ),
+        CLISubcommandSpec(
             primaryName: "resign",
             usageArgsEN: "<file> [--identifier <id>] [--output <out>] [--json]",
             usageArgsZH: "<文件> [--identifier <标识符>] [--output <输出路径>] [--json]",
@@ -209,8 +229,13 @@ public struct MachCLIRunner: Sendable {
         ),
         (
             "--asm \"<insn>; <insn>\"",
-            "Instructions for patch-asm; ';' separates statements, '//' starts a comment",
-            "patch-asm 的指令序列；';' 分隔语句，'//' 之后是注释"
+            "Statements for patch-asm and asm; newlines and ';' separate statements, '//' and '/* */' are comments (in asm, 'label:' applies only to its own statement)",
+            "patch-asm 与 asm 的 ARM64 语句；换行与 ';' 分隔语句，'//' 与 '/* */' 为注释（asm 中开头的 '标签:' 只在本条语句里有效，不跨语句）"
+        ),
+        (
+            "--at <0x...>",
+            "asm: address of the first statement (+4 for each subsequent statement; default 0x0)",
+            "asm：第一条语句的地址，之后每条加 4（默认 0x0）"
         ),
         (
             "--force",
@@ -251,10 +276,17 @@ public struct MachCLIRunner: Sendable {
         return recognizedHeadlessTokens.contains(first)
     }
 
-    /// Process exit code for a failed invocation: `2` for usage errors, `1` for everything else.
+    /// Process exit code for a failed invocation: `2` for usage errors, `3` for unsupported A64 assembly, `1` for everything else.
     public static func exitCode(for error: Error) -> Int32 {
-        if let mgErr = error as? MachGraphError, case .invalidCLIArguments = mgErr {
-            return 2
+        if let mgErr = error as? MachGraphError {
+            switch mgErr {
+            case .invalidCLIArguments:
+                return 2
+            case .assemblerUnsupported:
+                return 3
+            default:
+                return 1
+            }
         }
         return 1
     }
@@ -344,9 +376,28 @@ public struct MachCLIRunner: Sendable {
         return nil
     }
 
-    public init() {}
+    public typealias StdinReader = @Sendable () throws -> String
+
+    private let readStandardInput: StdinReader
+
+    private static let defaultStdinReader: StdinReader = {
+        let data = try FileHandle.standardInput.readToEnd() ?? Data()
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    public init() {
+        self.readStandardInput = Self.defaultStdinReader
+    }
+
+    public init(stdinReader: @escaping StdinReader) {
+        self.readStandardInput = stdinReader
+    }
 
     public func execute(arguments: [String]) async throws -> String {
+        try await run(arguments: arguments).output
+    }
+
+    public func run(arguments: [String]) async throws -> MachCLIOutcome {
         let resolvedLang = try Self.validateAndResolveLanguage(from: arguments)
         await MainActor.run {
             MachLocalizer.shared.setLanguage(resolvedLang, persist: false)
@@ -354,15 +405,15 @@ public struct MachCLIRunner: Sendable {
 
         let cleanedArgs = Self.stripLanguageFlags(arguments)
         guard let rawSubcommand = cleanedArgs.first else {
-            return Self.helpBanner(in: resolvedLang)
+            return MachCLIOutcome(output: Self.helpBanner(in: resolvedLang))
         }
         let rest = Array(cleanedArgs.dropFirst())
 
         if ["help", "--help", "-h"].contains(rawSubcommand) {
-            return Self.helpBanner(in: resolvedLang)
+            return MachCLIOutcome(output: Self.helpBanner(in: resolvedLang))
         }
         if ["version", "--version", "-v"].contains(rawSubcommand) {
-            return Self.versionBanner(in: resolvedLang)
+            return MachCLIOutcome(output: Self.versionBanner(in: resolvedLang))
         }
 
         guard let canonical = Self.resolveCanonicalSubcommand(rawSubcommand) else {
@@ -376,40 +427,42 @@ public struct MachCLIRunner: Sendable {
 
         // Handle `--help` passed after a subcommand name (e.g. `machgraph disasm --help`)
         if rest.contains("--help") || rest.contains("-h") {
-            return Self.helpBanner(in: resolvedLang)
+            return MachCLIOutcome(output: Self.helpBanner(in: resolvedLang))
         }
 
         switch canonical {
         case "info":
-            return try runInfo(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runInfo(args: rest, language: resolvedLang))
         case "segments":
-            return try runSegments(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runSegments(args: rest, language: resolvedLang))
         case "symbols":
-            return try runSymbols(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runSymbols(args: rest, language: resolvedLang))
         case "strings":
-            return try runStrings(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runStrings(args: rest, language: resolvedLang))
         case "fixups":
-            return try runFixups(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runFixups(args: rest, language: resolvedLang))
         case "disasm":
-            return try runDisasm(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runDisasm(args: rest, language: resolvedLang))
         case "cfg-dot":
-            return try runCFGDot(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runCFGDot(args: rest, language: resolvedLang))
         case "decompile":
-            return try runDecompile(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runDecompile(args: rest, language: resolvedLang))
         case "xrefs":
-            return try runXrefs(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runXrefs(args: rest, language: resolvedLang))
         case "codesign":
-            return try runCodeSign(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runCodeSign(args: rest, language: resolvedLang))
         case "entropy":
-            return try runEntropy(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runEntropy(args: rest, language: resolvedLang))
         case "patch-asm":
-            return try runPatchAsm(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runPatchAsm(args: rest, language: resolvedLang))
+        case "asm":
+            return try runAsm(args: rest, language: resolvedLang)
         case "resign":
-            return try runResign(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runResign(args: rest, language: resolvedLang))
         case "audit-plugins":
-            return try runAuditPlugins(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runAuditPlugins(args: rest, language: resolvedLang))
         case "export-html":
-            return try runExportHTML(args: rest, language: resolvedLang)
+            return MachCLIOutcome(output: try runExportHTML(args: rest, language: resolvedLang))
         case "mcp":
             let parsed = try parseArguments(
                 rest,
@@ -426,7 +479,7 @@ public struct MachCLIRunner: Sendable {
             }
             let server = MachMCPServer(defaultBinaryPath: defaultBinary, language: resolvedLang)
             await server.serveStdio()
-            return ""
+            return MachCLIOutcome(output: "")
         default:
             throw MachGraphError.invalidCLIArguments("Unhandled subcommand '\(canonical)'.")
         }
@@ -1224,6 +1277,269 @@ public struct MachCLIRunner: Sendable {
         }
 
         return "Patched \(vmAddr.hexString) (\(patchRecord.originalAssembly ?? "bytes") -> \(patchRecord.patchedAssembly ?? asmText)) | NewCDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
+    }
+
+    private enum AsmStatementOutcome {
+        case ok(word: UInt32)
+        case unsupported(mnemonic: String, form: String)
+        case error(reason: String)
+    }
+
+    private func runAsm(args: [String], language: MachLanguage) throws -> MachCLIOutcome {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "asm",
+            valueFlags: ["--asm", "--at"],
+            boolFlags: ["--json"],
+            language: language
+        )
+        if let pos = parsed.positionals.first {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Subcommand 'asm' does not accept positional arguments (got '\(pos)'). Pass '--asm \"...\"' or supply statements on standard input.",
+                    "子命令 'asm' 不接受位置参数（收到 '\(pos)'）。请传入 '--asm \"...\"' 或通过标准输入提供语句。"
+                )
+            )
+        }
+
+        let baseAddress: VirtualAddress
+        if let rawAt = parsed.values["--at"] {
+            baseAddress = try parseStrictAddress(rawAt, language: language)
+        } else {
+            baseAddress = .zero
+        }
+
+        let rawSource: String
+        if let inlineAsm = parsed.values["--asm"] {
+            rawSource = inlineAsm
+        } else {
+            do {
+                rawSource = try readStandardInput()
+            } catch let mgErr as MachGraphError {
+                throw mgErr
+            } catch {
+                throw MachGraphError.ioFailure(
+                    language.select(
+                        "Unable to read standard input: \(error.localizedDescription)",
+                        "无法读取标准输入: \(error.localizedDescription)"
+                    )
+                )
+            }
+        }
+
+        let statements = A64MiniAssembler.splitStatements(rawSource)
+        guard !statements.isEmpty else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "No assembly statements provided for 'asm'. Pass '--asm \"<insn>\"' or provide statements on standard input.",
+                    "未向 'asm' 提供任何汇编语句。请传入 '--asm \"<指令>\"' 或通过标准输入提供语句。"
+                )
+            )
+        }
+
+        let assembler = A64MiniAssembler()
+        var okCount = 0
+        var unsupportedCount = 0
+        var errorCount = 0
+        var outcomes: [AsmStatementOutcome] = []
+        outcomes.reserveCapacity(statements.count)
+
+        for (idx, stmt) in statements.enumerated() {
+            let addr = baseAddress.adding(UInt64(idx) &* 4)
+            do {
+                let word = try assembler.assembleSingle(stmt, at: addr)
+                okCount += 1
+                outcomes.append(.ok(word: word))
+            } catch let MachGraphError.assemblerUnsupported(mnemonic, form) {
+                unsupportedCount += 1
+                outcomes.append(.unsupported(mnemonic: mnemonic, form: form))
+            } catch let MachGraphError.assemblerError(_, _, reason) {
+                errorCount += 1
+                outcomes.append(.error(reason: reason))
+            } catch let mgErr as MachGraphError {
+                errorCount += 1
+                outcomes.append(.error(reason: mgErr.localizedMessage(in: language)))
+            } catch {
+                errorCount += 1
+                outcomes.append(.error(reason: error.localizedDescription))
+            }
+        }
+
+        let exitCode: Int32
+        if errorCount > 0 {
+            exitCode = 1
+        } else if unsupportedCount > 0 {
+            exitCode = 3
+        } else {
+            exitCode = 0
+        }
+
+        let stderrSummary: String
+        if exitCode == 0 {
+            stderrSummary = ""
+        } else {
+            stderrSummary = language.select(
+                "MachGraph asm summary: \(okCount) ok, \(unsupportedCount) unsupported, \(errorCount) error.",
+                "MachGraph asm 汇总: 成功 \(okCount) 条，不支持 \(unsupportedCount) 条，错误 \(errorCount) 条。"
+            )
+        }
+
+        if parsed.isJSON {
+            var json = ""
+            json.reserveCapacity(statements.count * 108 + 160)
+            json.append("{\n  \"at\": \"")
+            json.append(Self.formatCompactHex64(baseAddress.rawValue))
+            json.append("\",\n  \"summary\": {\"ok\": ")
+            json.append(String(okCount))
+            json.append(", \"unsupported\": ")
+            json.append(String(unsupportedCount))
+            json.append(", \"error\": ")
+            json.append(String(errorCount))
+            json.append("},\n  \"results\": [\n")
+            for (idx, stmt) in statements.enumerated() {
+                if idx > 0 {
+                    json.append(",\n")
+                }
+                let addrRaw = baseAddress.adding(UInt64(idx) &* 4).rawValue
+                json.append("    {\"index\": ")
+                json.append(String(idx))
+                json.append(", \"address\": \"")
+                json.append(Self.formatCompactHex64(addrRaw))
+                json.append("\", \"text\": ")
+                Self.appendJSONEscapedString(stmt, into: &json)
+                switch outcomes[idx] {
+                case .ok(let word):
+                    json.append(", \"status\": \"ok\", \"word\": \"")
+                    json.append(Self.formatHexWord32(word))
+                    json.append("\"}")
+                case .unsupported(let mnemonic, let form):
+                    json.append(", \"status\": \"unsupported\", \"word\": null, \"mnemonic\": ")
+                    Self.appendJSONEscapedString(mnemonic, into: &json)
+                    json.append(", \"form\": ")
+                    Self.appendJSONEscapedString(form, into: &json)
+                    json.append("}")
+                case .error(let reason):
+                    json.append(", \"status\": \"error\", \"word\": null, \"reason\": ")
+                    Self.appendJSONEscapedString(reason, into: &json)
+                    json.append("}")
+                }
+            }
+            json.append("\n  ]\n}")
+            return MachCLIOutcome(output: json, stderr: stderrSummary, exitCode: exitCode)
+        }
+
+        var textOut = ""
+        textOut.reserveCapacity(statements.count * 56)
+        for (idx, stmt) in statements.enumerated() {
+            if idx > 0 {
+                textOut.append("\n")
+            }
+            let addrRaw = baseAddress.adding(UInt64(idx) &* 4).rawValue
+            textOut.append(Self.formatPaddedHex64(addrRaw))
+            textOut.append("\t")
+            let cleanStmt = Self.sanitizeSingleLineField(stmt)
+            switch outcomes[idx] {
+            case .ok(let word):
+                textOut.append(Self.formatHexWord32(word))
+                textOut.append("\tok\t")
+                textOut.append(cleanStmt)
+            case .unsupported(_, let form):
+                textOut.append("-\tunsupported\t")
+                textOut.append(cleanStmt)
+                textOut.append("\t")
+                textOut.append(Self.sanitizeSingleLineField(form))
+            case .error(let reason):
+                textOut.append("-\terror\t")
+                textOut.append(cleanStmt)
+                textOut.append("\t")
+                textOut.append(Self.sanitizeSingleLineField(reason))
+            }
+        }
+        return MachCLIOutcome(output: textOut, stderr: stderrSummary, exitCode: exitCode)
+    }
+
+    private static let lowerHexDigits: StaticString = "0123456789abcdef"
+
+    private static func formatHexWord32(_ word: UInt32) -> String {
+        lowerHexDigits.withUTF8Buffer { digits in
+            var bytes: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) = (
+                digits[Int((word >> 28) & 0xF)],
+                digits[Int((word >> 24) & 0xF)],
+                digits[Int((word >> 20) & 0xF)],
+                digits[Int((word >> 16) & 0xF)],
+                digits[Int((word >> 12) & 0xF)],
+                digits[Int((word >> 8) & 0xF)],
+                digits[Int((word >> 4) & 0xF)],
+                digits[Int(word & 0xF)]
+            )
+            return withUnsafeBytes(of: &bytes) { raw in
+                String(decoding: raw, as: UTF8.self)
+            }
+        }
+    }
+
+    private static func formatPaddedHex64(_ value: UInt64) -> String {
+        lowerHexDigits.withUTF8Buffer { digits in
+            withUnsafeTemporaryAllocation(of: UInt8.self, capacity: 18) { buf in
+                buf[0] = 0x30
+                buf[1] = 0x78
+                for k in 0..<16 {
+                    let shift = UInt64((15 - k) * 4)
+                    buf[2 + k] = digits[Int((value >> shift) & 0xF)]
+                }
+                return String(decoding: buf, as: UTF8.self)
+            }
+        }
+    }
+
+    private static func formatCompactHex64(_ value: UInt64) -> String {
+        "0x" + String(value, radix: 16)
+    }
+
+    private static func sanitizeSingleLineField(_ value: String) -> String {
+        var copy = value
+        let needsClean = copy.withUTF8 { buf in
+            buf.contains { $0 == 0x09 || $0 == 0x0A || $0 == 0x0D }
+        }
+        guard needsClean else { return value }
+        return value
+            .replacingOccurrences(of: "\t", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private static func appendJSONEscapedString(_ value: String, into out: inout String) {
+        out.append("\"")
+        var copy = value
+        let fastSafe = copy.withUTF8 { buf in
+            for b in buf {
+                if b < 0x20 || b == 0x22 || b == 0x5C {
+                    return false
+                }
+            }
+            return true
+        }
+        if fastSafe {
+            out.append(value)
+            out.append("\"")
+            return
+        }
+        for scalar in value.unicodeScalars {
+            switch scalar.value {
+            case 0x22: out.append("\\\"")
+            case 0x5C: out.append("\\\\")
+            case 0x08: out.append("\\b")
+            case 0x0C: out.append("\\f")
+            case 0x0A: out.append("\\n")
+            case 0x0D: out.append("\\r")
+            case 0x09: out.append("\\t")
+            case 0x00..<0x20:
+                out.append(String(format: "\\u%04x", scalar.value))
+            default:
+                out.unicodeScalars.append(scalar)
+            }
+        }
+        out.append("\"")
     }
 
     private func runResign(args: [String], language: MachLanguage) throws -> String {
