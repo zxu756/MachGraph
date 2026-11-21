@@ -6,6 +6,7 @@ import importlib.util
 import io
 import json
 import os
+import plistlib
 import stat
 import struct
 import subprocess
@@ -408,6 +409,164 @@ class TestM3NonUTF8CrashesConcurrencyAndRecord(unittest.TestCase):
             self.assertEqual(rec_path, os.path.join(tmp, "reports", "m3-metadata-2026-11-21.json"))
             self.assertEqual(m3_diff.resolve_targets(["quick"]), ("quick", ["/bin/ls"]))
             self.assertEqual(m3_diff.resolve_targets(["standard"]), ("standard", ["/bin/ls", "/usr/bin/ssh", "/usr/bin/vim"]))
+
+
+class TestM3EntitlementsSubcheck(unittest.TestCase):
+    """Verify native JSON type equality (`True` vs `1` vs `"true"`), leading-space keys, and empty/unsigned `{}`."""
+
+    def test_entitlements_pass_on_native_types_leading_space_empty_and_unsigned(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            entitled_bin = os.path.join(tmp, "entitled_bin")
+            unentitled_bin = os.path.join(tmp, "unentitled_bin")
+            unsigned_bin = os.path.join(tmp, "unsigned_bin")
+            for p in (entitled_bin, unentitled_bin, unsigned_bin):
+                _write_thin_arm64_header(p, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "ent_pass.json")
+
+            ref_dict = {
+                " com.apple.security.app-sandbox": True,
+                "com.apple.security.cs.allow-dyld-environment-variables": False,
+                "com.apple.private.amfi.version-restriction": 1,
+                "keychain-access-groups": ["com.apple.aea.cli", "group, with, comma"],
+                "com.apple.private.MobileContainerManager.lookup": {
+                    "daemon": ["com.apple.bird"],
+                    "enabled": True,
+                    "empty": {},
+                },
+            }
+            xml_bytes = plistlib.dumps(ref_dict, fmt=plistlib.FMT_XML) + b"\x00\x00"
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[0] == "/usr/bin/codesign":
+                    target = cmd[-1]
+                    if target == entitled_bin:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=xml_bytes, stderr=b"Executable=" + target.encode())
+                    if target == unentitled_bin:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"Executable=" + target.encode())
+                    return subprocess.CompletedProcess(
+                        cmd, 1, stdout=b"", stderr=f"{target}: code object is not signed at all\n".encode("utf-8")
+                    )
+                if cmd[0] == fake_mg and cmd[1] == "codesign":
+                    target = cmd[2]
+                    if target == entitled_bin:
+                        payload = {"fileName": "entitled_bin", "isSigned": True, "entitlements": ref_dict}
+                    elif target == unentitled_bin:
+                        payload = {"fileName": "unentitled_bin", "isSigned": True, "entitlements": {}}
+                    else:
+                        payload = {"fileName": "unsigned_bin", "isSigned": False, "entitlements": {}}
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main(
+                    [
+                        entitled_bin,
+                        unentitled_bin,
+                        unsigned_bin,
+                        "--only",
+                        "entitlements",
+                        "--machgraph",
+                        fake_mg,
+                        "--json-out",
+                        out_json,
+                    ]
+                )
+
+            self.assertEqual(rc, 0, buf.getvalue())
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "PASS")
+            self.assertEqual(report["checks"]["entitlements"]["matched_files"], 3)
+            self.assertEqual(report["checks"]["entitlements"]["total_ref_items"], 5)
+            self.assertEqual(report["checks"]["entitlements"]["total_mg_items"], 5)
+            self.assertEqual(report["checks"]["entitlements"]["total_diffs"], 0)
+
+    def test_entitlements_strict_type_comparison_distinguishes_bool_true_from_int_one_and_strings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "type_check_bin")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+
+            ref_dict = {
+                "flag_bool": True,
+                "ver_int": 1,
+                "nested_list": [True, 0],
+            }
+            xml_bytes = plistlib.dumps(ref_dict, fmt=plistlib.FMT_XML)
+
+            bad_mg_dicts = [
+                # 1) Bool replaced by int 1 (Python `True == 1` trap!)
+                {"flag_bool": 1, "ver_int": 1, "nested_list": [True, 0]},
+                # 2) Int 1 replaced by Bool True
+                {"flag_bool": True, "ver_int": True, "nested_list": [True, 0]},
+                # 3) Nested list Bool True replaced by int 1, or int 0 replaced by False
+                {"flag_bool": True, "ver_int": 1, "nested_list": [True, False]},
+                # 4) Flattened strings ("true", "1")
+                {"flag_bool": "true", "ver_int": "1", "nested_list": "[true, 0]"},
+            ]
+
+            for idx, bad_ent in enumerate(bad_mg_dicts):
+                out_json = os.path.join(tmp, f"bad_{idx}.json")
+
+                def fake_run(cmd, *args, _bad=bad_ent, **kwargs):
+                    if cmd[0] == "lipo":
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                    if cmd[0] == "/usr/bin/codesign":
+                        return subprocess.CompletedProcess(cmd, 0, stdout=xml_bytes, stderr=b"")
+                    if cmd[0] == fake_mg and cmd[1] == "codesign":
+                        payload = {"fileName": "type_check_bin", "isSigned": True, "entitlements": _bad}
+                        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode("utf-8"), stderr=b"")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+                with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(
+                    io.StringIO()
+                ):
+                    rc = m3_diff.main(
+                        [bin_path, "--only", "entitlements", "--machgraph", fake_mg, "--json-out", out_json]
+                    )
+
+                self.assertEqual(rc, 1, f"Expected mutation #{idx} ({bad_ent}) to fail strict type check")
+                report = _read_json(out_json)
+                self.assertEqual(report["verdict"], "FAIL")
+                self.assertGreaterEqual(report["checks"]["entitlements"]["total_diffs"], 1)
+
+    def test_entitlements_detects_trimmed_leading_space_and_duplicate_der_key(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "wifip2pd_bug")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "space_bug.json")
+
+            ref_dict = {" com.apple.security.app-sandbox": True}
+            xml_bytes = plistlib.dumps(ref_dict, fmt=plistlib.FMT_XML)
+            mg_buggy = {
+                " com.apple.security.app-sandbox": True,
+                "com.apple.security.app-sandbox": True,
+            }
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[0] == "/usr/bin/codesign":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=xml_bytes, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "codesign":
+                    payload = {"fileName": "wifip2pd_bug", "isSigned": True, "entitlements": mg_buggy}
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc = m3_diff.main([bin_path, "--only", "entitlements", "--machgraph", fake_mg, "--json-out", out_json])
+
+            self.assertEqual(rc, 1)
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "FAIL")
+            self.assertEqual(report["checks"]["entitlements"]["total_diffs"], 1)
+            self.assertEqual(report["checks"]["entitlements"]["examples"][0]["kind"], "extra_in_machgraph")
 
 
 if __name__ == "__main__":

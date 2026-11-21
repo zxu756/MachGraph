@@ -14,6 +14,9 @@ Subchecks implemented in Stage 1 (later M3 stages register additional checks in 
               `(installName, compatibilityVersion, currentVersion, isWeak, isReexport)`) and
               `machgraph info <file>` text output vs `xcrun otool -arch <slice> -L <file>`
               (for `MH_DYLIB`, line 1 `LC_ID_DYLIB` is compared against `installID`).
+  - entitlements : `machgraph codesign <file> --json` (`entitlements` native JSON dictionary)
+                   vs `/usr/bin/codesign -a <slice> -d --entitlements :- <file>` parsed via
+                   `plistlib.loads` (empty stdout or unsigned -> `{}`, strict deep type equality).
 
 Slice selection follows `arm64e` -> `arm64` via `lipo -archs <file>`, matching MachGraph's preferred slice.
 At most 6 child processes are spawned concurrently (`MAX_CONCURRENT_SUBPROCESSES = 6`).
@@ -26,11 +29,13 @@ Exit status:
 """
 
 import argparse
+import base64
 import collections
 from concurrent.futures import ThreadPoolExecutor
 import datetime
 import json
 import os
+import plistlib
 import re
 import struct
 import subprocess
@@ -72,10 +77,11 @@ PER_FILE_TIMEOUT_SECONDS = 60.0
 PER_MIB_TIMEOUT_SECONDS = 5.0
 MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
 
-AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs")
+AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements")
 
 NM_REFERENCE_TEMPLATE = "xcrun nm --no-dyldinfo -arch <slice> <file>"
 OTOOL_L_REFERENCE_TEMPLATE = "xcrun otool -arch <slice> -L <file>"
+CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE = "/usr/bin/codesign -a <slice> -d --entitlements :- <file>"
 
 _NM_LINE_RE = re.compile(r"^([0-9a-fA-F]{8,16}|\s{8,16}) ([A-Za-z?-]) (.*)$")
 _REDACTED_FN_RE = re.compile(r"^<redacted function \d+>$")
@@ -240,6 +246,7 @@ def collect_environment_metadata(machgraph_bin: str, repo_root: Optional[str] = 
         "reference_tools": {
             "nm_version": nm_ver,
             "otool_version": otool_ver,
+            "codesign_path": "/usr/bin/codesign",
         },
         "machgraph_commit": commit_sha,
         "worktree_clean": is_worktree_clean(repo_root=root),
@@ -826,9 +833,196 @@ def check_dylibs_for_binary(
     }
 
 
+def normalize_plist_value_for_json(value: Any) -> Any:
+    """Convert plist-only leaf types (`bytes`, `datetime`) to JSON equivalents while keeping `bool`/`int`/`float`/`str` exact."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bytes):
+        return base64.b64encode(value).decode("ascii")
+    if isinstance(value, datetime.datetime):
+        return value.isoformat().replace("+00:00", "Z")
+    if isinstance(value, list):
+        return [normalize_plist_value_for_json(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): normalize_plist_value_for_json(v) for k, v in value.items()}
+    return value
+
+
+def strict_json_equal(a: Any, b: Any) -> bool:
+    """Deep equality requiring exact runtime type match (`True != 1`, `False != 0`, `1 != 1.0`)."""
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, dict):
+        if len(a) != len(b) or set(a.keys()) != set(b.keys()):
+            return False
+        return all(strict_json_equal(a[k], b[k]) for k in a)
+    if isinstance(a, list):
+        if len(a) != len(b):
+            return False
+        return all(strict_json_equal(x, y) for x, y in zip(a, b))
+    return a == b
+
+
+def parse_codesign_entitlements(
+    path: str, arch: str, timeout_sec: float
+) -> Tuple[Optional[Dict[str, Any]], Optional[str], bool, bool]:
+    """Run `/usr/bin/codesign -a <arch> -d --entitlements :- <path>` and parse XML plist (empty/unsigned -> `{}`)."""
+    cmd = ["/usr/bin/codesign", "-a", arch, "-d", "--entitlements", ":-", path]
+    try:
+        proc = run_subprocess_bytes(cmd, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        return (None, f"codesign --entitlements timed out after {timeout_sec:.0f}s", True, False)
+
+    out_txt, non_utf8_out = decode_utf8_safe(proc.stdout)
+    err_txt, non_utf8_err = decode_utf8_safe(proc.stderr)
+    had_non_utf8 = non_utf8_out or non_utf8_err
+
+    if proc.returncode != 0:
+        combined_lower = (out_txt + "\n" + err_txt).lower()
+        if "code object is not signed at all" in combined_lower:
+            return ({}, None, False, had_non_utf8)
+        return (None, format_exit_reason("codesign --entitlements", proc.returncode, err_txt), False, had_non_utf8)
+
+    raw_stdout = (proc.stdout or b"").rstrip(b"\x00")
+    if raw_stdout.strip() == b"":
+        return ({}, None, False, had_non_utf8)
+
+    try:
+        parsed = plistlib.loads(raw_stdout)
+    except Exception as exc:
+        return (
+            None,
+            f"codesign --entitlements invalid plist: {sanitize_text(str(exc))[:200]}",
+            False,
+            had_non_utf8,
+        )
+
+    if not isinstance(parsed, dict):
+        return (
+            None,
+            f"codesign --entitlements root plist is {type(parsed).__name__}, expected dict",
+            False,
+            had_non_utf8,
+        )
+
+    return (normalize_plist_value_for_json(parsed), None, False, had_non_utf8)
+
+
+def check_entitlements_for_binary(
+    path: str,
+    arch: str,
+    machgraph_bin: str,
+    env: Dict[str, str],
+    timeout_sec: float,
+) -> Dict[str, Any]:
+    ref_ent, ref_err, ref_to, ref_non_utf8 = parse_codesign_entitlements(path, arch, timeout_sec)
+    if ref_err is not None or ref_ent is None:
+        return {
+            "status": "failure",
+            "error": ref_err or "codesign --entitlements failed",
+            "timed_out": ref_to,
+            "non_utf8": ref_non_utf8,
+        }
+
+    mg_out, mg_err, mg_to, mg_non_utf8 = run_machgraph_command(
+        machgraph_bin, ["codesign", path, "--json"], env, timeout_sec
+    )
+    had_non_utf8 = ref_non_utf8 or mg_non_utf8
+    if mg_err is not None or mg_out is None:
+        return {
+            "status": "failure",
+            "error": mg_err or "machgraph codesign --json failed",
+            "timed_out": mg_to,
+            "non_utf8": had_non_utf8,
+        }
+
+    try:
+        mg_payload = json.loads(mg_out)
+    except Exception as exc:
+        return {
+            "status": "failure",
+            "error": f"machgraph codesign --json invalid JSON: {sanitize_text(str(exc))[:200]}",
+            "timed_out": False,
+            "non_utf8": had_non_utf8,
+        }
+
+    if not isinstance(mg_payload, dict) or not isinstance(mg_payload.get("entitlements"), dict):
+        return {
+            "status": "mismatch",
+            "ref_count": len(ref_ent),
+            "mg_count": 0,
+            "diff_count": max(1, len(ref_ent)),
+            "examples": [
+                {
+                    "kind": "invalid_entitlements_field",
+                    "mg_type": type(mg_payload.get("entitlements") if isinstance(mg_payload, dict) else mg_payload).__name__,
+                }
+            ],
+            "non_utf8": had_non_utf8,
+        }
+
+    mg_ent: Dict[str, Any] = mg_payload["entitlements"]
+    diff_count = 0
+    examples: List[Dict[str, Any]] = []
+
+    if not strict_json_equal(ref_ent, mg_ent):
+        for key in sorted(set(ref_ent.keys()) | set(mg_ent.keys())):
+            if key not in mg_ent:
+                diff_count += 1
+                if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                    examples.append(
+                        {
+                            "kind": "missing_in_machgraph",
+                            "key": sanitize_text(key),
+                            "ref_type": type(ref_ent[key]).__name__,
+                            "ref_value": ref_ent[key],
+                        }
+                    )
+            elif key not in ref_ent:
+                diff_count += 1
+                if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                    examples.append(
+                        {
+                            "kind": "extra_in_machgraph",
+                            "key": sanitize_text(key),
+                            "mg_type": type(mg_ent[key]).__name__,
+                            "mg_value": mg_ent[key],
+                        }
+                    )
+            elif not strict_json_equal(ref_ent[key], mg_ent[key]):
+                diff_count += 1
+                if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                    examples.append(
+                        {
+                            "kind": "value_or_type_mismatch",
+                            "key": sanitize_text(key),
+                            "ref_type": type(ref_ent[key]).__name__,
+                            "ref_value": ref_ent[key],
+                            "mg_type": type(mg_ent[key]).__name__,
+                            "mg_value": mg_ent[key],
+                        }
+                    )
+
+    return {
+        "status": "pass" if diff_count == 0 else "mismatch",
+        "ref_count": len(ref_ent),
+        "mg_count": len(mg_ent),
+        "diff_count": diff_count,
+        "examples": examples,
+        "non_utf8": had_non_utf8,
+    }
+
+
 CHECK_HANDLERS: Dict[str, Callable[[str, str, str, Dict[str, str], float], Dict[str, Any]]] = {
     "symbols": check_symbols_for_binary,
     "dylibs": check_dylibs_for_binary,
+    "entitlements": check_entitlements_for_binary,
 }
 
 
@@ -1123,6 +1317,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "reference_commands": {
                 "symbols": NM_REFERENCE_TEMPLATE,
                 "dylibs": OTOOL_L_REFERENCE_TEMPLATE,
+                "entitlements": CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE,
             },
             "summary": {
                 "candidate_macho_files": len(candidates),
