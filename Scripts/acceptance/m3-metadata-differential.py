@@ -70,6 +70,7 @@ MH_MAGIC_64 = 0xFEEDFACF
 MH_DYLIB = 0x6
 MH_DYLIB_STUB = 0x9
 LC_ID_DYLIB = 0xD
+LC_SEGMENT_64 = 0x19
 
 MAX_CONCURRENT_SUBPROCESSES = 6
 MAX_EXAMPLES_PER_CHECK = 5
@@ -77,11 +78,20 @@ PER_FILE_TIMEOUT_SECONDS = 60.0
 PER_MIB_TIMEOUT_SECONDS = 5.0
 MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
 
-AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements")
+AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements", "xrefs")
 
 NM_REFERENCE_TEMPLATE = "xcrun nm --no-dyldinfo -arch <slice> <file>"
 OTOOL_L_REFERENCE_TEMPLATE = "xcrun otool -arch <slice> -L <file>"
 CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE = "/usr/bin/codesign -a <slice> -d --entitlements :- <file>"
+LLVM_OBJDUMP_XREFS_REFERENCE_TEMPLATE = (
+    "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
+    "--arch=<slice> --mcpu=apple-m1 --mattr=+bti <file>"
+)
+
+MACHO_STRING_SECTION_NAMES = frozenset(
+    {"__cstring", "__ustring", "__oslogstring", "__objc_methname", "__cfstring"}
+)
+_OBJDUMP_BL_RE = re.compile(r"^\s*([0-9a-fA-F]+):\tbl\t#?(0x[0-9a-fA-F]+|[0-9a-fA-F]+)\b")
 
 _NM_LINE_RE = re.compile(r"^([0-9a-fA-F]{8,16}|\s{8,16}) ([A-Za-z?-]) (.*)$")
 _REDACTED_FN_RE = re.compile(r"^<redacted function \d+>$")
@@ -236,6 +246,7 @@ def collect_environment_metadata(machgraph_bin: str, repo_root: Optional[str] = 
 
     nm_ver = pick_version_line(run_text(["xcrun", "nm", "--version"]))
     otool_ver = pick_version_line(run_text(["xcrun", "otool", "--version"]))
+    objdump_ver = pick_version_line(run_text(["xcrun", "llvm-objdump", "--version"]))
     commit_sha = run_text(["git", "rev-parse", "HEAD"], cwd=root) or "unknown"
 
     return {
@@ -246,6 +257,7 @@ def collect_environment_metadata(machgraph_bin: str, repo_root: Optional[str] = 
         "reference_tools": {
             "nm_version": nm_ver,
             "otool_version": otool_ver,
+            "llvm_objdump_version": objdump_ver,
             "codesign_path": "/usr/bin/codesign",
         },
         "machgraph_commit": commit_sha,
@@ -1019,10 +1031,286 @@ def check_entitlements_for_binary(
     }
 
 
+def inspect_macho_slice_sections(path: str, arch: str) -> List[Tuple[str, str, int, int, int]]:
+    """Return `(segname, sectname, vmaddr, size, flags)` for all `LC_SEGMENT_64` sections in the chosen slice."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4096)
+        if len(head) < 32:
+            return []
+        magic_be = struct.unpack(">I", head[:4])[0]
+        magic_le = struct.unpack("<I", head[:4])[0]
+        slice_off = 0
+        if magic_be in (0xCAFEBABE, 0xCAFEBABF):
+            is_fat64 = magic_be == 0xCAFEBABF
+            narch = struct.unpack(">I", head[4:8])[0]
+            pos = 8
+            slices: List[Tuple[int, int, int]] = []
+            for _ in range(narch):
+                if is_fat64:
+                    if pos + 32 > len(head):
+                        break
+                    cputype, cpusubtype, offset, _, _, _ = struct.unpack(">iiQQII", head[pos : pos + 32])
+                    pos += 32
+                else:
+                    if pos + 20 > len(head):
+                        break
+                    cputype, cpusubtype, offset, _, _ = struct.unpack(">iiIII", head[pos : pos + 20])
+                    pos += 20
+                slices.append((cputype, cpusubtype & CPU_SUBTYPE_MASK, offset))
+            chosen_off: Optional[int] = None
+            if arch == "arm64e":
+                for cputype, sub, off in slices:
+                    if cputype == CPU_TYPE_ARM64 and sub == CPU_SUBTYPE_ARM64E:
+                        chosen_off = off
+                        break
+            if chosen_off is None:
+                for cputype, _, off in slices:
+                    if cputype == CPU_TYPE_ARM64:
+                        chosen_off = off
+                        break
+            if chosen_off is None:
+                return []
+            slice_off = chosen_off
+        elif magic_le != MH_MAGIC_64:
+            return []
+
+        with open(path, "rb") as fh:
+            fh.seek(slice_off)
+            mh = fh.read(32)
+            if len(mh) < 32:
+                return []
+            magic, _, _, _, ncmds, sizeofcmds, _, _ = struct.unpack("<IiiIIIII", mh)
+            if magic != MH_MAGIC_64 or ncmds == 0 or sizeofcmds == 0:
+                return []
+            lc_buf = fh.read(min(sizeofcmds, 2 * 1024 * 1024))
+
+        sections: List[Tuple[str, str, int, int, int]] = []
+        pos = 0
+        for _ in range(ncmds):
+            if pos + 8 > len(lc_buf):
+                break
+            cmd, cmdsize = struct.unpack("<II", lc_buf[pos : pos + 8])
+            if cmdsize < 8 or pos + cmdsize > len(lc_buf):
+                break
+            if cmd == LC_SEGMENT_64 and cmdsize >= 72:
+                _, _, _, _, _, _, _, nsects, _ = struct.unpack("<16sQQQQiiII", lc_buf[pos + 8 : pos + 72])
+                spos = pos + 72
+                for _ in range(nsects):
+                    if spos + 80 > pos + cmdsize:
+                        break
+                    sect_raw, seg_raw, s_addr, s_size, _, _, _, _, s_flags, _, _, _ = struct.unpack(
+                        "<16s16sQQIIIIIIII", lc_buf[spos : spos + 80]
+                    )
+                    spos += 80
+                    sect = sect_raw.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+                    seg = seg_raw.split(b"\x00", 1)[0].decode("ascii", errors="replace")
+                    sections.append((seg, sect, s_addr, s_size, s_flags))
+            pos += cmdsize
+        return sections
+    except OSError:
+        return []
+
+
+def find_macho_section_containing(
+    sections: Sequence[Tuple[str, str, int, int, int]], addr: int
+) -> Optional[Tuple[str, str, int, int, int]]:
+    for sec in sections:
+        _, _, s_addr, s_size, _ = sec
+        if s_size > 0 and s_addr <= addr < s_addr + s_size:
+            return sec
+    return None
+
+
+def is_macho_string_section_name(sectname: str) -> bool:
+    return sectname.lower() in MACHO_STRING_SECTION_NAMES
+
+
+def parse_llvm_objdump_bl_edges(
+    path: str, arch: str, timeout_sec: float
+) -> Tuple[Optional[set], Optional[str], bool, bool]:
+    """Run `llvm-objdump --macho -d` and return the set of `(from_addr, to_addr)` `bl` call edges."""
+    ref_timeout = max(300.0, timeout_sec)
+    cmd = [
+        "xcrun",
+        "llvm-objdump",
+        "--macho",
+        "-d",
+        "--no-show-raw-insn",
+        "--no-symbolic-operands",
+        f"--arch={arch}",
+        "--mcpu=apple-m1",
+        "--mattr=+bti",
+        path,
+    ]
+    try:
+        proc = run_subprocess_bytes(cmd, timeout=ref_timeout)
+    except subprocess.TimeoutExpired:
+        return (None, f"llvm-objdump -d timed out after {ref_timeout:.0f}s", True, False)
+
+    out_txt, non_utf8_out = decode_utf8_safe(proc.stdout)
+    err_txt, non_utf8_err = decode_utf8_safe(proc.stderr)
+    had_non_utf8 = non_utf8_out or non_utf8_err
+    if proc.returncode != 0:
+        return (None, format_exit_reason("llvm-objdump -d", proc.returncode, err_txt), False, had_non_utf8)
+
+    bl_edges = set()
+    for line in out_txt.splitlines():
+        m = _OBJDUMP_BL_RE.match(line)
+        if m:
+            from_addr = int(m.group(1), 16)
+            to_addr = int(m.group(2), 16)
+            bl_edges.add((from_addr, to_addr))
+    return (bl_edges, None, False, had_non_utf8)
+
+
+def check_xrefs_for_binary(
+    path: str,
+    arch: str,
+    machgraph_bin: str,
+    env: Dict[str, str],
+    timeout_sec: float,
+) -> Dict[str, Any]:
+    ref_bl_edges, ref_err, ref_to, ref_non_utf8 = parse_llvm_objdump_bl_edges(path, arch, timeout_sec)
+    if ref_err is not None or ref_bl_edges is None:
+        return {
+            "status": "failure",
+            "error": ref_err or "llvm-objdump -d failed",
+            "timed_out": ref_to,
+            "non_utf8": ref_non_utf8,
+        }
+
+    mg_out, mg_err, mg_to, mg_non_utf8 = run_machgraph_command(
+        machgraph_bin, ["xrefs", path, "--json"], env, timeout_sec
+    )
+    had_non_utf8 = ref_non_utf8 or mg_non_utf8
+    if mg_err is not None or mg_out is None:
+        return {
+            "status": "failure",
+            "error": mg_err or "machgraph xrefs --json failed",
+            "timed_out": mg_to,
+            "non_utf8": had_non_utf8,
+        }
+
+    try:
+        mg_payload = json.loads(mg_out)
+    except Exception as exc:
+        return {
+            "status": "failure",
+            "error": f"machgraph xrefs --json invalid JSON: {sanitize_text(str(exc))[:200]}",
+            "timed_out": False,
+            "non_utf8": had_non_utf8,
+        }
+
+    if not isinstance(mg_payload, dict) or not isinstance(mg_payload.get("xrefs"), list):
+        return {
+            "status": "mismatch",
+            "ref_count": len(ref_bl_edges),
+            "mg_count": 0,
+            "diff_count": max(1, len(ref_bl_edges)),
+            "total_xrefs": 0,
+            "non_string_section_string_refs": 0,
+            "kind_counts": {},
+            "string_ref_sections": {},
+            "examples": [
+                {
+                    "kind": "invalid_xrefs_field",
+                    "mg_type": type(mg_payload.get("xrefs") if isinstance(mg_payload, dict) else mg_payload).__name__,
+                }
+            ],
+            "non_utf8": had_non_utf8,
+        }
+
+    sections = inspect_macho_slice_sections(path, arch)
+    raw_xrefs: List[Any] = mg_payload["xrefs"]
+    mg_call_edges = set()
+    kind_counts: CounterType[str] = collections.Counter()
+    string_ref_sections: CounterType[str] = collections.Counter()
+    non_string_section_string_refs = 0
+    diff_count = 0
+    examples: List[Dict[str, Any]] = []
+
+    for idx, item in enumerate(raw_xrefs):
+        if not isinstance(item, dict):
+            diff_count += 1
+            if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                examples.append({"kind": "invalid_xref_entry", "index": idx, "entry_type": type(item).__name__})
+            continue
+        from_val = item.get("fromAddress")
+        to_val = item.get("toAddress")
+        kind_val = item.get("kind")
+        if (
+            isinstance(from_val, bool)
+            or not isinstance(from_val, int)
+            or isinstance(to_val, bool)
+            or not isinstance(to_val, int)
+            or not isinstance(kind_val, str)
+            or not kind_val
+        ):
+            diff_count += 1
+            if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                examples.append({"kind": "invalid_xref_entry", "index": idx})
+            continue
+
+        kind_counts[kind_val] += 1
+        if kind_val == "CALL":
+            edge = (from_val, to_val)
+            if edge in mg_call_edges:
+                diff_count += 1
+                if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                    examples.append(
+                        {"kind": "duplicate_call_in_machgraph", "from": hex(from_val), "to": hex(to_val)}
+                    )
+            else:
+                mg_call_edges.add(edge)
+        elif kind_val == "STRING_REF":
+            sec = find_macho_section_containing(sections, to_val)
+            if sec is not None and is_macho_string_section_name(sec[1]):
+                string_ref_sections[f"{sec[0]},{sec[1]}"] += 1
+            else:
+                non_string_section_string_refs += 1
+                diff_count += 1
+                sec_label = f"{sec[0]},{sec[1]}" if sec is not None else "<unmapped>"
+                if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                    examples.append(
+                        {
+                            "kind": "string_ref_outside_string_section",
+                            "from": hex(from_val),
+                            "to": hex(to_val),
+                            "target_section": sec_label,
+                        }
+                    )
+
+    missing_calls = sorted(ref_bl_edges - mg_call_edges)
+    extra_calls = sorted(mg_call_edges - ref_bl_edges)
+    for f_addr, t_addr in missing_calls:
+        diff_count += 1
+        if len(examples) < MAX_EXAMPLES_PER_CHECK:
+            examples.append({"kind": "missing_call_in_machgraph", "from": hex(f_addr), "to": hex(t_addr)})
+    for f_addr, t_addr in extra_calls:
+        diff_count += 1
+        if len(examples) < MAX_EXAMPLES_PER_CHECK:
+            examples.append({"kind": "extra_call_in_machgraph", "from": hex(f_addr), "to": hex(t_addr)})
+
+    return {
+        "status": "pass" if diff_count == 0 else "mismatch",
+        "ref_count": len(ref_bl_edges),
+        "mg_count": len(mg_call_edges),
+        "diff_count": diff_count,
+        "total_xrefs": len(raw_xrefs),
+        "non_string_section_string_refs": non_string_section_string_refs,
+        "kind_counts": dict(sorted(kind_counts.items())),
+        "string_ref_sections": dict(sorted(string_ref_sections.items())),
+        "examples": examples,
+        "non_utf8": had_non_utf8,
+    }
+
+
 CHECK_HANDLERS: Dict[str, Callable[[str, str, str, Dict[str, str], float], Dict[str, Any]]] = {
     "symbols": check_symbols_for_binary,
     "dylibs": check_dylibs_for_binary,
     "entitlements": check_entitlements_for_binary,
+    "xrefs": check_xrefs_for_binary,
 }
 
 
@@ -1175,6 +1463,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     print(f"Ref nm:       {env_meta['reference_tools']['nm_version']}")
     print(f"Ref otool:    {env_meta['reference_tools']['otool_version']}")
+    if "xrefs" in selected_checks:
+        print(f"Ref objdump:  {env_meta['reference_tools']['llvm_objdump_version']}")
     print(f"Checks:       {', '.join(selected_checks)} (max_concurrent_subprocesses={MAX_CONCURRENT_SUBPROCESSES})")
     print(
         f"MachGraph:    {env_meta['machgraph_binary']} @ {env_meta['machgraph_commit'][:12]} "
@@ -1196,6 +1486,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "total_ref_items": 0,
             "total_mg_items": 0,
             "total_diffs": 0,
+            **(
+                {
+                    "total_xrefs": 0,
+                    "non_string_section_string_refs": 0,
+                    "kind_counts": {},
+                    "string_ref_sections": {},
+                }
+                if chk == "xrefs"
+                else {}
+            ),
             "examples": [],
         }
         for chk in selected_checks
@@ -1254,11 +1554,30 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "mg_count": cres["mg_count"],
                 "diff_count": cres["diff_count"],
                 **(
+                    {
+                        "total_xrefs": cres.get("total_xrefs", 0),
+                        "non_string_section_string_refs": cres.get("non_string_section_string_refs", 0),
+                        "kind_counts": cres.get("kind_counts", {}),
+                        "string_ref_sections": cres.get("string_ref_sections", {}),
+                    }
+                    if chk == "xrefs"
+                    else {}
+                ),
+                **(
                     {"examples": cres["examples"][:MAX_EXAMPLES_PER_CHECK]}
                     if cres["diff_count"] > 0
                     else {}
                 ),
             }
+            if chk == "xrefs":
+                csum["total_xrefs"] += int(cres.get("total_xrefs", 0))
+                csum["non_string_section_string_refs"] += int(cres.get("non_string_section_string_refs", 0))
+                for k_name, k_cnt in cres.get("kind_counts", {}).items():
+                    csum["kind_counts"][k_name] = csum["kind_counts"].get(k_name, 0) + int(k_cnt)
+                for s_name, s_cnt in cres.get("string_ref_sections", {}).items():
+                    csum["string_ref_sections"][s_name] = csum["string_ref_sections"].get(s_name, 0) + int(s_cnt)
+                csum["kind_counts"] = dict(sorted(csum["kind_counts"].items()))
+                csum["string_ref_sections"] = dict(sorted(csum["string_ref_sections"].items()))
 
         file_records.append(
             {
@@ -1293,6 +1612,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"mismatched_files={csum['mismatched_files']} total_diffs={csum['total_diffs']} "
             f"ref_items={csum['total_ref_items']} mg_items={csum['total_mg_items']}"
         )
+        if chk == "xrefs":
+            print(
+                f"  xrefs_totals: total_xrefs={csum['total_xrefs']} "
+                f"non_string_section_string_refs={csum['non_string_section_string_refs']} "
+                f"string_ref_sections={json.dumps(csum['string_ref_sections'], ensure_ascii=False)}"
+            )
+            print(f"  xrefs_kind_counts: {json.dumps(csum['kind_counts'], ensure_ascii=False)}")
         for ex in csum["examples"][:MAX_EXAMPLES_PER_CHECK]:
             print(f"  example: {json.dumps(ex, ensure_ascii=False)}")
 
@@ -1318,6 +1644,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "symbols": NM_REFERENCE_TEMPLATE,
                 "dylibs": OTOOL_L_REFERENCE_TEMPLATE,
                 "entitlements": CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE,
+                "xrefs": LLVM_OBJDUMP_XREFS_REFERENCE_TEMPLATE,
             },
             "summary": {
                 "candidate_macho_files": len(candidates),
