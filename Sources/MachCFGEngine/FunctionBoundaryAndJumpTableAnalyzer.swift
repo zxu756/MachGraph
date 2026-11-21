@@ -1739,9 +1739,38 @@ public struct FunctionDiscoveryEngine: Sendable {
         guard instructions.count >= 2 else { return [] }
         var discovered: [VirtualAddress] = []
 
+        let sortedSpans = protectedSpans.sorted { $0.minAddr < $1.minAddr }
+        var sortedSpanMin: [UInt64] = []
+        var prefixSpanMaxHi: [UInt64] = []
+        sortedSpanMin.reserveCapacity(sortedSpans.count)
+        prefixSpanMaxHi.reserveCapacity(sortedSpans.count)
+        var runningMaxHi: UInt64 = 0
+        for span in sortedSpans {
+            sortedSpanMin.append(span.minAddr)
+            if span.maxAddr > runningMaxHi {
+                runningMaxHi = span.maxAddr
+            }
+            prefixSpanMaxHi.append(runningMaxHi)
+        }
+
         func isInsideProtectedBranchSpan(_ addr: VirtualAddress) -> Bool {
+            guard !sortedSpanMin.isEmpty else { return false }
             let raw = addr.rawValue
-            return protectedSpans.contains { raw > $0.minAddr && raw <= $0.maxAddr }
+            // Lower-bound binary search for first index `lo` where `sortedSpanMin[lo] >= raw`.
+            // All spans at indices `0 ..< lo` satisfy `minAddr < raw`, so any span covering `raw`
+            // (`minAddr < raw <= maxAddr`) exists iff `lo > 0 && prefixSpanMaxHi[lo - 1] >= raw`.
+            var lo = 0
+            var hi = sortedSpanMin.count
+            while lo < hi {
+                let mid = (lo + hi) >> 1
+                if sortedSpanMin[mid] < raw {
+                    lo = mid + 1
+                } else {
+                    hi = mid
+                }
+            }
+            guard lo > 0 else { return false }
+            return prefixSpanMaxHi[lo - 1] >= raw
         }
 
         var prevWasHardBarrier = true

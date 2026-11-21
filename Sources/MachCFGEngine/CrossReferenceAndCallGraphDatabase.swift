@@ -682,6 +682,43 @@ public struct BinaryAnalysisOptions: Sendable, Codable, Hashable {
     public static let standard = BinaryAnalysisOptions()
 }
 
+/// Target selector for single-function fast-path CFG recovery (`analyzeCFGOnly`).
+public enum CFGFunctionSelector: Sendable, Hashable {
+    case symbol(String)
+    case address(VirtualAddress)
+}
+
+/// Lightweight CFG-only analysis output skipping whole-program Xrefs, CallGraph, PostDominators, and Sugiyama layouts.
+public struct CFGAnalysisSnapshot: Sendable {
+    public let image: LoadedBinaryImage
+    public let functions: [RecoveredFunction]
+    public let boundariesByAddress: [VirtualAddress: DiscoveredFunctionBoundary]
+    public let inlineJumpTableRanges: [AddressRange]
+    public let analysisDurationMilliseconds: Double
+
+    public var inlineJumpTableStarts: [VirtualAddress] {
+        inlineJumpTableRanges.map(\.start)
+    }
+
+    public init(
+        image: LoadedBinaryImage,
+        functions: [RecoveredFunction],
+        boundariesByAddress: [VirtualAddress: DiscoveredFunctionBoundary],
+        inlineJumpTableRanges: [AddressRange],
+        analysisDurationMilliseconds: Double = 0.0
+    ) {
+        let sortedFns = functions.sorted { $0.address < $1.address }
+        self.image = image
+        self.functions = sortedFns
+        self.boundariesByAddress = boundariesByAddress
+        self.inlineJumpTableRanges = inlineJumpTableRanges.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.size < $1.size
+        }
+        self.analysisDurationMilliseconds = analysisDurationMilliseconds
+    }
+}
+
 public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
     public let image: LoadedBinaryImage
     public let functions: [RecoveredFunction]
@@ -1054,7 +1091,8 @@ public struct BinaryAnalysisCoordinator: Sendable {
             let domResult = domAnalyzer.analyze(
                 blocks: builtCFG.blocks,
                 edges: builtCFG.edges,
-                entryBlockID: builtCFG.blocks.first(where: \.isEntry)?.id
+                entryBlockID: builtCFG.blocks.first(where: \.isEntry)?.id,
+                includePostDominatorsAndRegions: activeOptions.computePostDominatorTrees
             )
 
             if activeOptions.computePostDominatorTrees {
@@ -1170,7 +1208,8 @@ public struct BinaryAnalysisCoordinator: Sendable {
         let domResult = DominatorAndLoopAnalyzer().analyze(
             blocks: built.blocks,
             edges: built.edges,
-            entryBlockID: built.blocks.first(where: \.isEntry)?.id
+            entryBlockID: built.blocks.first(where: \.isEntry)?.id,
+            includePostDominatorsAndRegions: options.computePostDominatorTrees
         )
 
         let layout = options.computeSugiyamaLayouts
@@ -1198,6 +1237,259 @@ public struct BinaryAnalysisCoordinator: Sendable {
             cyclomaticComplexity: built.cyclomaticComplexity,
             layout: layout
         )
+    }
+
+    // MARK: - Lightweight CFG-Only Pipeline (`machgraph cfg`)
+
+    /// Executes function discovery, inline jump-table exclusion, `noreturn` propagation, basic-block CFG construction,
+    /// Lengauer-Tarjan dominators, and natural loops WITHOUT building post-dominator trees, structured regions,
+    /// Sugiyama 2D layouts, whole-binary cross-references, call graphs, or dangerous sink paths.
+    ///
+    /// When `selector` is provided, only the single matched function (and its transitive direct-call/branch closure
+    /// needed for exact `noreturn` wrapper propagation) is sliced, and CFG + dominators + loops are built solely for
+    /// that matched function. If `selector` does not match any recovered function, `functions` in the returned snapshot
+    /// is empty so the caller can emit its localized diagnostic.
+    public func analyzeCFGOnly(
+        _ image: LoadedBinaryImage,
+        data: Data? = nil,
+        selector: CFGFunctionSelector? = nil,
+        options explicitOptions: BinaryAnalysisOptions? = nil
+    ) throws -> CFGAnalysisSnapshot {
+        let startTime = CFAbsoluteTimeGetCurrent()
+        let activeOptions = explicitOptions ?? self.options
+        let binaryBytes = resolveBackingBytes(for: image, explicitData: data)
+
+        if !image.architecture.isARM64Family && image.containerFormat != .wasm && image.architecture != .wasm32 {
+            throw MachGraphError.unsupportedArchitecture(
+                "Disassembly and CFG analysis only support ARM64/ARM64e (got \(image.architecture.displayName))."
+            )
+        }
+        if !image.executableSections().isEmpty && binaryBytes == nil {
+            throw MachGraphError.cfgAnalysisError(
+                "Cannot analyze \(image.fileName): raw binary bytes are unavailable."
+            )
+        }
+
+        let discoveryEngine = FunctionDiscoveryEngine(configuration: activeOptions.discoveryConfiguration)
+        let cfgEngine = CFGBuilderEngine(configuration: activeOptions.cfgConfiguration)
+        let domAnalyzer = DominatorAndLoopAnalyzer()
+
+        // 1. Decode executable sections & strip inline jump-table data intervals
+        let decodedSections = try discoveryEngine.decodeExecutableSections(
+            in: image,
+            data: binaryBytes
+        )
+        var allInstructions: [A64DecodedInstruction] = []
+        let totalDecodedCount = decodedSections.reduce(0) { $0 + $1.instructions.count }
+        allInstructions.reserveCapacity(totalDecodedCount)
+        for ds in decodedSections {
+            allInstructions.append(contentsOf: ds.instructions)
+        }
+        allInstructions.sort { $0.address < $1.address }
+
+        let discovery = discoveryEngine.discoverFunctionsWithJumpTables(
+            in: image,
+            decodedSections: decodedSections,
+            data: binaryBytes
+        )
+        let sortedBoundaries = discovery.boundaries.sorted { $0.startAddress < $1.startAddress }
+        let alignedInlineExclusions = FunctionDiscoveryEngine.alignedInlineExclusionRanges(
+            for: discovery.inlineJumpTableRanges
+        )
+        if !alignedInlineExclusions.isEmpty {
+            allInstructions.removeAll { insn in
+                FunctionDiscoveryEngine.isAddressExcluded(insn.address, inSortedRanges: alignedInlineExclusions)
+            }
+        }
+
+        var boundariesByAddress: [VirtualAddress: DiscoveredFunctionBoundary] = [:]
+        boundariesByAddress.reserveCapacity(sortedBoundaries.count)
+        for b in sortedBoundaries {
+            boundariesByAddress[b.startAddress] = b
+        }
+
+        // 2. Resolve target boundary list (single function when `selector != nil`, or all boundaries otherwise)
+        let targetBoundaries: [DiscoveredFunctionBoundary]
+        if let selector {
+            guard let matched = Self.matchBoundary(in: sortedBoundaries, selector: selector) else {
+                let elapsedMs = max(0.0, (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0)
+                return CFGAnalysisSnapshot(
+                    image: image,
+                    functions: [],
+                    boundariesByAddress: boundariesByAddress,
+                    inlineJumpTableRanges: discovery.inlineJumpTableRanges,
+                    analysisDurationMilliseconds: elapsedMs
+                )
+            }
+            targetBoundaries = [matched]
+        } else {
+            targetBoundaries = sortedBoundaries
+        }
+
+        // 3. Slice instructions & propagate noreturn wrappers (restricted to transitive call/branch closure for single function)
+        var fnInstructionsByStart: [VirtualAddress: [A64DecodedInstruction]] = [:]
+        var jumpTableDescriptorsByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]] = discovery.jumpTableDescriptorsByFunction
+        var jumpTablesByStart: [VirtualAddress: [SwitchJumpTable]] = [:]
+
+        func sliceAndPrepareBoundary(_ boundary: DiscoveredFunctionBoundary) {
+            let startAddr = boundary.startAddress
+            if fnInstructionsByStart[startAddr] != nil { return }
+            let fnInsns = discoveryEngine.sliceInstructions(
+                in: allInstructions,
+                from: startAddr,
+                to: boundary.endAddress
+            )
+            fnInstructionsByStart[startAddr] = fnInsns
+            if jumpTableDescriptorsByFunction[startAddr] == nil && !boundary.isStubSection {
+                let descs = discoveryEngine.recoverJumpTableDescriptors(
+                    in: fnInsns,
+                    functionStart: startAddr,
+                    functionEnd: boundary.endAddress,
+                    image: image,
+                    data: binaryBytes
+                )
+                if !descs.isEmpty {
+                    jumpTableDescriptorsByFunction[startAddr] = descs
+                }
+            }
+            if let descs = jumpTableDescriptorsByFunction[startAddr] {
+                jumpTablesByStart[startAddr] = descs.map(\.jumpTable)
+            }
+        }
+
+        let noreturnScopeBoundaries: [DiscoveredFunctionBoundary]
+        if selector != nil, let rootBoundary = targetBoundaries.first {
+            var visited: Set<VirtualAddress> = [rootBoundary.startAddress]
+            var queue: [DiscoveredFunctionBoundary] = [rootBoundary]
+            var head = 0
+            while head < queue.count {
+                let cur = queue[head]
+                head += 1
+                sliceAndPrepareBoundary(cur)
+                let curInsns = fnInstructionsByStart[cur.startAddress] ?? []
+                for insn in curInsns {
+                    switch insn.flow {
+                    case .directCall(let callee),
+                         .unconditionalJump(let callee),
+                         .conditionalBranch(let callee, _):
+                        if let calleeBoundary = boundariesByAddress[callee],
+                           visited.insert(calleeBoundary.startAddress).inserted {
+                            queue.append(calleeBoundary)
+                        }
+                    default:
+                        break
+                    }
+                }
+                for jt in jumpTablesByStart[cur.startAddress] ?? [] {
+                    for caseTarget in jt.targetAddresses {
+                        if let calleeBoundary = boundariesByAddress[caseTarget],
+                           visited.insert(calleeBoundary.startAddress).inserted {
+                            queue.append(calleeBoundary)
+                        }
+                    }
+                }
+            }
+            noreturnScopeBoundaries = queue
+        } else {
+            fnInstructionsByStart.reserveCapacity(sortedBoundaries.count)
+            for boundary in sortedBoundaries {
+                sliceAndPrepareBoundary(boundary)
+            }
+            noreturnScopeBoundaries = sortedBoundaries
+        }
+
+        let noreturnAddresses = KnownNoreturnSymbols.resolveNoreturnAddresses(
+            image: image,
+            boundaries: noreturnScopeBoundaries,
+            instructionsByFunction: fnInstructionsByStart,
+            jumpTablesByFunction: jumpTablesByStart
+        )
+
+        // 4. Build CFG + Dominator Tree + Natural Loops ONLY for `targetBoundaries`
+        let defaultStride: UInt64 = image.architecture.isARM64Family ? 4 : 1
+        var recoveredFunctions: [RecoveredFunction] = []
+        recoveredFunctions.reserveCapacity(targetBoundaries.count)
+
+        for boundary in targetBoundaries {
+            let fnInsns = fnInstructionsByStart[boundary.startAddress] ?? []
+            let jtDescriptors = jumpTableDescriptorsByFunction[boundary.startAddress] ?? []
+            let jumpTables = jumpTablesByStart[boundary.startAddress] ?? []
+
+            let builtCFG = cfgEngine.buildCFG(
+                boundary: boundary,
+                instructions: fnInsns,
+                jumpTables: jumpTables,
+                jumpTableDescriptors: jtDescriptors,
+                noreturnAddresses: noreturnAddresses,
+                defaultInstructionByteStride: defaultStride
+            )
+
+            let domResult = domAnalyzer.analyze(
+                blocks: builtCFG.blocks,
+                edges: builtCFG.edges,
+                entryBlockID: builtCFG.blocks.first(where: \.isEntry)?.id,
+                includePostDominatorsAndRegions: false
+            )
+
+            let fnInlineRanges = builtCFG.jumpTables.filter(\.isInlineInCode).map(\.tableAddressRange)
+            let recovered = RecoveredFunction(
+                address: builtCFG.functionAddress,
+                endAddress: builtCFG.endAddress,
+                name: builtCFG.name,
+                demangledName: builtCFG.demangledName,
+                isLeaf: builtCFG.isLeaf,
+                isThunk: builtCFG.isThunk,
+                usesPAC: builtCFG.usesPAC,
+                stackFrameBytes: builtCFG.stackFrameBytes,
+                blocks: domResult.annotatedBlocks,
+                edges: domResult.annotatedEdges,
+                dominatorTree: domResult.dominatorTree,
+                naturalLoops: domResult.naturalLoops,
+                jumpTables: builtCFG.jumpTables,
+                inlineJumpTableRanges: fnInlineRanges,
+                cyclomaticComplexity: builtCFG.cyclomaticComplexity,
+                layout: nil
+            )
+            recoveredFunctions.append(recovered)
+        }
+
+        let elapsedMs = max(0.0, (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0)
+        return CFGAnalysisSnapshot(
+            image: image,
+            functions: recoveredFunctions,
+            boundariesByAddress: boundariesByAddress,
+            inlineJumpTableRanges: discovery.inlineJumpTableRanges,
+            analysisDurationMilliseconds: elapsedMs
+        )
+    }
+
+    private static func matchBoundary(
+        in sortedBoundaries: [DiscoveredFunctionBoundary],
+        selector: CFGFunctionSelector
+    ) -> DiscoveredFunctionBoundary? {
+        switch selector {
+        case .address(let addr):
+            if let exact = sortedBoundaries.first(where: { $0.startAddress == addr }) {
+                return exact
+            }
+            return sortedBoundaries.first(where: { addr >= $0.startAddress && addr < $0.endAddress })
+
+        case .symbol(let rawQuery):
+            let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return nil }
+            let qLower = trimmed.lowercased()
+            let prefixed = qLower.hasPrefix("_") ? qLower : "_\(qLower)"
+            if let exact = sortedBoundaries.first(where: {
+                let n = $0.name.lowercased()
+                let d = $0.demangledName.lowercased()
+                return n == qLower || n == prefixed || d == qLower
+            }) {
+                return exact
+            }
+            return sortedBoundaries.first(where: {
+                $0.name.lowercased().contains(qLower) || $0.demangledName.lowercased().contains(qLower)
+            })
+        }
     }
 
     // MARK: - Internal Cross-Reference Extraction Engine

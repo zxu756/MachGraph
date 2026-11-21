@@ -105,12 +105,14 @@ public struct DominatorAndLoopAnalyzer: Sendable {
 
     // MARK: - Unified Full Analysis Entry Point
 
-    /// Runs the complete dominance, post-dominance, dominance-frontier, natural-loop, and structured-region
-    /// analysis pass over `(blocks, edges)` and returns annotated blocks (`loopDepth`) and edges (`isBackEdge`).
+    /// Runs the complete dominance, dominance-frontier, natural-loop, and (when `includePostDominatorsAndRegions`
+    /// is `true`) post-dominance and structured-region analysis pass over `(blocks, edges)` and returns annotated
+    /// blocks (`loopDepth`) and edges (`isBackEdge`).
     public func analyze(
         blocks: [BasicBlock],
         edges: [CFGEdge],
-        entryBlockID: Int? = nil
+        entryBlockID: Int? = nil,
+        includePostDominatorsAndRegions: Bool = true
     ) -> DominatorAndLoopAnalysisResult {
         guard !blocks.isEmpty else {
             return DominatorAndLoopAnalysisResult(
@@ -136,13 +138,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
             entryBlockID: resolvedEntry
         )
 
-        // 2. Reverse Lengauer-Tarjan Post-Dominator Tree (`ipdom`) for structured `if/else` merge recovery
-        let postDomTree = computePostDominatorTree(
-            blocks: blocks,
-            edges: edges
-        )
-
-        // 3. Natural Loop Recovery (back-edges u -> h where h dom u, body worklist, nesting depth, exits)
+        // 2. Natural Loop Recovery (back-edges u -> h where h dom u, body worklist, nesting depth, exits)
         let loopRecovery = recoverNaturalLoops(
             blocks: blocks,
             edges: edges,
@@ -150,7 +146,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
             entryBlockID: resolvedEntry
         )
 
-        // 4. Annotate `BasicBlock.loopDepth` and `CFGEdge.isBackEdge`
+        // 3. Annotate `BasicBlock.loopDepth` and `CFGEdge.isBackEdge`
         let allBackEdges = loopRecovery.backEdges.union(loopRecovery.irreducibleRetreatEdges)
         let (annotatedBlocks, annotatedEdges) = annotateCFGWithLoops(
             blocks: blocks,
@@ -159,14 +155,26 @@ public struct DominatorAndLoopAnalyzer: Sendable {
             backEdgePairs: allBackEdges
         )
 
-        // 5. Recover Structured Control-Flow Regions (`if-then`, `if-then-else`, `switch`, `while`, `do-while`)
-        let structuredRegions = discoverStructuredRegions(
-            blocks: annotatedBlocks,
-            edges: annotatedEdges,
-            dominatorTree: domTree,
-            postDominatorTree: postDomTree,
-            naturalLoops: loopRecovery.loops
-        )
+        // 4. Optional Post-Dominator Tree (`ipdom`) & Structured Control-Flow Regions (`if/else`, `switch`, loops)
+        let postDomTree: [PostDominatorTreeNode]
+        let structuredRegions: [StructuredControlRegion]
+        if includePostDominatorsAndRegions {
+            let computedPostDom = computePostDominatorTree(
+                blocks: blocks,
+                edges: edges
+            )
+            postDomTree = computedPostDom
+            structuredRegions = discoverStructuredRegions(
+                blocks: annotatedBlocks,
+                edges: annotatedEdges,
+                dominatorTree: domTree,
+                postDominatorTree: computedPostDom,
+                naturalLoops: loopRecovery.loops
+            )
+        } else {
+            postDomTree = []
+            structuredRegions = []
+        }
 
         return DominatorAndLoopAnalysisResult(
             dominatorTree: domTree,
@@ -760,7 +768,13 @@ public struct DominatorAndLoopAnalyzer: Sendable {
             )
         }
 
-        // B. Classify Acyclic Conditional & Switch Regions
+        // B. Classify Acyclic Conditional & Switch Regions (prebuild forward adjacency map once per function)
+        var forwardSuccessorsByBlock: [Int: [Int]] = [:]
+        forwardSuccessorsByBlock.reserveCapacity(blocks.count)
+        for e in edges where !e.isBackEdge {
+            forwardSuccessorsByBlock[e.sourceBlockID, default: []].append(e.targetBlockID)
+        }
+
         for block in blocks where loopByHeader[block.id] == nil {
             let outEdges = (outgoingEdgesByBlock[block.id] ?? []).filter { !$0.isBackEdge }
             guard outEdges.count >= 2 else { continue }
@@ -774,7 +788,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
                 let regionBody = collectRegionBetween(
                     headerID: block.id,
                     stopAtMergeID: mergeID,
-                    edges: edges
+                    forwardSuccessors: forwardSuccessorsByBlock
                 )
                 regions.append(
                     StructuredControlRegion(
@@ -796,7 +810,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
                 let regionBody = collectRegionBetween(
                     headerID: block.id,
                     stopAtMergeID: mergeID,
-                    edges: edges
+                    forwardSuccessors: forwardSuccessorsByBlock
                 )
 
                 if let merge = mergeID {
@@ -1233,20 +1247,15 @@ public struct DominatorAndLoopAnalyzer: Sendable {
     private func collectRegionBetween(
         headerID: Int,
         stopAtMergeID: Int?,
-        edges: [CFGEdge]
+        forwardSuccessors: [Int: [Int]]
     ) -> [Int] {
-        var succMap: [Int: [Int]] = [:]
-        for e in edges where !e.isBackEdge {
-            succMap[e.sourceBlockID, default: []].append(e.targetBlockID)
-        }
-
         var region: Set<Int> = [headerID]
         var queue: [Int] = [headerID]
         var head = 0
         while head < queue.count {
             let cur = queue[head]
             head += 1
-            for s in succMap[cur] ?? [] {
+            for s in forwardSuccessors[cur] ?? [] {
                 if let merge = stopAtMergeID, s == merge {
                     continue
                 }
