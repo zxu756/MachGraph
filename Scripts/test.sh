@@ -218,8 +218,48 @@ case "$MODE" in
                     echo "==> [milestone 2] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
                 fi
                 ;;
+            3|m3|M3)
+                echo "==> [milestone 3] Scoped unit tests for M3-touched modules"
+                run_scope \
+                    MachGraphModels \
+                    MachBinaryFormats \
+                    MachA64Decoder \
+                    MachCFGEngine \
+                    MachHeadlessCLI
+                echo "==> [milestone 3] Acceptance harness unit tests"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/test_m3_harnesses.py"
+                echo "==> [milestone 3] Building release MachGraph CLI binary"
+                swift build -c release --product MachGraph >/dev/null
+                REL_BIN="$ROOT_DIR/.build/release/MachGraph"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                    STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m3-stage.XXXXXX")"
+                    REC_DATE="$(date -u +%Y-%m-%d)"
+                    echo "==> [milestone 3] Running Scripts/acceptance/m3-metadata-differential.py standard -> $OUT_LABEL/m3-metadata-standard.txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" standard --machgraph "$REL_BIN" | tee "$STAGE_DIR/m3-metadata-standard.txt"
+                    echo "==> [milestone 3] Running Scripts/acceptance/m3-metadata-differential.py objc --only objc -> $OUT_LABEL/m3-metadata-objc.txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" objc --only objc --machgraph "$REL_BIN" | tee "$STAGE_DIR/m3-metadata-objc.txt"
+                    echo "==> [milestone 3] Running Scripts/acceptance/m3-metadata-differential.py full --record -> $OUT_LABEL/m3-metadata-full-${REC_DATE}.json & .txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" full --record --json-out "$OUT_DIR/m3-metadata-full-${REC_DATE}.json" --machgraph "$REL_BIN" | tee "$STAGE_DIR/m3-metadata-full.txt"
+                    cp "$STAGE_DIR/m3-metadata-full.txt" "$OUT_DIR/m3-metadata-full-${REC_DATE}.txt"
+                    cp "$STAGE_DIR/m3-metadata-standard.txt" "$OUT_DIR/m3-metadata-standard.txt"
+                    cp "$STAGE_DIR/m3-metadata-objc.txt" "$OUT_DIR/m3-metadata-objc.txt"
+                    rm -rf "$STAGE_DIR"
+                    echo "==> [milestone 3] Recorded logs under reports/"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m3-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                    echo "==> [milestone 3] Running Scripts/acceptance/m3-metadata-differential.py standard -> $OUT_LABEL/m3-metadata-standard.txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" standard --machgraph "$REL_BIN" --json-out "$OUT_DIR/m3-metadata-standard.json" | tee "$OUT_DIR/m3-metadata-standard.txt"
+                    echo "==> [milestone 3] Running Scripts/acceptance/m3-metadata-differential.py objc --only objc -> $OUT_LABEL/m3-metadata-objc.txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" objc --only objc --machgraph "$REL_BIN" --json-out "$OUT_DIR/m3-metadata-objc.json" | tee "$OUT_DIR/m3-metadata-objc.txt"
+                    echo "==> [milestone 3] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
+                ;;
             *)
-                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2)." >&2
+                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2, 3)." >&2
                 exit 2
                 ;;
         esac
@@ -243,6 +283,10 @@ case "$MODE" in
             echo "==> [release] Running Scripts/acceptance/test_differential_harnesses.py"
             python3 "$ROOT_DIR/Scripts/acceptance/test_differential_harnesses.py"
         fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/test_m3_harnesses.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/test_m3_harnesses.py"
+            python3 -I "$ROOT_DIR/Scripts/acceptance/test_m3_harnesses.py"
+        fi
         if [ -x "$ROOT_DIR/Scripts/acceptance/differential.py" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py standard"
             python3 "$ROOT_DIR/Scripts/acceptance/differential.py" standard --machgraph "$REL_BIN"
@@ -251,11 +295,21 @@ case "$MODE" in
             echo "==> [release] Running Scripts/acceptance/macho-differential.py standard"
             python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" standard --machgraph "$REL_BIN"
         fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/m3-metadata-differential.py standard"
+            python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" standard --machgraph "$REL_BIN"
+            echo "==> [release] Running Scripts/acceptance/m3-metadata-differential.py objc --only objc"
+            python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" objc --only objc --machgraph "$REL_BIN"
+        fi
         if [ "${MACHGRAPH_CORPUS:-}" = "full" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py full"
             python3 "$ROOT_DIR/Scripts/acceptance/differential.py" full --machgraph "$REL_BIN"
             echo "==> [release] Running Scripts/acceptance/macho-differential.py full"
             python3 "$ROOT_DIR/Scripts/acceptance/macho-differential.py" full --machgraph "$REL_BIN"
+            if [ -f "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" ]; then
+                echo "==> [release] Running Scripts/acceptance/m3-metadata-differential.py full"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" full --machgraph "$REL_BIN"
+            fi
         else
             echo "SKIPPED (MACHGRAPH_CORPUS!=full)"
         fi
