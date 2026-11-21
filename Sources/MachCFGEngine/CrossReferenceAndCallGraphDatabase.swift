@@ -686,6 +686,7 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
     public let image: LoadedBinaryImage
     public let functions: [RecoveredFunction]
     public let decodedInstructions: [A64DecodedInstruction]
+    public let inlineJumpTableRanges: [AddressRange]
     public let crossReferences: CrossReferenceIndex
     public let callGraph: ProgramCallGraph
     public let dangerousSinkPaths: [CallPathRoute]
@@ -701,6 +702,7 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
         image: LoadedBinaryImage,
         functions: [RecoveredFunction],
         decodedInstructions: [A64DecodedInstruction],
+        inlineJumpTableRanges: [AddressRange] = [],
         crossReferences: CrossReferenceIndex,
         callGraph: ProgramCallGraph,
         dangerousSinkPaths: [CallPathRoute],
@@ -715,6 +717,10 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
         self.image = image
         self.functions = sortedFns
         self.decodedInstructions = sortedInsns
+        self.inlineJumpTableRanges = inlineJumpTableRanges.sorted {
+            if $0.start != $1.start { return $0.start < $1.start }
+            return $0.size < $1.size
+        }
         self.crossReferences = crossReferences
         self.callGraph = callGraph
         self.dangerousSinkPaths = dangerousSinkPaths
@@ -745,6 +751,7 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
     public var xrefs: [XrefRecord] { crossReferences.allRecords }
     public var stringXrefs: [XrefRecord] { crossReferences.stringXrefs }
     public var importCallSites: [ImportCallSiteRecord] { crossReferences.importCallSites }
+    public var inlineJumpTableStarts: [VirtualAddress] { inlineJumpTableRanges.map(\.start) }
 
     /// Exact O(1) lookup for a `RecoveredFunction` by its entry `VirtualAddress`.
     public func function(at entryAddress: VirtualAddress) -> RecoveredFunction? {
@@ -961,22 +968,30 @@ public struct BinaryAnalysisCoordinator: Sendable {
         }
         allInstructions.sort { $0.address < $1.address }
 
-        // 2. Discover function boundaries across all executable sections
-        let boundaries = discoveryEngine.discoverFunctions(
+        // 2. Discover function boundaries & inline jump-table data exclusions across all executable sections
+        let discovery = discoveryEngine.discoverFunctionsWithJumpTables(
             in: image,
             decodedSections: decodedSections,
             data: binaryBytes
         )
+        let boundaries = discovery.boundaries
+        let alignedInlineExclusions = FunctionDiscoveryEngine.alignedInlineExclusionRanges(
+            for: discovery.inlineJumpTableRanges
+        )
+        if !alignedInlineExclusions.isEmpty {
+            allInstructions.removeAll { insn in
+                FunctionDiscoveryEngine.isAddressExcluded(insn.address, inSortedRanges: alignedInlineExclusions)
+            }
+            allIdioms.removeAll { idiom in
+                FunctionDiscoveryEngine.isAddressExcluded(idiom.startAddress, inSortedRanges: alignedInlineExclusions)
+            }
+        }
 
-        // 3. Per-function Jump Table Recovery -> Basic Block CFG -> Lengauer-Tarjan Dominators & Loops -> Sugiyama Layout
-        let defaultStride: UInt64 = image.architecture.isARM64Family ? 4 : 1
-        var recoveredFunctions: [RecoveredFunction] = []
-        recoveredFunctions.reserveCapacity(boundaries.count)
-
-        var postDomByFunction: [VirtualAddress: [PostDominatorTreeNode]] = [:]
-        var structuredRegionsByFunction: [VirtualAddress: [StructuredControlRegion]] = [:]
-        var jumpTableDescriptorsByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]] = [:]
-        var tailTargetsByFunction: [VirtualAddress: [VirtualAddress]] = [:]
+        // Slice per-function instruction streams & propagate noreturn wrappers across the image
+        var fnInstructionsByStart: [VirtualAddress: [A64DecodedInstruction]] = [:]
+        fnInstructionsByStart.reserveCapacity(boundaries.count)
+        var jumpTableDescriptorsByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]] = discovery.jumpTableDescriptorsByFunction
+        var jumpTablesByStart: [VirtualAddress: [SwitchJumpTable]] = [:]
 
         for boundary in boundaries {
             let fnInsns = discoveryEngine.sliceInstructions(
@@ -984,24 +999,51 @@ public struct BinaryAnalysisCoordinator: Sendable {
                 from: boundary.startAddress,
                 to: boundary.endAddress
             )
-
-            let jtDescriptors = discoveryEngine.recoverJumpTableDescriptors(
-                in: fnInsns,
-                functionStart: boundary.startAddress,
-                functionEnd: boundary.endAddress,
-                image: image,
-                data: binaryBytes
-            )
-            let jumpTables = jtDescriptors.map(\.jumpTable)
-            if !jtDescriptors.isEmpty {
-                jumpTableDescriptorsByFunction[boundary.startAddress] = jtDescriptors
+            fnInstructionsByStart[boundary.startAddress] = fnInsns
+            if jumpTableDescriptorsByFunction[boundary.startAddress] == nil && !boundary.isStubSection {
+                let descs = discoveryEngine.recoverJumpTableDescriptors(
+                    in: fnInsns,
+                    functionStart: boundary.startAddress,
+                    functionEnd: boundary.endAddress,
+                    image: image,
+                    data: binaryBytes
+                )
+                if !descs.isEmpty {
+                    jumpTableDescriptorsByFunction[boundary.startAddress] = descs
+                }
             }
+            if let descs = jumpTableDescriptorsByFunction[boundary.startAddress] {
+                jumpTablesByStart[boundary.startAddress] = descs.map(\.jumpTable)
+            }
+        }
+
+        let noreturnAddresses = KnownNoreturnSymbols.resolveNoreturnAddresses(
+            image: image,
+            boundaries: boundaries,
+            instructionsByFunction: fnInstructionsByStart,
+            jumpTablesByFunction: jumpTablesByStart
+        )
+
+        // 3. Per-function Basic Block CFG -> Lengauer-Tarjan Dominators & Loops -> Sugiyama Layout
+        let defaultStride: UInt64 = image.architecture.isARM64Family ? 4 : 1
+        var recoveredFunctions: [RecoveredFunction] = []
+        recoveredFunctions.reserveCapacity(boundaries.count)
+
+        var postDomByFunction: [VirtualAddress: [PostDominatorTreeNode]] = [:]
+        var structuredRegionsByFunction: [VirtualAddress: [StructuredControlRegion]] = [:]
+        var tailTargetsByFunction: [VirtualAddress: [VirtualAddress]] = [:]
+
+        for boundary in boundaries {
+            let fnInsns = fnInstructionsByStart[boundary.startAddress] ?? []
+            let jtDescriptors = jumpTableDescriptorsByFunction[boundary.startAddress] ?? []
+            let jumpTables = jumpTablesByStart[boundary.startAddress] ?? []
 
             let builtCFG = cfgEngine.buildCFG(
                 boundary: boundary,
                 instructions: fnInsns,
                 jumpTables: jumpTables,
                 jumpTableDescriptors: jtDescriptors,
+                noreturnAddresses: noreturnAddresses,
                 defaultInstructionByteStride: defaultStride
             )
 
@@ -1028,6 +1070,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
                 )
                 : nil
 
+            let fnInlineRanges = builtCFG.jumpTables.filter(\.isInlineInCode).map(\.tableAddressRange)
             let recovered = RecoveredFunction(
                 address: builtCFG.functionAddress,
                 endAddress: builtCFG.endAddress,
@@ -1042,6 +1085,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
                 dominatorTree: domResult.dominatorTree,
                 naturalLoops: domResult.naturalLoops,
                 jumpTables: builtCFG.jumpTables,
+                inlineJumpTableRanges: fnInlineRanges,
                 cyclomaticComplexity: builtCFG.cyclomaticComplexity,
                 layout: cfgLayout
             )
@@ -1074,6 +1118,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
             image: image,
             functions: recoveredFunctions,
             decodedInstructions: allInstructions,
+            inlineJumpTableRanges: discovery.inlineJumpTableRanges,
             crossReferences: xrefIndex,
             callGraph: callGraph,
             dangerousSinkPaths: dangerousPaths,

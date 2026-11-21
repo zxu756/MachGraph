@@ -176,6 +176,22 @@ public struct DecodedExecutableSection: Sendable, Codable, Hashable, Identifiabl
     }
 }
 
+public struct FunctionDiscoveryResult: Sendable {
+    public let boundaries: [DiscoveredFunctionBoundary]
+    public let inlineJumpTableRanges: [AddressRange]
+    public let jumpTableDescriptorsByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]]
+
+    public init(
+        boundaries: [DiscoveredFunctionBoundary],
+        inlineJumpTableRanges: [AddressRange] = [],
+        jumpTableDescriptorsByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]] = [:]
+    ) {
+        self.boundaries = boundaries
+        self.inlineJumpTableRanges = inlineJumpTableRanges
+        self.jumpTableDescriptorsByFunction = jumpTableDescriptorsByFunction
+    }
+}
+
 // MARK: - Function Discovery & ARM64 Switch Jump-Table Recovery Engine
 
 public struct FunctionDiscoveryEngine: Sendable {
@@ -260,13 +276,30 @@ public struct FunctionDiscoveryEngine: Sendable {
     // MARK: - 2. Multi-Source Function Boundary Discovery
 
     /// Combines `LC_FUNCTION_STARTS`, `BinarySymbol` entries, Objective-C `ObjCClassMetadata` method IMPs,
-    /// `BL` direct call targets, `__stubs` slot thunks, and ARM64 prologue heuristics to partition code into functions.
+    /// `BL` direct call targets, `__stubs` slot thunks, and ARM64 prologue heuristics to partition code into functions,
+    /// stripping validated inline jump-table data regions in executable sections from function starts and function tails.
     public func discoverFunctions(
         in image: LoadedBinaryImage,
         decodedSections: [DecodedExecutableSection],
         data: Data? = nil
     ) -> [DiscoveredFunctionBoundary] {
-        guard !decodedSections.isEmpty else { return [] }
+        discoverFunctionsWithJumpTables(
+            in: image,
+            decodedSections: decodedSections,
+            data: data
+        ).boundaries
+    }
+
+    /// Discovers function boundaries and simultaneously recovers switch jump tables, stripping validated inline
+    /// jump-table data regions inside executable sections (`__TEXT,__text`) from function seeds and tail slices.
+    public func discoverFunctionsWithJumpTables(
+        in image: LoadedBinaryImage,
+        decodedSections: [DecodedExecutableSection],
+        data: Data? = nil
+    ) -> FunctionDiscoveryResult {
+        guard !decodedSections.isEmpty else {
+            return FunctionDiscoveryResult(boundaries: [])
+        }
 
         let execRanges = decodedSections.map(\.section.addressRange)
         func isExecutableAddress(_ addr: VirtualAddress) -> Bool {
@@ -321,8 +354,14 @@ public struct FunctionDiscoveryEngine: Sendable {
         }
 
         // Pass B: LC_FUNCTION_STARTS / PE .pdata / WASM code starts
-        for fnStart in image.functionStarts where fnStart.rawValue != 0 {
+        for fnStart in image.lcFunctionStarts where fnStart.rawValue != 0 {
             recordSeed(fnStart, source: .lcFunctionStarts)
+        }
+        for fnStart in image.functionStarts where fnStart.rawValue != 0 {
+            let normAddr = normalizeInstructionAddress(fnStart, architecture: image.architecture)
+            if seedsByAddress[normAddr] == nil {
+                recordSeed(fnStart, source: .lcFunctionStarts)
+            }
         }
 
         // Pass C: Symbol Table Functions / Exports / Stubs
@@ -432,78 +471,219 @@ public struct FunctionDiscoveryEngine: Sendable {
             }
         }
 
-        // Partition each executable section into contiguous non-overlapping function ranges
-        var boundaries: [DiscoveredFunctionBoundary] = []
-        for decodedSec in decodedSections {
-            let sec = decodedSec.section
-            let secRange = sec.addressRange
-            let sectionSeeds = seedsByAddress.keys
-                .filter { secRange.contains($0) }
-                .sorted()
+        func buildBoundaries(
+            activeSeeds: [VirtualAddress: Set<FunctionDiscoverySource>],
+            excludedInlineRanges: [AddressRange]
+        ) -> [DiscoveredFunctionBoundary] {
+            var built: [DiscoveredFunctionBoundary] = []
+            for decodedSec in decodedSections {
+                let sec = decodedSec.section
+                let secRange = sec.addressRange
+                let sectionSeeds = activeSeeds.keys
+                    .filter { secRange.contains($0) }
+                    .sorted()
 
-            guard !sectionSeeds.isEmpty else { continue }
+                guard !sectionSeeds.isEmpty else { continue }
 
-            for (idx, startAddr) in sectionSeeds.enumerated() {
-                let rawEnd: VirtualAddress = (idx + 1 < sectionSeeds.count)
-                    ? sectionSeeds[idx + 1]
-                    : secRange.end
-                guard rawEnd > startAddr else { continue }
+                for (idx, startAddr) in sectionSeeds.enumerated() {
+                    let rawEnd: VirtualAddress = (idx + 1 < sectionSeeds.count)
+                        ? sectionSeeds[idx + 1]
+                        : secRange.end
+                    guard rawEnd > startAddr else { continue }
 
-                let trimmedEnd: VirtualAddress
-                if configuration.trimTrailingZeroPadding && image.architecture.isARM64Family && sec.kind != .stubs {
-                    trimmedEnd = trimARM64FunctionEnd(
-                        startAddress: startAddr,
-                        rawEndAddress: rawEnd,
-                        sectionInstructions: decodedSec.instructions
-                    )
-                } else {
-                    trimmedEnd = rawEnd
-                }
+                    let trimmedEnd: VirtualAddress
+                    if image.architecture.isARM64Family && sec.kind != .stubs &&
+                       (configuration.trimTrailingZeroPadding || !excludedInlineRanges.isEmpty) {
+                        trimmedEnd = trimARM64FunctionEnd(
+                            startAddress: startAddr,
+                            rawEndAddress: rawEnd,
+                            sectionInstructions: decodedSec.instructions,
+                            inlineDataRanges: excludedInlineRanges,
+                            trimPadding: configuration.trimTrailingZeroPadding
+                        )
+                    } else {
+                        trimmedEnd = rawEnd
+                    }
+                    guard trimmedEnd > startAddr else { continue }
 
-                let sources = Array(seedsByAddress[startAddr] ?? [.containerFallback])
-                let confidence = computeBoundaryConfidence(sources: sources)
+                    let sources = Array(activeSeeds[startAddr] ?? [.containerFallback])
+                    let confidence = computeBoundaryConfidence(sources: sources)
 
-                // Resolve stub target symbol even if LC_FUNCTION_STARTS seeded the stub earlier
-                var stubTargetSym = stubTargetSymbolByStart[startAddr]
-                if stubTargetSym == nil && sec.kind == .stubs && image.architecture.isARM64Family {
-                    let sliceInsns = sliceInstructions(
-                        in: decodedSec.instructions,
-                        from: startAddr,
-                        to: trimmedEnd
-                    )
-                    stubTargetSym = resolveStubTargetSymbol(
-                        in: sliceInsns,
-                        gotSymbolByAddress: gotSymbolByAddress
-                    )
-                }
+                    var stubTargetSym = stubTargetSymbolByStart[startAddr]
+                    if stubTargetSym == nil && sec.kind == .stubs && image.architecture.isARM64Family {
+                        let sliceInsns = sliceInstructions(
+                            in: decodedSec.instructions,
+                            from: startAddr,
+                            to: trimmedEnd
+                        )
+                        stubTargetSym = resolveStubTargetSymbol(
+                            in: sliceInsns,
+                            gotSymbolByAddress: gotSymbolByAddress
+                        )
+                    }
 
-                let (rawName, demangledName) = synthesizeFunctionName(
-                    at: startAddr,
-                    entryPoint: image.entryPoint,
-                    isStubSection: sec.kind == .stubs,
-                    symbolInfo: symbolNameByAddress[startAddr],
-                    objcMethodName: objcNameByAddress[startAddr],
-                    stubTargetSymbol: stubTargetSym
-                )
-
-                boundaries.append(
-                    DiscoveredFunctionBoundary(
-                        startAddress: startAddr,
-                        endAddress: trimmedEnd,
-                        name: rawName,
-                        demangledName: demangledName,
-                        sectionName: sec.fullName,
+                    let (rawName, demangledName) = synthesizeFunctionName(
+                        at: startAddr,
+                        entryPoint: image.entryPoint,
                         isStubSection: sec.kind == .stubs,
-                        sources: sources,
-                        confidence: confidence,
-                        resolvedGOTTargetSymbol: stubTargetSym
+                        symbolInfo: symbolNameByAddress[startAddr],
+                        objcMethodName: objcNameByAddress[startAddr],
+                        stubTargetSymbol: stubTargetSym
                     )
+
+                    built.append(
+                        DiscoveredFunctionBoundary(
+                            startAddress: startAddr,
+                            endAddress: trimmedEnd,
+                            name: rawName,
+                            demangledName: demangledName,
+                            sectionName: sec.fullName,
+                            isStubSection: sec.kind == .stubs,
+                            sources: sources,
+                            confidence: confidence,
+                            resolvedGOTTargetSymbol: stubTargetSym
+                        )
+                    )
+                }
+            }
+            built.sort { $0.startAddress < $1.startAddress }
+            return built
+        }
+
+        var boundaries = buildBoundaries(activeSeeds: seedsByAddress, excludedInlineRanges: [])
+        guard image.architecture.isARM64Family, let data else {
+            return FunctionDiscoveryResult(boundaries: boundaries)
+        }
+
+        let sectionByFullName: [String: DecodedExecutableSection] = Dictionary(
+            uniqueKeysWithValues: decodedSections.map { ($0.section.fullName, $0) }
+        )
+
+        func collectJumpTables(
+            for activeBoundaries: [DiscoveredFunctionBoundary],
+            excludedAlignedRanges: [AddressRange]
+        ) -> (
+            byFunction: [VirtualAddress: [SwitchJumpTableDescriptor]],
+            inlineRanges: [AddressRange]
+        ) {
+            var byFn: [VirtualAddress: [SwitchJumpTableDescriptor]] = [:]
+            var inlineSet = Set<AddressRange>()
+            for b in activeBoundaries where !b.isStubSection {
+                guard let sec = sectionByFullName[b.sectionName] else { continue }
+                var fnInsns = sliceInstructions(
+                    in: sec.instructions,
+                    from: b.startAddress,
+                    to: b.endAddress
                 )
+                if !excludedAlignedRanges.isEmpty {
+                    fnInsns.removeAll { insn in
+                        Self.isAddressExcluded(insn.address, inSortedRanges: excludedAlignedRanges)
+                    }
+                }
+                guard !fnInsns.isEmpty else { continue }
+                let descs = recoverJumpTableDescriptors(
+                    in: fnInsns,
+                    functionStart: b.startAddress,
+                    functionEnd: b.endAddress,
+                    image: image,
+                    data: data
+                )
+                if !descs.isEmpty {
+                    byFn[b.startAddress] = descs
+                    for d in descs where d.jumpTable.isInlineInCode && d.jumpTable.tableByteSize > 0 {
+                        inlineSet.insert(d.jumpTable.tableAddressRange)
+                    }
+                }
+            }
+            let sortedInline = inlineSet.sorted {
+                if $0.start != $1.start { return $0.start < $1.start }
+                return $0.size < $1.size
+            }
+            return (byFn, sortedInline)
+        }
+
+        var currentPass = collectJumpTables(for: boundaries, excludedAlignedRanges: [])
+        if !currentPass.inlineRanges.isEmpty {
+            // Up to 2 refinement rounds in case stripping a mid-function inline jump table merges a split function tail
+            for _ in 0..<2 {
+                let alignedExclusions = Self.alignedInlineExclusionRanges(for: currentPass.inlineRanges)
+                var cleanedSeeds = seedsByAddress
+                for seedAddr in seedsByAddress.keys {
+                    if Self.isAddressExcluded(seedAddr, inSortedRanges: alignedExclusions) {
+                        cleanedSeeds.removeValue(forKey: seedAddr)
+                    }
+                }
+                let refinedBoundaries = buildBoundaries(
+                    activeSeeds: cleanedSeeds,
+                    excludedInlineRanges: alignedExclusions
+                )
+                let refinedPass = collectJumpTables(
+                    for: refinedBoundaries,
+                    excludedAlignedRanges: alignedExclusions
+                )
+                boundaries = refinedBoundaries
+                let mergedInline = Array(Set(currentPass.inlineRanges).union(refinedPass.inlineRanges)).sorted {
+                    if $0.start != $1.start { return $0.start < $1.start }
+                    return $0.size < $1.size
+                }
+                let grew = mergedInline != currentPass.inlineRanges
+                currentPass = (refinedPass.byFunction, mergedInline)
+                if !grew {
+                    break
+                }
             }
         }
 
-        boundaries.sort { $0.startAddress < $1.startAddress }
-        return boundaries
+        return FunctionDiscoveryResult(
+            boundaries: boundaries,
+            inlineJumpTableRanges: currentPass.inlineRanges,
+            jumpTableDescriptorsByFunction: currentPass.byFunction
+        )
+    }
+
+    /// Converts byte-granular inline jump-table `AddressRange`s into sorted, merged 4-byte-aligned ARM64 word exclusion ranges.
+    public static func alignedInlineExclusionRanges(for inlineRanges: [AddressRange]) -> [AddressRange] {
+        guard !inlineRanges.isEmpty else { return [] }
+        let aligned: [(lo: UInt64, hi: UInt64)] = inlineRanges.compactMap { r in
+            guard r.size > 0 else { return nil }
+            let lo = r.start.rawValue & ~UInt64(0x3)
+            let rawEnd = r.end.rawValue
+            let hi = (rawEnd &+ 3) & ~UInt64(0x3)
+            guard hi > lo else { return nil }
+            return (lo, hi)
+        }.sorted { $0.lo < $1.lo }
+
+        guard var cur = aligned.first else { return [] }
+        var merged: [AddressRange] = []
+        for item in aligned.dropFirst() {
+            if item.lo <= cur.hi {
+                cur.hi = max(cur.hi, item.hi)
+            } else {
+                merged.append(AddressRange(start: VirtualAddress(cur.lo), size: cur.hi - cur.lo))
+                cur = item
+            }
+        }
+        merged.append(AddressRange(start: VirtualAddress(cur.lo), size: cur.hi - cur.lo))
+        return merged
+    }
+
+    /// Binary-search check for whether `address` falls inside `sortedRanges` (non-overlapping `AddressRange`s sorted by `start`).
+    public static func isAddressExcluded(_ address: VirtualAddress, inSortedRanges sortedRanges: [AddressRange]) -> Bool {
+        guard !sortedRanges.isEmpty else { return false }
+        var lo = 0
+        var hi = sortedRanges.count - 1
+        var candidate: Int?
+        while lo <= hi {
+            let mid = (lo + hi) >> 1
+            if sortedRanges[mid].start <= address {
+                candidate = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+        guard let idx = candidate else { return false }
+        return sortedRanges[idx].contains(address)
     }
 
     // MARK: - 3. ARM64 Switch Jump-Table Recovery Engine
@@ -588,6 +768,7 @@ public struct FunctionDiscoveryEngine: Sendable {
         let tableBaseAddress: VirtualAddress
         let anchorAddress: VirtualAddress
         let indexRegister: A64Register?
+        let indexUseInstructionIndex: Int?
         let encoding: TableEntryEncoding
         let setupAddresses: [VirtualAddress]
     }
@@ -621,11 +802,12 @@ public struct FunctionDiscoveryEngine: Sendable {
             return nil
         }
 
-        // Recover bounds check (CMP wIdx, #max + B.HI / B.HS / B.LS ...)
-        let boundsStart = max(0, windowStart - 10)
+        // Recover bounds check (CMP + B.HI/HS/LS/LO or branchless CMP + CSEL ..., LS/LO/LE/LT)
+        let indexUseEnd = dispatch.indexUseInstructionIndex ?? brIndex
+        let boundsStart = max(0, min(windowStart - 10, indexUseEnd - 24))
         let boundsInfo = findSwitchBoundsGuard(
             searchStart: boundsStart,
-            brIndex: brIndex,
+            indexUseEnd: indexUseEnd,
             dispatchAddress: brInsn.address,
             expectedIndexRegister: dispatch.indexRegister,
             instructions: instructions
@@ -650,11 +832,16 @@ public struct FunctionDiscoveryEngine: Sendable {
 
         guard !targets.isEmpty else { return nil }
 
+        let execSections = selectExecutableSections(in: image)
+        let isInlineDataTable = (dispatch.patternKind != .inlineInstructionBranchTable) &&
+            execSections.contains { $0.addressRange.contains(dispatch.tableBaseAddress) }
+
         let jumpTable = SwitchJumpTable(
             dispatchInstructionAddress: brInsn.address,
             tableBaseAddress: dispatch.tableBaseAddress,
             entryByteSize: dispatch.encoding.entryByteSize,
-            targetAddresses: targets
+            targetAddresses: targets,
+            isInlineInCode: isInlineDataTable
         )
 
         var setupAddrs = dispatch.setupAddresses
@@ -696,6 +883,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                 tableBase: VirtualAddress,
                 viaADRP: Bool,
                 indexReg: A64Register,
+                indexUseIdx: Int,
                 byteSize: Int,
                 isSigned: Bool,
                 insnAddrs: [VirtualAddress]
@@ -703,6 +891,7 @@ public struct FunctionDiscoveryEngine: Sendable {
             case absoluteTargetLoad(
                 tableBase: VirtualAddress,
                 indexReg: A64Register,
+                indexUseIdx: Int,
                 insnAddrs: [VirtualAddress]
             )
             case computedJumpTarget(
@@ -710,6 +899,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                 tableBase: VirtualAddress,
                 anchor: VirtualAddress,
                 indexReg: A64Register?,
+                indexUseIdx: Int?,
                 encoding: TableEntryEncoding,
                 insnAddrs: [VirtualAddress]
             )
@@ -770,7 +960,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                     if let anchorVal = regEnv[rn.index],
                        case .pcAddress(let anchorAddr, let anchorADRP, let anchorAddrs) = anchorVal {
                         if let rmVal = regEnv[rmReg.index],
-                           case .tableOffsetLoad(let tblBase, let tblADRP, let idxReg, let byteSz, let isSigned, let loadAddrs) = rmVal {
+                           case .tableOffsetLoad(let tblBase, let tblADRP, let idxReg, let useIdx, let byteSz, let isSigned, let loadAddrs) = rmVal {
                             let enc: TableEntryEncoding = isSigned
                                 ? .signedRelative(byteSize: byteSz, postLoadShift: postShift)
                                 : .unsignedRelative(byteSize: byteSz, postLoadShift: postShift)
@@ -787,6 +977,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                                 tableBase: tblBase,
                                 anchor: anchorAddr,
                                 indexReg: idxReg,
+                                indexUseIdx: useIdx,
                                 encoding: enc,
                                 insnAddrs: mergeUniqueAddresses(anchorAddrs, loadAddrs + [insn.address])
                             )
@@ -798,6 +989,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                                 tableBase: anchorAddr,
                                 anchor: anchorAddr,
                                 indexReg: rmReg,
+                                indexUseIdx: idx,
                                 encoding: .inlineInstructionOffset(scaleShift: postShift),
                                 insnAddrs: anchorAddrs + [insn.address]
                             )
@@ -808,7 +1000,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                     // Commuted operand order: ADD xTarget, rOff, xAnchor
                     if postShift == 0,
                        let rnVal = regEnv[rn.index],
-                       case .tableOffsetLoad(let tblBase, let tblADRP, let idxReg, let byteSz, let isSigned, let loadAddrs) = rnVal,
+                       case .tableOffsetLoad(let tblBase, let tblADRP, let idxReg, let useIdx, let byteSz, let isSigned, let loadAddrs) = rnVal,
                        let rmVal = regEnv[rmReg.index],
                        case .pcAddress(let anchorAddr, let anchorADRP, let anchorAddrs) = rmVal {
                         let enc: TableEntryEncoding = isSigned
@@ -822,6 +1014,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                             tableBase: tblBase,
                             anchor: anchorAddr,
                             indexReg: idxReg,
+                            indexUseIdx: useIdx,
                             encoding: enc,
                             insnAddrs: mergeUniqueAddresses(loadAddrs, anchorAddrs + [insn.address])
                         )
@@ -832,11 +1025,25 @@ public struct FunctionDiscoveryEngine: Sendable {
                 regEnv.removeValue(forKey: rd.index)
 
             case .ldrsw, .ldrsh, .ldrsb, .ldrb, .ldrh, .ldr:
+                let resolvedBase: (tblBase: VirtualAddress, viaADRP: Bool, baseAddrs: [VirtualAddress])? = {
+                    guard insn.operands.count == 2,
+                          case .memory(.registerOffset(let baseReg, _, _)) = insn.operands[1],
+                          let baseVal = regEnv[baseReg.index] else {
+                        return nil
+                    }
+                    switch baseVal {
+                    case .pcAddress(let tblBase, let viaADRP, let baseAddrs):
+                        return (tblBase, viaADRP, baseAddrs)
+                    case .adrpPage(let page, let adrpAddr):
+                        return (page, true, [adrpAddr])
+                    default:
+                        return nil
+                    }
+                }()
                 guard insn.operands.count == 2,
                       case .register(let rt) = insn.operands[0],
-                      case .memory(.registerOffset(let baseReg, let idxReg, _)) = insn.operands[1],
-                      let baseVal = regEnv[baseReg.index],
-                      case .pcAddress(let tblBase, let viaADRP, let baseAddrs) = baseVal else {
+                      case .memory(.registerOffset(_, let idxReg, _)) = insn.operands[1],
+                      let (tblBase, viaADRP, baseAddrs) = resolvedBase else {
                     if let first = insn.operands.first, case .register(let rt) = first {
                         regEnv.removeValue(forKey: rt.index)
                     }
@@ -849,6 +1056,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         tableBase: tblBase,
                         viaADRP: viaADRP,
                         indexReg: idxReg,
+                        indexUseIdx: idx,
                         byteSize: 4,
                         isSigned: true,
                         insnAddrs: baseAddrs + [insn.address]
@@ -858,6 +1066,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         tableBase: tblBase,
                         viaADRP: viaADRP,
                         indexReg: idxReg,
+                        indexUseIdx: idx,
                         byteSize: 2,
                         isSigned: true,
                         insnAddrs: baseAddrs + [insn.address]
@@ -867,6 +1076,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         tableBase: tblBase,
                         viaADRP: viaADRP,
                         indexReg: idxReg,
+                        indexUseIdx: idx,
                         byteSize: 1,
                         isSigned: true,
                         insnAddrs: baseAddrs + [insn.address]
@@ -876,6 +1086,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         tableBase: tblBase,
                         viaADRP: viaADRP,
                         indexReg: idxReg,
+                        indexUseIdx: idx,
                         byteSize: 2,
                         isSigned: false,
                         insnAddrs: baseAddrs + [insn.address]
@@ -885,6 +1096,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         tableBase: tblBase,
                         viaADRP: viaADRP,
                         indexReg: idxReg,
+                        indexUseIdx: idx,
                         byteSize: 1,
                         isSigned: false,
                         insnAddrs: baseAddrs + [insn.address]
@@ -894,6 +1106,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         regEnv[rt.index] = .absoluteTargetLoad(
                             tableBase: tblBase,
                             indexReg: idxReg,
+                            indexUseIdx: idx,
                             insnAddrs: baseAddrs + [insn.address]
                         )
                     } else {
@@ -901,6 +1114,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                             tableBase: tblBase,
                             viaADRP: viaADRP,
                             indexReg: idxReg,
+                            indexUseIdx: idx,
                             byteSize: 4,
                             isSigned: false,
                             insnAddrs: baseAddrs + [insn.address]
@@ -925,7 +1139,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                 }
 
             default:
-                for wReg in insn.writesRegisters where !wReg.isZeroRegister && !wReg.isStackPointer {
+                for wReg in insn.writesRegisters where wReg.isGeneralPurpose && !wReg.isZeroRegister && !wReg.isStackPointer {
                     regEnv.removeValue(forKey: wReg.index)
                 }
             }
@@ -933,21 +1147,23 @@ public struct FunctionDiscoveryEngine: Sendable {
 
         guard let finalVal = regEnv[jumpRegister.index] else { return nil }
         switch finalVal {
-        case .computedJumpTarget(let kind, let tblBase, let anchor, let idxReg, let enc, let addrs):
+        case .computedJumpTarget(let kind, let tblBase, let anchor, let idxReg, let useIdx, let enc, let addrs):
             return ResolvedDispatchPattern(
                 patternKind: kind,
                 tableBaseAddress: tblBase,
                 anchorAddress: anchor,
                 indexRegister: idxReg,
+                indexUseInstructionIndex: useIdx,
                 encoding: enc,
                 setupAddresses: addrs
             )
-        case .absoluteTargetLoad(let tblBase, let idxReg, let addrs):
+        case .absoluteTargetLoad(let tblBase, let idxReg, let useIdx, let addrs):
             return ResolvedDispatchPattern(
                 patternKind: .absolutePointerTable,
                 tableBaseAddress: tblBase,
                 anchorAddress: tblBase,
                 indexRegister: idxReg,
+                indexUseInstructionIndex: useIdx,
                 encoding: .absolutePointer64,
                 setupAddresses: addrs
             )
@@ -958,119 +1174,361 @@ public struct FunctionDiscoveryEngine: Sendable {
 
     private func findSwitchBoundsGuard(
         searchStart: Int,
-        brIndex: Int,
+        indexUseEnd: Int,
         dispatchAddress: VirtualAddress,
         expectedIndexRegister: A64Register?,
         instructions: [A64DecodedInstruction]
     ) -> BoundsGuardInfo? {
-        var latestCmpReg: A64Register?
-        var latestCmpImm: Int64?
-        var indexBiasByReg: [UInt8: Int64] = [:]
-        var bestGuard: BoundsGuardInfo?
+        guard searchStart < indexUseEnd, indexUseEnd <= instructions.count else {
+            return nil
+        }
 
-        for i in searchStart..<brIndex {
+        struct RegOrigin: Equatable {
+            let rootID: Int
+            let bias: Int64
+        }
+
+        struct StackSlotKey: Hashable {
+            let baseRegIndex: UInt8
+            let byteOffset: Int64
+        }
+
+        struct ActiveComparison {
+            let origin: RegOrigin
+            let register: A64Register
+            let imm: Int64
+        }
+
+        struct CandidateGuard {
+            let checkedRootID: Int
+            let info: BoundsGuardInfo
+        }
+
+        var regOrigins: [UInt8: RegOrigin] = [:]
+        for r in UInt8(0)..<UInt8(31) {
+            regOrigins[r] = RegOrigin(rootID: Int(r), bias: 0)
+        }
+        var nextRootID = 32
+        var stackSlots: [StackSlotKey: RegOrigin] = [:]
+        var activeCmp: ActiveComparison?
+        var candidates: [CandidateGuard] = []
+
+        func freshOrigin() -> RegOrigin {
+            defer { nextRootID += 1 }
+            return RegOrigin(rootID: nextRootID, bias: 0)
+        }
+
+        func isTrackableGP(_ reg: A64Register) -> Bool {
+            reg.isGeneralPurpose && !reg.isZeroRegister && !reg.isStackPointer
+        }
+
+        for i in searchStart..<indexUseEnd {
             let insn = instructions[i]
 
-            // Track optional bias normalization: `SUB wIdx, wOrig, #minCase`
-            if insn.mnemonic == .sub,
-               insn.operands.count == 3,
-               case .register(let rd) = insn.operands[0],
-               let delta = extractAddImmediate(insn.operands[2]) {
-                indexBiasByReg[rd.index] = delta
-            }
-
-            // Match `CMP wIdx/xIdx, #imm` (or `SUBS wzr/wTmp, wIdx, #imm`)
-            if (insn.mnemonic == .cmp || insn.mnemonic == .subs),
-               insn.writesFlags {
+            // 1. Immediate comparison (`cmp rIdx, #imm` or `subs wzr/rDst, rIdx, #imm`)
+            if (insn.mnemonic == .cmp || insn.mnemonic == .subs) && insn.writesFlags {
                 if insn.mnemonic == .cmp,
                    insn.operands.count == 2,
                    case .register(let rn) = insn.operands[0],
-                   let imm = extractAddImmediate(insn.operands[1]) {
-                    latestCmpReg = rn
-                    latestCmpImm = imm
+                   isTrackableGP(rn),
+                   let imm = extractAddImmediate(insn.operands[1]),
+                   let srcOrigin = regOrigins[rn.index] {
+                    activeCmp = ActiveComparison(origin: srcOrigin, register: rn, imm: imm)
+                    continue
                 } else if insn.mnemonic == .subs,
                           insn.operands.count == 3,
+                          case .register(let rd) = insn.operands[0],
                           case .register(let rn) = insn.operands[1],
-                          let imm = extractAddImmediate(insn.operands[2]) {
-                    latestCmpReg = rn
-                    latestCmpImm = imm
+                          isTrackableGP(rn),
+                          let imm = extractAddImmediate(insn.operands[2]),
+                          let srcOrigin = regOrigins[rn.index] {
+                    activeCmp = ActiveComparison(origin: srcOrigin, register: rn, imm: imm)
+                    if isTrackableGP(rd) {
+                        regOrigins[rd.index] = RegOrigin(rootID: srcOrigin.rootID, bias: srcOrigin.bias &+ imm)
+                    } else if rd.isStackPointer {
+                        stackSlots.removeAll()
+                    }
+                    continue
                 }
-                continue
             }
 
-            // Match conditional branch consuming CMP flags
+            // 2a. Conditional branch consuming active comparison flags (`b.hi`, `b.hs`, `b.ls`, `b.lo`, ...)
             if case .conditionalBranch(let branchTarget, let cond) = insn.flow,
                insn.readsFlags,
-               let cmpReg = latestCmpReg,
-               let cmpImm = latestCmpImm,
-               cmpImm >= 0 && cmpImm <= Int64(configuration.maxJumpTableEntries) {
-
-                // Check register compatibility if index register is known (allow alias via mov/uxtw if needed)
-                if let expected = expectedIndexRegister, expected.index != cmpReg.index {
-                    // Still accept if no closer matching CMP was found yet, as Clang often copies w0 -> w8 after CMP w0, #N!
-                }
-
-                let bias = indexBiasByReg[cmpReg.index] ?? 0
+               let cmp = activeCmp,
+               cmp.imm >= 0 && cmp.imm <= Int64(configuration.maxJumpTableEntries) {
                 switch cond {
                 case .hi, .gt:
-                    // `cmp idx, #max ; b.hi default` -> valid indices 0...max (inclusive)
-                    bestGuard = BoundsGuardInfo(
-                        indexRegister: cmpReg,
-                        indexBias: bias,
-                        upperBoundInclusive: cmpImm,
-                        defaultTargetAddress: branchTarget,
-                        guardBranchAddress: insn.address
+                    candidates.append(
+                        CandidateGuard(
+                            checkedRootID: cmp.origin.rootID,
+                            info: BoundsGuardInfo(
+                                indexRegister: cmp.register,
+                                indexBias: cmp.origin.bias,
+                                upperBoundInclusive: cmp.imm,
+                                defaultTargetAddress: branchTarget,
+                                guardBranchAddress: insn.address
+                            )
+                        )
                     )
                 case .cs:
-                    // `cmp idx, #count ; b.hs default` -> valid indices 0..<(count), upperBound = count - 1
-                    if cmpImm >= 1 {
-                        bestGuard = BoundsGuardInfo(
-                            indexRegister: cmpReg,
-                            indexBias: bias,
-                            upperBoundInclusive: cmpImm - 1,
-                            defaultTargetAddress: branchTarget,
-                            guardBranchAddress: insn.address
+                    if cmp.imm >= 1 {
+                        candidates.append(
+                            CandidateGuard(
+                                checkedRootID: cmp.origin.rootID,
+                                info: BoundsGuardInfo(
+                                    indexRegister: cmp.register,
+                                    indexBias: cmp.origin.bias,
+                                    upperBoundInclusive: cmp.imm - 1,
+                                    defaultTargetAddress: branchTarget,
+                                    guardBranchAddress: insn.address
+                                )
+                            )
                         )
                     }
                 case .ls, .le:
-                    // `cmp idx, #max ; b.ls dispatch_block` (followed by fallthrough to default or `b default`)
                     if branchTarget <= dispatchAddress {
                         var fallbackDefault: VirtualAddress?
                         if i + 1 < instructions.count,
                            case .unconditionalJump(let defTgt) = instructions[i + 1].flow {
                             fallbackDefault = defTgt
                         }
-                        bestGuard = BoundsGuardInfo(
-                            indexRegister: cmpReg,
-                            indexBias: bias,
-                            upperBoundInclusive: cmpImm,
-                            defaultTargetAddress: fallbackDefault,
-                            guardBranchAddress: insn.address
+                        candidates.append(
+                            CandidateGuard(
+                                checkedRootID: cmp.origin.rootID,
+                                info: BoundsGuardInfo(
+                                    indexRegister: cmp.register,
+                                    indexBias: cmp.origin.bias,
+                                    upperBoundInclusive: cmp.imm,
+                                    defaultTargetAddress: fallbackDefault,
+                                    guardBranchAddress: insn.address
+                                )
+                            )
                         )
                     }
                 case .cc, .lt:
-                    // `cmp idx, #count ; b.lo dispatch_block`
-                    if cmpImm >= 1 && branchTarget <= dispatchAddress {
+                    if cmp.imm >= 1 && branchTarget <= dispatchAddress {
                         var fallbackDefault: VirtualAddress?
                         if i + 1 < instructions.count,
                            case .unconditionalJump(let defTgt) = instructions[i + 1].flow {
                             fallbackDefault = defTgt
                         }
-                        bestGuard = BoundsGuardInfo(
-                            indexRegister: cmpReg,
-                            indexBias: bias,
-                            upperBoundInclusive: cmpImm - 1,
-                            defaultTargetAddress: fallbackDefault,
-                            guardBranchAddress: insn.address
+                        candidates.append(
+                            CandidateGuard(
+                                checkedRootID: cmp.origin.rootID,
+                                info: BoundsGuardInfo(
+                                    indexRegister: cmp.register,
+                                    indexBias: cmp.origin.bias,
+                                    upperBoundInclusive: cmp.imm - 1,
+                                    defaultTargetAddress: fallbackDefault,
+                                    guardBranchAddress: insn.address
+                                )
+                            )
                         )
                     }
                 default:
                     break
                 }
+                continue
+            }
+
+            // 2b. Branchless clamp consuming active comparison flags (`csel rOut, rIdx, xzr/rDef, ls/lo/le/lt`
+            //     or inverted `csel rOut, xzr/rDef, rIdx, hi/hs/gt/ge`)
+            if insn.mnemonic == .csel,
+               insn.readsFlags,
+               insn.operands.count == 4,
+               case .register(let rd) = insn.operands[0],
+               case .register(let rn) = insn.operands[1],
+               case .register(let rm) = insn.operands[2],
+               case .condition(let cond) = insn.operands[3],
+               let cmp = activeCmp,
+               cmp.imm >= 0 && cmp.imm <= Int64(configuration.maxJumpTableEntries) {
+                var matchedClamp: (srcOrigin: RegOrigin, upperBound: Int64)?
+                switch cond {
+                case .ls, .le:
+                    if isTrackableGP(rn), let rnOrig = regOrigins[rn.index], rnOrig.rootID == cmp.origin.rootID {
+                        matchedClamp = (rnOrig, cmp.imm)
+                    }
+                case .cc, .lt:
+                    if cmp.imm >= 1, isTrackableGP(rn), let rnOrig = regOrigins[rn.index], rnOrig.rootID == cmp.origin.rootID {
+                        matchedClamp = (rnOrig, cmp.imm - 1)
+                    }
+                case .hi, .gt:
+                    if isTrackableGP(rm), let rmOrig = regOrigins[rm.index], rmOrig.rootID == cmp.origin.rootID {
+                        matchedClamp = (rmOrig, cmp.imm)
+                    }
+                case .cs, .ge:
+                    if cmp.imm >= 1, isTrackableGP(rm), let rmOrig = regOrigins[rm.index], rmOrig.rootID == cmp.origin.rootID {
+                        matchedClamp = (rmOrig, cmp.imm - 1)
+                    }
+                default:
+                    break
+                }
+
+                if let clamp = matchedClamp, isTrackableGP(rd) {
+                    regOrigins[rd.index] = clamp.srcOrigin
+                    candidates.append(
+                        CandidateGuard(
+                            checkedRootID: clamp.srcOrigin.rootID,
+                            info: BoundsGuardInfo(
+                                indexRegister: rd,
+                                indexBias: clamp.srcOrigin.bias,
+                                upperBoundInclusive: clamp.upperBound,
+                                defaultTargetAddress: nil,
+                                guardBranchAddress: insn.address
+                            )
+                        )
+                    )
+                    continue
+                }
+            }
+
+            // 3. Any other flag-writing instruction invalidates activeCmp so stale flags are never reused
+            if insn.writesFlags {
+                activeCmp = nil
+            }
+
+            // 4. Function calls clobber caller-saved GP registers x0..x18 and condition flags
+            switch insn.flow {
+            case .directCall, .indirectCall:
+                activeCmp = nil
+                for r in UInt8(0)...UInt8(18) {
+                    regOrigins[r] = freshOrigin()
+                }
+                continue
+            default:
+                break
+            }
+
+            // 5. Track simple index-preserving register derivations & -O0 stack spills/reloads
+            switch insn.mnemonic {
+            case .mov:
+                if insn.operands.count == 2,
+                   case .register(let rd) = insn.operands[0],
+                   case .register(let rm) = insn.operands[1],
+                   isTrackableGP(rd) {
+                    if isTrackableGP(rm), let src = regOrigins[rm.index] {
+                        regOrigins[rd.index] = src
+                    } else {
+                        regOrigins[rd.index] = freshOrigin()
+                    }
+                    continue
+                }
+
+            case .sxtw, .sxtb, .sxth, .uxtb, .uxth, .ubfm, .sbfm, .ubfx, .sbfx:
+                if insn.operands.count >= 2,
+                   case .register(let rd) = insn.operands[0],
+                   case .register(let rn) = insn.operands[1],
+                   isTrackableGP(rd) {
+                    if isTrackableGP(rn), let src = regOrigins[rn.index] {
+                        regOrigins[rd.index] = src
+                    } else {
+                        regOrigins[rd.index] = freshOrigin()
+                    }
+                    continue
+                }
+
+            case .and:
+                if insn.operands.count == 3,
+                   case .register(let rd) = insn.operands[0],
+                   case .register(let rn) = insn.operands[1],
+                   isTrackableGP(rd) {
+                    let mask = extractAddImmediate(insn.operands[2]).map { UInt64(bitPattern: $0) }
+                    if isTrackableGP(rn),
+                       (mask == 0xFF || mask == 0xFFFF || mask == 0xFFFF_FFFF),
+                       let src = regOrigins[rn.index] {
+                        regOrigins[rd.index] = src
+                    } else {
+                        regOrigins[rd.index] = freshOrigin()
+                    }
+                    continue
+                }
+
+            case .add:
+                if insn.operands.count == 3,
+                   case .register(let rd) = insn.operands[0],
+                   case .register(let rn) = insn.operands[1],
+                   let delta = extractAddImmediate(insn.operands[2]) {
+                    if rd.isStackPointer {
+                        stackSlots.removeAll()
+                        continue
+                    } else if isTrackableGP(rd) {
+                        if isTrackableGP(rn), let src = regOrigins[rn.index] {
+                            regOrigins[rd.index] = RegOrigin(rootID: src.rootID, bias: src.bias &- delta)
+                        } else {
+                            regOrigins[rd.index] = freshOrigin()
+                        }
+                        continue
+                    }
+                }
+
+            case .sub:
+                if insn.operands.count == 3,
+                   case .register(let rd) = insn.operands[0],
+                   case .register(let rn) = insn.operands[1],
+                   let delta = extractAddImmediate(insn.operands[2]) {
+                    if rd.isStackPointer {
+                        stackSlots.removeAll()
+                        continue
+                    } else if isTrackableGP(rd) {
+                        if isTrackableGP(rn), let src = regOrigins[rn.index] {
+                            regOrigins[rd.index] = RegOrigin(rootID: src.rootID, bias: src.bias &+ delta)
+                        } else {
+                            regOrigins[rd.index] = freshOrigin()
+                        }
+                        continue
+                    }
+                }
+
+            case .str, .stur:
+                if insn.operands.count == 2,
+                   case .register(let rt) = insn.operands[0],
+                   case .memory(.baseOffset(let base, let off)) = insn.operands[1],
+                   (base.isStackPointer || base.index == 29),
+                   rt.isGeneralPurpose {
+                    let key = StackSlotKey(baseRegIndex: base.isStackPointer ? 31 : 29, byteOffset: off)
+                    if isTrackableGP(rt), let orig = regOrigins[rt.index] {
+                        stackSlots[key] = orig
+                    } else {
+                        stackSlots.removeValue(forKey: key)
+                    }
+                    continue
+                }
+
+            case .ldr, .ldur, .ldrsw:
+                if insn.operands.count == 2,
+                   case .register(let rt) = insn.operands[0],
+                   isTrackableGP(rt) {
+                    if case .memory(.baseOffset(let base, let off)) = insn.operands[1],
+                       (base.isStackPointer || base.index == 29),
+                       let saved = stackSlots[StackSlotKey(baseRegIndex: base.isStackPointer ? 31 : 29, byteOffset: off)] {
+                        regOrigins[rt.index] = saved
+                    } else {
+                        regOrigins[rt.index] = freshOrigin()
+                    }
+                    continue
+                }
+
+            default:
+                break
+            }
+
+            for wReg in insn.writesRegisters where wReg.isGeneralPurpose && !wReg.isZeroRegister {
+                if wReg.isStackPointer {
+                    stackSlots.removeAll()
+                } else {
+                    regOrigins[wReg.index] = freshOrigin()
+                }
             }
         }
 
-        return bestGuard
+        if let expected = expectedIndexRegister, isTrackableGP(expected) {
+            guard let expectedOrigin = regOrigins[expected.index] else {
+                return nil
+            }
+            return candidates.last(where: { $0.checkedRootID == expectedOrigin.rootID })?.info
+        }
+        return candidates.last?.info
     }
 
     private func readJumpTableTargets(
@@ -1209,8 +1667,9 @@ public struct FunctionDiscoveryEngine: Sendable {
         guard !instructions.isEmpty else { return [] }
         var stubs: [DiscoveredStubSlot] = []
         var currentStartIdx = 0
+        var i = 0
 
-        for i in 0..<instructions.count {
+        while i < instructions.count {
             let insn = instructions[i]
             let isStubTerminator: Bool
             switch insn.flow {
@@ -1221,16 +1680,24 @@ public struct FunctionDiscoveryEngine: Sendable {
             }
 
             if isStubTerminator {
-                let slice = Array(instructions[currentStartIdx...i])
-                if !slice.isEmpty {
+                if currentStartIdx <= i {
+                    let slice = Array(instructions[currentStartIdx...i])
                     let sym = resolveStubTargetSymbol(in: slice, gotSymbolByAddress: gotSymbolByAddress)
                     stubs.append(DiscoveredStubSlot(startAddress: slice[0].address, targetSymbol: sym))
                 }
                 currentStartIdx = i + 1
-                // Skip optional NOP padding between stubs
-                while currentStartIdx < instructions.count && instructions[currentStartIdx].mnemonic == .nop {
-                    currentStartIdx += 1
+                // Skip NOP, BRK/HLT trap, and zero alignment padding between stubs (e.g. __objc_stubs)
+                while currentStartIdx < instructions.count {
+                    let pad = instructions[currentStartIdx]
+                    if pad.mnemonic == .nop || pad.mnemonic == .brk || pad.mnemonic == .hlt || pad.rawWord == 0 {
+                        currentStartIdx += 1
+                    } else {
+                        break
+                    }
                 }
+                i = currentStartIdx
+            } else {
+                i += 1
             }
         }
 
@@ -1297,7 +1764,7 @@ public struct FunctionDiscoveryEngine: Sendable {
             case .returnControl, .unconditionalJump, .indirectJump:
                 prevWasHardBarrier = true
             case .trapOrSupervisor:
-                prevWasHardBarrier = (insn.mnemonic == .brk || insn.mnemonic == .hlt)
+                prevWasHardBarrier = (insn.mnemonic == .brk || insn.mnemonic == .hlt || insn.mnemonicText == "udf")
             default:
                 prevWasHardBarrier = false
             }
@@ -1388,14 +1855,20 @@ public struct FunctionDiscoveryEngine: Sendable {
     private func trimARM64FunctionEnd(
         startAddress: VirtualAddress,
         rawEndAddress: VirtualAddress,
-        sectionInstructions: [A64DecodedInstruction]
+        sectionInstructions: [A64DecodedInstruction],
+        inlineDataRanges: [AddressRange] = [],
+        trimPadding: Bool = true
     ) -> VirtualAddress {
         let slice = sliceInstructions(in: sectionInstructions, from: startAddress, to: rawEndAddress)
-        guard slice.count >= 2 else { return rawEndAddress }
+        guard !slice.isEmpty else { return rawEndAddress }
 
-        // Collect internal branch targets so we never trim away an in-range landing block
+        func isInlineData(_ addr: VirtualAddress) -> Bool {
+            !inlineDataRanges.isEmpty && Self.isAddressExcluded(addr, inSortedRanges: inlineDataRanges)
+        }
+
+        // Collect internal branch targets from real (non-inline-data) instructions so we never trim a live landing block
         var maxReferencedAddress = startAddress
-        for insn in slice {
+        for insn in slice where !isInlineData(insn.address) {
             switch insn.flow {
             case .unconditionalJump(let tgt), .conditionalBranch(let tgt, _):
                 if tgt >= startAddress && tgt < rawEndAddress && tgt > maxReferencedAddress {
@@ -1409,13 +1882,20 @@ public struct FunctionDiscoveryEngine: Sendable {
         var lastKeepIdx = slice.count - 1
         while lastKeepIdx > 0 {
             let candidate = slice[lastKeepIdx]
+            if isInlineData(candidate.address) {
+                lastKeepIdx -= 1
+                continue
+            }
+            guard trimPadding else { break }
             if candidate.address <= maxReferencedAddress {
                 break
             }
-            let isZeroOrTrapPadding = (candidate.rawWord == 0x0000_0000) || (candidate.rawWord == 0xD420_0020 && slice[lastKeepIdx - 1].flow.terminatesBasicBlock)
+            let prev = slice[lastKeepIdx - 1]
+            let prevIsBarrierOrData = prev.flow.terminatesBasicBlock || isInlineData(prev.address)
+            let isZeroOrTrapPadding = (candidate.rawWord == 0x0000_0000) || (candidate.rawWord == 0xD420_0020 && prevIsBarrierOrData)
             let isNopAfterReturn: Bool = {
                 guard candidate.mnemonic == .nop else { return false }
-                let prev = slice[lastKeepIdx - 1]
+                if isInlineData(prev.address) { return true }
                 switch prev.flow {
                 case .returnControl, .unconditionalJump, .indirectJump:
                     return true

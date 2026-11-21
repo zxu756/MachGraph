@@ -2,6 +2,313 @@ import Foundation
 import MachGraphModels
 import MachA64Decoder
 
+// MARK: - Authoritative Known Noreturn Symbols & Bounded Fixed-Point Propagation
+
+/// Canonical table of C / POSIX / BSD-Darwin / C++ ABI / Objective-C / Swift runtime functions
+/// guaranteed never to return to their caller (`_Noreturn` / `__dead2` / `[[noreturn]]` / `-> Never`).
+///
+/// Sources:
+/// - ISO C11 / C23 `<stdlib.h>`, `<setjmp.h>`, `<threads.h>`:
+///   `abort`, `exit`, `_Exit`, `quick_exit`, `longjmp`, `thrd_exit`
+/// - POSIX.1-2017 `<unistd.h>`, `<setjmp.h>`, `<pthread.h>`:
+///   `_exit`, `_longjmp`, `siglongjmp`, `pthread_exit`
+/// - BSD & Apple Darwin `<err.h>`, `<assert.h>`, `<os/assumes.h>`, `<System/sys/reason.h>`,
+///   `<dispatch/dispatch.h>`, and LLVM compiler-rt stack protector:
+///   `err`, `errx`, `errc`, `verr`, `verrx`, `verrc`, `__stack_chk_fail`, `__assert_rtn`,
+///   `__assert_fail`, `abort_report_np`, `abort_with_reason`, `abort_with_payload`,
+///   `exit_with_payload`, `terminate_with_reason`, `terminate_with_payload`,
+///   `_os_crash`, `_os_crash_fmt`, `_os_crash_msg`, `dispatch_main`
+/// - Itanium C++ ABI & libc++abi `<cxxabi.h>`, `<exception>`:
+///   `__cxa_throw`, `__cxa_rethrow`, `__cxa_bad_cast`, `__cxa_bad_typeid`,
+///   `__cxa_pure_virtual`, `__cxa_deleted_virtual`, `__cxa_call_unexpected`,
+///   `__cxa_call_terminate`, `__clang_call_terminate`, `_ZSt9terminatev`,
+///   `_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE`
+/// - Apple Objective-C Runtime `<objc/objc-exception.h>`:
+///   `objc_exception_throw`, `objc_exception_rethrow`, `objc_terminate`
+/// - Swift Runtime `swift/Runtime/Debug.h` & `ErrorObject.h`:
+///   `swift_unexpectedError`, `swift_errorInMain`, `swift_fatalError`,
+///   `swift_deletedMethodError`, `swift_deletedAsyncMethodError`,
+///   `_swift_stdlib_reportFatalError`, `_swift_stdlib_reportFatalErrorInFile`,
+///   `_swift_stdlib_reportUnimplementedInitializer`, `_swift_stdlib_reportUnimplementedInitializerInFile`
+public enum KnownNoreturnSymbols {
+    public static let maxPropagationIterations: Int = 16
+
+    public static let unprefixedNames: Set<String> = [
+        // ISO C & POSIX
+        "abort", "exit", "_exit", "_Exit", "quick_exit", "thrd_exit",
+        "longjmp", "_longjmp", "siglongjmp", "pthread_exit",
+        // BSD / Darwin Libsystem & compiler-rt SSP
+        "err", "errx", "errc", "verr", "verrx", "verrc",
+        "__stack_chk_fail", "__assert_rtn", "__assert_fail",
+        "abort_report_np", "abort_with_reason", "abort_with_payload",
+        "exit_with_payload", "terminate_with_reason", "terminate_with_payload",
+        "_os_crash", "_os_crash_fmt", "_os_crash_msg", "dispatch_main",
+        // Itanium C++ ABI / libc++abi
+        "__cxa_throw", "__cxa_rethrow", "__cxa_bad_cast", "__cxa_bad_typeid",
+        "__cxa_pure_virtual", "__cxa_deleted_virtual",
+        "__cxa_call_unexpected", "__cxa_call_terminate", "__clang_call_terminate",
+        "_ZSt9terminatev",
+        "_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE",
+        // Objective-C Runtime
+        "objc_exception_throw", "objc_exception_rethrow", "objc_terminate",
+        // Swift Runtime
+        "swift_unexpectedError", "swift_errorInMain", "swift_fatalError",
+        "swift_deletedMethodError", "swift_deletedAsyncMethodError",
+        "_swift_stdlib_reportFatalError", "_swift_stdlib_reportFatalErrorInFile",
+        "_swift_stdlib_reportUnimplementedInitializer", "_swift_stdlib_reportUnimplementedInitializerInFile"
+    ]
+
+    /// Checks whether a Mach-O / ELF / stub symbol name refers to a known `noreturn` function.
+    public static func matchesSymbolName(_ rawName: String) -> Bool {
+        var cleaned = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return false }
+
+        if cleaned.hasSuffix("$stub") {
+            cleaned.removeLast(5)
+        }
+        if let atRange = cleaned.range(of: "@") {
+            cleaned = String(cleaned[..<atRange.lowerBound])
+        }
+        if let dollarIdx = cleaned.firstIndex(of: "$") {
+            let suffix = cleaned[dollarIdx...]
+            if suffix.hasPrefix("$UNIX") || suffix.hasPrefix("$DARWIN") || suffix.hasPrefix("$INODE") || suffix.hasPrefix("$NOCANCEL") {
+                cleaned = String(cleaned[..<dollarIdx])
+            }
+        }
+        guard !cleaned.isEmpty else { return false }
+
+        if unprefixedNames.contains(cleaned) {
+            return true
+        }
+        if cleaned.hasPrefix("_") {
+            let strippedOnce = String(cleaned.dropFirst())
+            if unprefixedNames.contains(strippedOnce) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /// Computes all `noreturn` function entry addresses in `image` by seeding imported/symbol-named
+    /// noreturn functions and running bounded fixed-point propagation (`maxIterations`) over internal
+    /// wrapper functions whose every reachable path terminates in a noreturn call, noreturn tail-jump, or trap.
+    public static func resolveNoreturnAddresses(
+        image: LoadedBinaryImage,
+        boundaries: [DiscoveredFunctionBoundary],
+        instructionsByFunction: [VirtualAddress: [A64DecodedInstruction]],
+        jumpTablesByFunction: [VirtualAddress: [SwitchJumpTable]] = [:],
+        maxIterations: Int = maxPropagationIterations
+    ) -> Set<VirtualAddress> {
+        let isARM64 = image.architecture.isARM64Family
+        func norm(_ addr: VirtualAddress) -> VirtualAddress {
+            isARM64 ? VirtualAddress(addr.rawValue & ~UInt64(0x3)) : addr
+        }
+
+        var noreturnSet = Set<VirtualAddress>()
+        for sym in image.symbols where sym.address != .zero {
+            if matchesSymbolName(sym.name) {
+                noreturnSet.insert(norm(sym.address))
+            }
+        }
+        for boundary in boundaries {
+            if matchesSymbolName(boundary.name) ||
+               (boundary.resolvedGOTTargetSymbol.map(matchesSymbolName) == true) {
+                noreturnSet.insert(boundary.startAddress)
+            }
+        }
+
+        guard isARM64, maxIterations > 0, !noreturnSet.isEmpty else {
+            return noreturnSet
+        }
+
+        var definitelyCanReturn = Set<VirtualAddress>()
+        let cap = max(1, maxIterations)
+
+        for _ in 0..<cap {
+            var addedInRound = false
+            for boundary in boundaries {
+                let fnStart = boundary.startAddress
+                if noreturnSet.contains(fnStart) || definitelyCanReturn.contains(fnStart) {
+                    continue
+                }
+                guard let insns = instructionsByFunction[fnStart], !insns.isEmpty else {
+                    definitelyCanReturn.insert(fnStart)
+                    continue
+                }
+                let jts = jumpTablesByFunction[fnStart] ?? []
+                switch evaluateReturnability(
+                    functionStart: fnStart,
+                    instructions: insns,
+                    jumpTables: jts,
+                    knownNoreturn: noreturnSet
+                ) {
+                case .definitelyNoreturn:
+                    noreturnSet.insert(fnStart)
+                    addedInRound = true
+                case .definitelyReturnsWithoutUnresolvedCalls:
+                    definitelyCanReturn.insert(fnStart)
+                case .mayReturnViaUnresolvedCall:
+                    break
+                }
+            }
+            if !addedInRound {
+                break
+            }
+        }
+
+        return noreturnSet
+    }
+
+    private enum ReturnabilityVerdict {
+        case definitelyNoreturn
+        case definitelyReturnsWithoutUnresolvedCalls
+        case mayReturnViaUnresolvedCall
+    }
+
+    private static func evaluateReturnability(
+        functionStart: VirtualAddress,
+        instructions: [A64DecodedInstruction],
+        jumpTables: [SwitchJumpTable],
+        knownNoreturn: Set<VirtualAddress>
+    ) -> ReturnabilityVerdict {
+        var addrToIdx: [VirtualAddress: Int] = [:]
+        addrToIdx.reserveCapacity(instructions.count)
+        for (i, insn) in instructions.enumerated() where addrToIdx[insn.address] == nil {
+            addrToIdx[insn.address] = i
+        }
+
+        var jtByDispatch: [VirtualAddress: SwitchJumpTable] = [:]
+        for jt in jumpTables {
+            jtByDispatch[jt.dispatchInstructionAddress] = jt
+        }
+
+        let entryIdx = addrToIdx[functionStart] ?? 0
+        var visited = [Bool](repeating: false, count: instructions.count)
+        var worklist: [Int] = [entryIdx]
+        visited[entryIdx] = true
+        var sawUnresolvedCallOrJump = false
+        var canReturnOrFallOff = false
+
+        func enqueue(_ idx: Int) {
+            if !visited[idx] {
+                visited[idx] = true
+                worklist.append(idx)
+            }
+        }
+
+        while let idx = worklist.popLast() {
+            let insn = instructions[idx]
+            switch insn.flow {
+            case .returnControl:
+                canReturnOrFallOff = true
+
+            case .sequential:
+                if idx + 1 < instructions.count {
+                    enqueue(idx + 1)
+                } else {
+                    canReturnOrFallOff = true
+                }
+
+            case .indirectCall:
+                sawUnresolvedCallOrJump = true
+                if idx + 1 < instructions.count {
+                    enqueue(idx + 1)
+                } else {
+                    canReturnOrFallOff = true
+                }
+
+            case .directCall(let target):
+                if knownNoreturn.contains(target) {
+                    // Path terminates at noreturn callee; do not fall through to idx + 1.
+                    break
+                }
+                sawUnresolvedCallOrJump = true
+                if idx + 1 < instructions.count {
+                    enqueue(idx + 1)
+                } else {
+                    canReturnOrFallOff = true
+                }
+
+            case .unconditionalJump(let target):
+                if let tgtIdx = addrToIdx[target] {
+                    enqueue(tgtIdx)
+                } else if knownNoreturn.contains(target) {
+                    break
+                } else {
+                    sawUnresolvedCallOrJump = true
+                    canReturnOrFallOff = true
+                }
+
+            case .conditionalBranch(let target, _):
+                if let tgtIdx = addrToIdx[target] {
+                    enqueue(tgtIdx)
+                } else if !knownNoreturn.contains(target) {
+                    sawUnresolvedCallOrJump = true
+                    canReturnOrFallOff = true
+                }
+                if idx + 1 < instructions.count {
+                    enqueue(idx + 1)
+                } else {
+                    canReturnOrFallOff = true
+                }
+
+            case .indirectJump:
+                if let jt = jtByDispatch[insn.address], !jt.targetAddresses.isEmpty {
+                    for caseTarget in jt.targetAddresses {
+                        if let cIdx = addrToIdx[caseTarget] {
+                            enqueue(cIdx)
+                        } else if !knownNoreturn.contains(caseTarget) {
+                            sawUnresolvedCallOrJump = true
+                            canReturnOrFallOff = true
+                        }
+                    }
+                } else {
+                    canReturnOrFallOff = true
+                }
+
+            case .trapOrSupervisor(let imm):
+                if insn.mnemonic == .svc {
+                    let isExitSyscall = (imm == 0x80 && idx > 0 && isDarwinExitSyscallSetup(instructions[idx - 1]))
+                    if !isExitSyscall {
+                        if idx + 1 < instructions.count {
+                            enqueue(idx + 1)
+                        } else {
+                            canReturnOrFallOff = true
+                        }
+                    }
+                }
+                // brk, hlt, udf, and exit svc do not return.
+            }
+
+            if canReturnOrFallOff && !sawUnresolvedCallOrJump {
+                return .definitelyReturnsWithoutUnresolvedCalls
+            }
+        }
+
+        if !canReturnOrFallOff {
+            return .definitelyNoreturn
+        }
+        return sawUnresolvedCallOrJump ? .mayReturnViaUnresolvedCall : .definitelyReturnsWithoutUnresolvedCalls
+    }
+
+    private static func isDarwinExitSyscallSetup(_ prev: A64DecodedInstruction) -> Bool {
+        guard (prev.mnemonic == .mov || prev.mnemonic == .movz),
+              prev.operands.count == 2,
+              case .register(let rd) = prev.operands[0],
+              rd.index == 16 else {
+            return false
+        }
+        switch prev.operands[1] {
+        case .unsignedImmediate(let v) where v == 1 || v == 431:
+            return true
+        case .immediate(let v) where v == 1 || v == 431:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - Directed Block Pair & CFG Builder Configuration
 
 public struct CFGDirectedPair: Sendable, Codable, Hashable {
@@ -155,6 +462,7 @@ public struct CFGBuilderEngine: Sendable {
         instructions: [A64DecodedInstruction],
         jumpTables: [SwitchJumpTable] = [],
         jumpTableDescriptors: [SwitchJumpTableDescriptor] = [],
+        noreturnAddresses: Set<VirtualAddress> = [],
         defaultInstructionByteStride: UInt64 = 4
     ) -> BuiltFunctionCFG {
         buildCFG(
@@ -165,6 +473,7 @@ public struct CFGBuilderEngine: Sendable {
             instructions: instructions,
             jumpTables: jumpTables,
             jumpTableDescriptors: jumpTableDescriptors,
+            noreturnAddresses: noreturnAddresses,
             isStubSection: boundary.isStubSection,
             defaultInstructionByteStride: defaultInstructionByteStride
         )
@@ -179,6 +488,7 @@ public struct CFGBuilderEngine: Sendable {
         instructions: [A64DecodedInstruction],
         jumpTables: [SwitchJumpTable] = [],
         jumpTableDescriptors: [SwitchJumpTableDescriptor] = [],
+        noreturnAddresses: Set<VirtualAddress> = [],
         isStubSection: Bool = false,
         defaultInstructionByteStride: UInt64 = 4
     ) -> BuiltFunctionCFG {
@@ -203,6 +513,7 @@ public struct CFGBuilderEngine: Sendable {
             instructions: sortedInsns,
             jumpTables: effectiveJumpTables,
             jumpTableDescriptors: jumpTableDescriptors,
+            noreturnAddresses: noreturnAddresses,
             defaultInstructionByteStride: defaultInstructionByteStride
         )
 
@@ -285,6 +596,7 @@ public struct CFGBuilderEngine: Sendable {
         instructions: [A64DecodedInstruction],
         jumpTables: [SwitchJumpTable] = [],
         jumpTableDescriptors: [SwitchJumpTableDescriptor] = [],
+        noreturnAddresses: Set<VirtualAddress> = [],
         defaultInstructionByteStride: UInt64 = 4
     ) -> (
         blocks: [BasicBlock],
@@ -339,11 +651,23 @@ public struct CFGBuilderEngine: Sendable {
         }
 
         for (idx, insn) in instructions.enumerated() {
+            // Also split if there is an address gap (e.g. stripped inline jump-table data) between idx and idx + 1
+            if defaultInstructionByteStride == 4,
+               idx + 1 < instructions.count,
+               instructions[idx + 1].address != insn.address.adding(UInt64(4)) {
+                leaderIndices.insert(idx + 1)
+            }
+
             switch insn.flow {
             case .sequential:
                 break
 
-            case .directCall, .indirectCall:
+            case .directCall(let target):
+                if (configuration.splitBasicBlocksAfterDirectCalls || noreturnAddresses.contains(target)) && (idx + 1 < instructions.count) {
+                    leaderIndices.insert(idx + 1)
+                }
+
+            case .indirectCall:
                 if configuration.splitBasicBlocksAfterDirectCalls && (idx + 1 < instructions.count) {
                     leaderIndices.insert(idx + 1)
                 }
@@ -387,7 +711,10 @@ public struct CFGBuilderEngine: Sendable {
                 }
 
             case .trapOrSupervisor:
-                if configuration.treatSupervisorCallsAsBlockBoundaries || insn.mnemonic == .brk || insn.mnemonic == .hlt {
+                if configuration.treatSupervisorCallsAsBlockBoundaries ||
+                   insn.mnemonic == .brk ||
+                   insn.mnemonic == .hlt ||
+                   insn.mnemonicText == "udf" {
                     if idx + 1 < instructions.count {
                         leaderIndices.insert(idx + 1)
                     }
@@ -418,11 +745,13 @@ public struct CFGBuilderEngine: Sendable {
             let endI = (bIdx + 1 < sortedLeaderIndices.count) ? sortedLeaderIndices[bIdx + 1] : instructions.count
             let blockSlice = Array(instructions[startI..<endI])
             let bStart = blockSlice[0].address
+            let lastInsnEnd = blockSlice[blockSlice.count - 1].address.adding(max(1, defaultInstructionByteStride))
             let bEnd: VirtualAddress
-            if bIdx + 1 < sortedLeaderIndices.count {
+            if defaultInstructionByteStride == 4 {
+                bEnd = lastInsnEnd
+            } else if bIdx + 1 < sortedLeaderIndices.count {
                 bEnd = instructions[sortedLeaderIndices[bIdx + 1]].address
             } else {
-                let lastInsnEnd = blockSlice[blockSlice.count - 1].address.adding(max(1, defaultInstructionByteStride))
                 bEnd = max(lastInsnEnd, endAddress)
             }
             let isEntryBlock = (startI == entryLeaderIdx)
@@ -464,10 +793,26 @@ public struct CFGBuilderEngine: Sendable {
                 explicitExitFlags[spanIdx] = true
                 continue
             }
-            let nextBlockID: Int? = (spanIdx + 1 < rawSpans.count) ? rawSpans[spanIdx + 1].blockID : nil
+            let nextBlockID: Int? = {
+                guard spanIdx + 1 < rawSpans.count else { return nil }
+                let nxt = rawSpans[spanIdx + 1]
+                if defaultInstructionByteStride == 4 && nxt.startAddress != terminator.address.adding(UInt64(4)) {
+                    return nil
+                }
+                return nxt.blockID
+            }()
 
             switch terminator.flow {
-            case .sequential, .directCall, .indirectCall:
+            case .directCall(let target):
+                if noreturnAddresses.contains(target) {
+                    explicitExitFlags[spanIdx] = true
+                } else if let nextID = nextBlockID {
+                    appendUniqueEdge(from: span.blockID, to: nextID, kind: .fallthroughEdge)
+                } else {
+                    explicitExitFlags[spanIdx] = true
+                }
+
+            case .sequential, .indirectCall:
                 if let nextID = nextBlockID {
                     appendUniqueEdge(from: span.blockID, to: nextID, kind: .fallthroughEdge)
                 } else {
@@ -839,6 +1184,18 @@ public struct CFGBuilderEngine: Sendable {
         for b in blocks where unreachableIDs.contains(b.id) && !b.isEntry {
             if pruneAll || isPureAlignmentOrTrapPaddingBlock(b) {
                 dropSet.insert(b.id)
+            }
+        }
+        if !pruneAll && !dropSet.isEmpty {
+            // Never drop a padding block that is targeted by a surviving (non-dropped) block,
+            // preserving fallthrough and branch target invariants on unreachable code blocks.
+            var changed = true
+            while changed {
+                changed = false
+                for e in edges where !dropSet.contains(e.sourceBlockID) && dropSet.contains(e.targetBlockID) {
+                    dropSet.remove(e.targetBlockID)
+                    changed = true
+                }
             }
         }
         guard !dropSet.isEmpty else {
