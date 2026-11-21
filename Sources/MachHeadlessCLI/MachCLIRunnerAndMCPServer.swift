@@ -91,6 +91,13 @@ public struct MachCLIRunner: Sendable {
             summaryZH: "分别列出 LC_SYMTAB 真实符号与推断出的函数起点符号"
         ),
         CLISubcommandSpec(
+            primaryName: "demangle",
+            usageArgsEN: "[<symbol...>] [--json]",
+            usageArgsZH: "[<符号...>] [--json]",
+            summaryEN: "Demangle Swift and C++ (Itanium) symbol names in-process (reads stdin line-by-line if no symbols are given; returns unrecognized or plain C names unchanged)",
+            summaryZH: "在进程内解混淆 Swift 与 C++（Itanium）符号名（未传位置参数时按行读取标准输入；无法解混淆或普通 C 符号原样返回）"
+        ),
+        CLISubcommandSpec(
             primaryName: "strings",
             usageArgsEN: "<file> [--filter <q>] [--json]",
             usageArgsZH: "<文件> [--filter <关键词>] [--json]",
@@ -437,6 +444,8 @@ public struct MachCLIRunner: Sendable {
             return MachCLIOutcome(output: try runSegments(args: rest, language: resolvedLang))
         case "symbols":
             return MachCLIOutcome(output: try runSymbols(args: rest, language: resolvedLang))
+        case "demangle":
+            return MachCLIOutcome(output: try runDemangle(args: rest, language: resolvedLang))
         case "strings":
             return MachCLIOutcome(output: try runStrings(args: rest, language: resolvedLang))
         case "fixups":
@@ -1556,6 +1565,109 @@ public struct MachCLIRunner: Sendable {
             }
         }
         out.append("\"")
+    }
+
+    private func runDemangle(args: [String], language: MachLanguage) throws -> String {
+        var isJSON = false
+        var symbols: [String] = []
+        var idx = 0
+        while idx < args.count {
+            let tok = args[idx]
+            if tok == "--" {
+                symbols.append(contentsOf: args[(idx + 1)...])
+                break
+            }
+            if tok == "--json" {
+                isJSON = true
+                idx += 1
+                continue
+            }
+            // Allow Objective-C instance method signatures (`-[Class sel]`) as positional symbols without `--`.
+            if tok.hasPrefix("-") && tok != "-" && !tok.hasPrefix("-[") {
+                let flagName: String
+                if let eqIdx = tok.firstIndex(of: "=") {
+                    flagName = String(tok[..<eqIdx])
+                } else {
+                    flagName = tok
+                }
+                throw MachGraphError.invalidCLIArguments(
+                    language.select(
+                        "Unknown option '\(flagName)' for subcommand 'demangle'.",
+                        "子命令 'demangle' 不支持选项 '\(flagName)'。"
+                    )
+                )
+            }
+            symbols.append(tok)
+            idx += 1
+        }
+
+        if symbols.isEmpty {
+            let rawStdin: String
+            do {
+                rawStdin = try readStandardInput()
+            } catch let mgErr as MachGraphError {
+                throw mgErr
+            } catch {
+                throw MachGraphError.ioFailure(
+                    language.select(
+                        "Unable to read standard input: \(error.localizedDescription)",
+                        "无法读取标准输入: \(error.localizedDescription)"
+                    )
+                )
+            }
+            if !rawStdin.isEmpty {
+                var body = rawStdin
+                if body.hasSuffix("\r\n") {
+                    body.removeLast(2)
+                } else if body.hasSuffix("\n") || body.hasSuffix("\r") {
+                    body.removeLast()
+                }
+                symbols = body.split(separator: "\n", omittingEmptySubsequences: false).map { slice in
+                    if slice.hasSuffix("\r") {
+                        return String(slice.dropLast())
+                    }
+                    return String(slice)
+                }
+            }
+        }
+
+        let demangler = SymbolDemangler.shared
+        if isJSON {
+            if symbols.isEmpty {
+                return "[]"
+            }
+            var json = "[\n"
+            json.reserveCapacity(symbols.count * 96 + 8)
+            for (i, inputSym) in symbols.enumerated() {
+                if i > 0 {
+                    json.append(",\n")
+                }
+                let outputSym = demangler.demangle(inputSym)
+                let wasDemangled = (outputSym != inputSym)
+                json.append("  {\"input\": ")
+                Self.appendJSONEscapedString(inputSym, into: &json)
+                json.append(", \"output\": ")
+                Self.appendJSONEscapedString(outputSym, into: &json)
+                json.append(", \"demangled\": ")
+                json.append(wasDemangled ? "true" : "false")
+                json.append("}")
+            }
+            json.append("\n]")
+            return json
+        }
+
+        if symbols.isEmpty {
+            return ""
+        }
+        var textOut = ""
+        textOut.reserveCapacity(symbols.count * 48)
+        for (i, inputSym) in symbols.enumerated() {
+            if i > 0 {
+                textOut.append("\n")
+            }
+            textOut.append(demangler.demangle(inputSym))
+        }
+        return textOut
     }
 
     private func runResign(args: [String], language: MachLanguage) throws -> String {
