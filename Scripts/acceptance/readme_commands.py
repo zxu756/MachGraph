@@ -35,6 +35,7 @@ BIN = ".build/debug/MachGraph"
 HELPER_PROGRAMS = {"cp", "rm", "printf"}
 META_TOKENS = {"--help", "-h", "help", "--version", "version"}
 OPTION_RE = re.compile(r"(?<![\w-])--[A-Za-z][A-Za-z0-9-]*")
+RUN_ENV = None
 
 
 def fail(message: str) -> None:
@@ -158,6 +159,46 @@ def expect_disasm_fixture(out):
     return "10 instructions starting at 0x100000460"
 
 
+def expect_cfg_ls_json(out):
+    doc = json.loads(out)
+    assert doc["schema"] == "machgraph.cfg/1", doc.get("schema")
+    assert doc["fileName"] == "ls" and doc["isDemo"] is False, doc["fileName"]
+    assert len(doc["lcFunctionStarts"]) == 50, len(doc["lcFunctionStarts"])
+    assert len(doc["inlineJumpTableStarts"]) == 1 and len(doc["inlineJumpTableRanges"]) == 1
+    assert doc["functionCount"] == 133 and len(doc["functions"]) == 133, doc["functionCount"]
+    total_blocks = sum(len(fn["blocks"]) for fn in doc["functions"])
+    total_edges = sum(len(fn["edges"]) for fn in doc["functions"])
+    assert total_blocks == 871 and total_edges == 1110, (total_blocks, total_edges)
+    return "schema=machgraph.cfg/1, 133 functions (50 LC_FUNCTION_STARTS, 1 inline jump table), 871 blocks, 1110 edges"
+
+
+def expect_cfg_ls_symbol_json(out):
+    doc = json.loads(out)
+    assert doc["schema"] == "machgraph.cfg/1" and doc["functionCount"] == 1 and len(doc["functions"]) == 1
+    fn = doc["functions"][0]
+    assert fn["name"] == "_entry" and len(fn["blocks"]) == 154 and len(fn["edges"]) == 259, fn["name"]
+    assert len(fn["dominatorTree"]) == 154 and fn["dominatorTree"][0]["immediateDominatorID"] is None
+    assert len(fn["naturalLoops"]) == 1 and len(fn["jumpTables"]) == 1 and len(fn["inlineJumpTableRanges"]) == 1
+    missing = subprocess.run(
+        [BIN, "cfg", "/bin/ls", "--symbol", "__nosuch_symbol_m4__", "--json"],
+        cwd=REPO_ROOT,
+        env=RUN_ENV,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert missing.returncode == 1, f"expected exit 1 on missing --symbol, got {missing.returncode}"
+    assert missing.stdout == "", f"expected empty stdout on missing --symbol, got {missing.stdout[:200]!r}"
+    assert missing.stderr.strip(), "expected non-empty stderr on missing --symbol"
+    return "schema=machgraph.cfg/1, _entry: 154 blocks, 259 edges, 1 loop, 1 jump table; missing --symbol exits 1 with empty stdout"
+
+
+def expect_cfg_dot_ls_symbol(out):
+    assert out.startswith('digraph "entry" {') and "b0 -> " in out, out[:200]
+    return 'Graphviz DOT for _entry (digraph "entry")'
+
+
 def expect_patch(out):
     doc = json.loads(out)
     assert doc["byteCount"] == 16 and doc["valid"] is True, doc
@@ -219,6 +260,9 @@ EXPECTATIONS = {
     f"{BIN} codesign /bin/ls": expect_codesign,
     f"{BIN} disasm /bin/ls --symbol entry --count 12": expect_disasm_ls,
     f"{BIN} disasm Fixtures/demo_arm64_sample --address 0x100000460 --count 10": expect_disasm_fixture,
+    f"{BIN} cfg /bin/ls --json": expect_cfg_ls_json,
+    f"{BIN} cfg /bin/ls --symbol _entry --json": expect_cfg_ls_symbol_json,
+    f"{BIN} cfg-dot /bin/ls --symbol _entry": expect_cfg_dot_ls_symbol,
     (
         f"{BIN} patch-asm /tmp/machgraph_readme_sample --address 0x100000460 "
         "--asm \"pacibsp; stp x29, x30, [sp, #-16]!; mov x0, #42; retab\" "
@@ -248,6 +292,8 @@ def main() -> int:
     home = tempfile.mkdtemp(prefix="machgraph-readme-home.")
     atexit.register(shutil.rmtree, home, ignore_errors=True)
     env = dict(os.environ, HOME=home, CFFIXED_USER_HOME=home)
+    global RUN_ENV
+    RUN_ENV = env
 
     def help_text(lang: str) -> str:
         return subprocess.run([BIN, "--help", "--lang", lang], capture_output=True, text=True, check=True, env=env).stdout
