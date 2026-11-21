@@ -1,0 +1,26 @@
+=== MachGraph M3 Metadata Differential (standard) ===
+Date (UTC):   2026-11-21T04:21:15Z
+System:       macOS 27.0.1 (26A434) arm64
+Ref nm:       Apple LLVM version 21.0.0
+Ref otool:    llvm-otool(1): Apple Inc. version cctools-1040
+Ref objdump:  Apple LLVM version 21.0.0
+Checks:       symbols, dylibs, entitlements, demangle, xrefs, objc (max_concurrent_subprocesses=6)
+MachGraph:    .build/release/MachGraph @ d67980d4d46d (worktree_clean=True)
+
+[PASS] /bin/ls (arm64e): symbols=OK(1) dylibs=OK(3) entitlements=OK(0) demangle=SCAN(91) xrefs=OK(275) objc=OK(0) (0.20s)
+[PASS] /usr/bin/ssh (arm64e): symbols=OK(1) dylibs=OK(15) entitlements=OK(2) demangle=SCAN(448) xrefs=OK(10320) objc=OK(0) (1.12s)
+[PASS] /usr/bin/vim (arm64e): symbols=OK(1) dylibs=OK(8) entitlements=OK(0) demangle=SCAN(256) xrefs=OK(43735) objc=OK(0) (6.77s)
+
+[PASS] Check 'symbols': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=3 mg_items=3
+[PASS] Check 'dylibs': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=26 mg_items=26
+[PASS] Check 'entitlements': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=2 mg_items=2
+[PASS] Check 'demangle': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=615 mg_items=615
+  Swift (0 unique): equal=0 (100.00%) raw_passthrough=0 (0.00%) wrong=0
+  C++ __Z/___Z/____Z (0 unique): equal=0 (100.00%) raw_passthrough=0 (0.00%) wrong=0
+  Plain C _Z (0 unique): equal_verbatim=0 (100.00%) wrong=0
+  Other verbatim (615 unique): equal_verbatim=615 (100.00%) wrong=0 batch_elapsed=0.02s
+[PASS] Check 'xrefs': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=54330 mg_items=54330
+  xrefs_totals: total_xrefs=219330 non_string_section_string_refs=0 string_ref_sections={"__DATA_CONST,__cfstring": 12, "__TEXT,__cstring": 20189, "__TEXT,__objc_methname": 29}
+  xrefs_kind_counts: {"ADRP_PAGE": 632, "BRANCH": 81704, "CALL": 54330, "CODE_REF": 675, "DATA_READ": 26149, "DATA_WRITE": 2100, "FIXUP_PTR": 4028, "ICALL": 472, "JMP": 29010, "STRING_REF": 20230}
+[PASS] Check 'objc': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=0 mg_items=0
+[PASS] Summary (standard): candidates=3 compared=3 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=6.78s
