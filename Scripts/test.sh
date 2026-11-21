@@ -259,8 +259,36 @@ case "$MODE" in
                     echo "==> [milestone 3] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
                 fi
                 ;;
+            4|m4|M4)
+                echo "==> [milestone 4] Scoped unit tests for M4-touched modules"
+                run_scope \
+                    MachGraphModels \
+                    MachBinaryFormats \
+                    MachA64Decoder \
+                    MachCFGEngine \
+                    MachHeadlessCLI
+                echo "==> [milestone 4] Acceptance harness unit tests"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/test_m4_harnesses.py"
+                echo "==> [milestone 4] Building release MachGraph CLI binary"
+                swift build -c release --product MachGraph >/dev/null
+                REL_BIN="$ROOT_DIR/.build/release/MachGraph"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                    echo "==> [milestone 4] Running Scripts/acceptance/m4-cfg-acceptance.py standard --record -> $OUT_LABEL/m4-cfg-acceptance.json & .txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" standard --record --machgraph "$REL_BIN"
+                    echo "==> [milestone 4] Recorded logs under reports/"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m4-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                    echo "==> [milestone 4] Running Scripts/acceptance/m4-cfg-acceptance.py standard -> $OUT_LABEL/m4-cfg-acceptance.json & .txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" standard --machgraph "$REL_BIN" --json-out "$OUT_DIR/m4-cfg-acceptance.json" --txt-out "$OUT_DIR/m4-cfg-acceptance.txt"
+                    echo "==> [milestone 4] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
+                ;;
             *)
-                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2, 3)." >&2
+                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2, 3, 4)." >&2
                 exit 2
                 ;;
         esac
@@ -292,6 +320,10 @@ case "$MODE" in
             echo "==> [release] Running Scripts/acceptance/test_m3_harnesses.py"
             python3 -I "$ROOT_DIR/Scripts/acceptance/test_m3_harnesses.py"
         fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/test_m4_harnesses.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/test_m4_harnesses.py"
+            python3 -I "$ROOT_DIR/Scripts/acceptance/test_m4_harnesses.py"
+        fi
         if [ -x "$ROOT_DIR/Scripts/acceptance/differential.py" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py standard"
             python3 "$ROOT_DIR/Scripts/acceptance/differential.py" standard --machgraph "$REL_BIN"
@@ -310,6 +342,20 @@ case "$MODE" in
             echo "==> [release] Running Scripts/acceptance/m3-mutations.sh"
             "$ROOT_DIR/Scripts/acceptance/m3-mutations.sh"
         fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/m4-cfg-acceptance.py standard"
+            python3 -I "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" standard --machgraph "$REL_BIN"
+        fi
+        if [ -f "$ROOT_DIR/Scripts/acceptance/m4-ghidra-differential.py" ]; then
+            echo "==> [release] Running Scripts/acceptance/m4-ghidra-differential.py /bin/ls"
+            gh_rc=0
+            python3 -I "$ROOT_DIR/Scripts/acceptance/m4-ghidra-differential.py" /bin/ls --machgraph "$REL_BIN" || gh_rc=$?
+            if [ "$gh_rc" -eq 77 ]; then
+                echo "SKIPPED (m4-ghidra-differential.py: 已跳过、不算通过)"
+            elif [ "$gh_rc" -ne 0 ]; then
+                exit "$gh_rc"
+            fi
+        fi
         if [ "${MACHGRAPH_CORPUS:-}" = "full" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py full"
             python3 "$ROOT_DIR/Scripts/acceptance/differential.py" full --machgraph "$REL_BIN"
@@ -318,6 +364,10 @@ case "$MODE" in
             if [ -f "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" ]; then
                 echo "==> [release] Running Scripts/acceptance/m3-metadata-differential.py full"
                 python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" full --machgraph "$REL_BIN"
+            fi
+            if [ -f "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" ]; then
+                echo "==> [release] Running Scripts/acceptance/m4-cfg-acceptance.py full"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/m4-cfg-acceptance.py" full --machgraph "$REL_BIN"
             fi
         else
             echo "SKIPPED (MACHGRAPH_CORPUS!=full)"
