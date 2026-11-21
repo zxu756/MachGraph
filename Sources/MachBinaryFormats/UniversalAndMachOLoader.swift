@@ -176,6 +176,13 @@ public enum MachOConstants {
         return "\(major).\(minor).\(patch)"
     }
 
+    public static func formatDylibVersion(_ raw: UInt32) -> String {
+        let major = (raw >> 16) & 0xFFFF
+        let minor = (raw >> 8) & 0xFF
+        let patch = raw & 0xFF
+        return "\(major).\(minor).\(patch)"
+    }
+
     public static func platformDisplayName(_ platformID: UInt32) -> String {
         switch platformID {
         case 1: return "macOS"
@@ -1159,6 +1166,7 @@ public enum MachO64Loader {
 
         var segments: [BinarySegment] = []
         var rawSections: [RawSectionRecord] = []
+        var dylibInstallID: ImportedLibrary?
         var importedLibraries: [ImportedLibrary] = []
         var dylibOrdinalCounter = 0
 
@@ -1369,8 +1377,8 @@ public enum MachO64Loader {
                         ImportedLibrary(
                             ordinal: dylibOrdinalCounter,
                             installName: installName,
-                            currentVersion: MachOConstants.formatPackedVersion(currentVer),
-                            compatibilityVersion: MachOConstants.formatPackedVersion(compatVer),
+                            currentVersion: MachOConstants.formatDylibVersion(currentVer),
+                            compatibilityVersion: MachOConstants.formatDylibVersion(compatVer),
                             isWeak: cmd == MachOConstants.lcLoadWeakDylib,
                             isReexport: cmd == MachOConstants.lcReexportDylib
                         )
@@ -1379,7 +1387,22 @@ public enum MachO64Loader {
 
             case MachOConstants.lcIdDylib:
                 // Dylib's own install ID; does not increment 1-based imported library ordinals
-                break
+                if cmdSize >= 24 {
+                    let nameOffset = Int(try cmdReader.readUInt32())
+                    _ = try cmdReader.readUInt32() // timestamp
+                    let currentVer = try cmdReader.readUInt32()
+                    let compatVer = try cmdReader.readUInt32()
+                    let rawCmdReader = try reader.subreader(offset: lcOffset, length: cmdSize, endianness: endianness)
+                    let installName = rawCmdReader.peekNullTerminatedUTF8(at: nameOffset, maxBytes: cmdSize) ?? "<unknown-dylib>"
+                    dylibInstallID = ImportedLibrary(
+                        ordinal: 0,
+                        installName: installName,
+                        currentVersion: MachOConstants.formatDylibVersion(currentVer),
+                        compatibilityVersion: MachOConstants.formatDylibVersion(compatVer),
+                        isWeak: false,
+                        isReexport: false
+                    )
+                }
 
             case MachOConstants.lcUUID:
                 if cmdSize >= 24 {
@@ -1598,7 +1621,7 @@ public enum MachO64Loader {
 
                 let symName: String
                 if nStrx > 0 && nStrx < strPoolReader.count {
-                    symName = strPoolReader.peekNullTerminatedUTF8(at: nStrx, maxBytes: 4096) ?? ""
+                    symName = strPoolReader.peekNullTerminatedUTF8(at: nStrx, maxBytes: strPoolReader.count - nStrx) ?? ""
                 } else {
                     symName = ""
                 }
@@ -1908,6 +1931,7 @@ public enum MachO64Loader {
             functionStarts: mergedFunctionStarts,
             segments: segments,
             sections: sections,
+            dylibInstallID: dylibInstallID,
             importedLibraries: importedLibraries,
             symbols: finalSymbols,
             strings: extractedStrings,
@@ -2020,19 +2044,26 @@ public enum MachO64Loader {
         functionStarts: [VirtualAddress],
         sections: [BinarySection]
     ) -> [BinarySymbol] {
-        // Deduplicate by address, preferring richer symbol kinds while preserving LC_SYMTAB provenance
-        var bestByAddress: [VirtualAddress: BinarySymbol] = [:]
-        bestByAddress.reserveCapacity(symbols.count)
+        // Preserve every defined LC_SYMTAB symbol verbatim (including multiple symbols or multiset
+        // entries at the same address), and never allow inferred metadata to overwrite LC_SYMTAB names.
+        var symtabSymbols: [BinarySymbol] = []
+        var symtabAddresses = Set<VirtualAddress>()
+        symtabSymbols.reserveCapacity(symbols.count)
 
-        for sym in symbols {
-            if let existing = bestByAddress[sym.address] {
-                let mergedProvenance: SymbolProvenance = (existing.provenance == .symtab || sym.provenance == .symtab)
-                    ? .symtab
-                    : existing.provenance
+        var bestInferredByAddress: [VirtualAddress: BinarySymbol] = [:]
+
+        for sym in symbols where sym.provenance == .symtab {
+            symtabSymbols.append(sym)
+            symtabAddresses.insert(sym.address)
+        }
+
+        for sym in symbols where sym.provenance != .symtab {
+            guard !symtabAddresses.contains(sym.address) else { continue }
+            if let existing = bestInferredByAddress[sym.address] {
                 let newPrio = symbolPriority(sym.kind)
                 let oldPrio = symbolPriority(existing.kind)
                 let winner = (newPrio > oldPrio || (newPrio == oldPrio && sym.size > existing.size)) ? sym : existing
-                bestByAddress[sym.address] = BinarySymbol(
+                bestInferredByAddress[sym.address] = BinarySymbol(
                     name: winner.name,
                     demangledName: winner.demangledName,
                     kind: winner.kind,
@@ -2041,20 +2072,20 @@ public enum MachO64Loader {
                     size: max(existing.size, sym.size),
                     sectionIndex: winner.sectionIndex ?? existing.sectionIndex,
                     libraryOrdinal: winner.libraryOrdinal ?? existing.libraryOrdinal,
-                    provenance: (winner.provenance == .symtab) ? .symtab : mergedProvenance
+                    provenance: winner.provenance
                 )
             } else {
-                bestByAddress[sym.address] = sym
+                bestInferredByAddress[sym.address] = sym
             }
         }
 
         // Infer sub_<hex> entries for stripped functions discovered via LC_FUNCTION_STARTS
         let insnAttrMask = MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions
-        for fnStart in functionStarts where bestByAddress[fnStart] == nil {
+        for fnStart in functionStarts where !symtabAddresses.contains(fnStart) && bestInferredByAddress[fnStart] == nil {
             if let sec = sections.first(where: { $0.addressRange.contains(fnStart) }),
                (sec.flags & insnAttrMask) != 0 {
                 let subName = String(format: "sub_%llx", fnStart.rawValue)
-                bestByAddress[fnStart] = BinarySymbol(
+                bestInferredByAddress[fnStart] = BinarySymbol(
                     name: subName,
                     demangledName: subName,
                     kind: .function,
@@ -2067,7 +2098,17 @@ public enum MachO64Loader {
             }
         }
 
-        let sorted = bestByAddress.values.sorted { $0.address < $1.address }
+        var combined: [BinarySymbol] = []
+        combined.reserveCapacity(symtabSymbols.count + bestInferredByAddress.count)
+        combined.append(contentsOf: symtabSymbols)
+        combined.append(contentsOf: bestInferredByAddress.values)
+
+        let sorted = combined.enumerated().sorted { lhs, rhs in
+            if lhs.element.address != rhs.element.address {
+                return lhs.element.address < rhs.element.address
+            }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
         guard !sorted.isEmpty else { return [] }
 
         var sized: [BinarySymbol] = []
@@ -2088,11 +2129,15 @@ public enum MachO64Loader {
                 sized.append(cur)
                 continue
             }
+            var nextIdx = i + 1
+            while nextIdx < sorted.count && sorted[nextIdx].address == cur.address {
+                nextIdx += 1
+            }
             let nextBoundary: VirtualAddress
-            if i + 1 < sorted.count,
-               sorted[i + 1].sectionIndex == secIdx,
-               sorted[i + 1].address > cur.address {
-                nextBoundary = sorted[i + 1].address
+            if nextIdx < sorted.count,
+               sorted[nextIdx].sectionIndex == secIdx,
+               sorted[nextIdx].address > cur.address {
+                nextBoundary = sorted[nextIdx].address
             } else {
                 nextBoundary = sec.addressRange.end
             }

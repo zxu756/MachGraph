@@ -801,4 +801,224 @@ struct BinaryFormatLoadersTests {
         #expect(MachOSymbolDemangler.demangle("_main") == "main")
         #expect(MachOSymbolDemangler.demangle("__mh_execute_header") == "__mh_execute_header")
     }
+
+    // MARK: - M3 Stage 1: LC_SYMTAB Fidelity & Three-Part Dylib Versions
+
+    private static func buildSyntheticMachOForSymbolAndDylibTests(
+        fileType: UInt32 = MachOConstants.mhExecute,
+        installID: (name: String, current: UInt32, compat: UInt32)? = nil,
+        dylibs: [(cmd: UInt32, name: String, current: UInt32, compat: UInt32)] = [],
+        symtabEntries: [(name: String, va: UInt64, ext: Bool)] = [],
+        exportTrieEntries: [ExportTrieBuilder.ExportEntry] = []
+    ) -> Data {
+        let imageBase: UInt64 = (fileType == MachOConstants.mhDylib) ? 0 : 0x1_0000_0000
+        let textVA: UInt64 = imageBase + 0x1000
+        let linkeditFileOff = 0x4000
+        let linkeditVA = imageBase + 0x4000
+
+        var sliceBytes = [UInt8](repeating: 0, count: linkeditFileOff)
+        // 8 NOP/RET words in __TEXT,__text at file offset 0x1000
+        let insnWords: [UInt32] = [
+            0xD503_201F, 0xD65F_03C0, 0xD503_201F, 0xD65F_03C0,
+            0xD503_201F, 0xD65F_03C0, 0xD503_201F, 0xD65F_03C0
+        ]
+        for (idx, w) in insnWords.enumerated() {
+            let base = 0x1000 + idx * 4
+            sliceBytes[base + 0] = UInt8(truncatingIfNeeded: w)
+            sliceBytes[base + 1] = UInt8(truncatingIfNeeded: w >> 8)
+            sliceBytes[base + 2] = UInt8(truncatingIfNeeded: w >> 16)
+            sliceBytes[base + 3] = UInt8(truncatingIfNeeded: w >> 24)
+        }
+
+        var strPool = BinaryBufferWriter(capacity: 256, endianness: .little)
+        strPool.appendUInt8(0)
+        var nlistWriter = BinaryBufferWriter(capacity: symtabEntries.count * 16, endianness: .little)
+        for entry in symtabEntries {
+            let strOff = UInt32(strPool.count)
+            strPool.appendCString(entry.name)
+            nlistWriter.appendUInt32(strOff)
+            nlistWriter.appendUInt8(MachOConstants.nSect | (entry.ext ? MachOConstants.nExt : 0))
+            nlistWriter.appendUInt8(1) // __TEXT,__text
+            nlistWriter.appendUInt16(0)
+            nlistWriter.appendUInt64(entry.va)
+        }
+        strPool.padToAlignment(8)
+
+        let trieData = exportTrieEntries.isEmpty ? Data() : ExportTrieBuilder.buildTrie(entries: exportTrieEntries)
+
+        var linkedit = BinaryBufferWriter(capacity: 512, endianness: .little)
+        let trieOff = linkeditFileOff + linkedit.count
+        if !trieData.isEmpty {
+            linkedit.appendData(trieData)
+            linkedit.padToAlignment(8)
+        }
+        let symtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(nlistWriter.bytes)
+        let strtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(strPool.bytes)
+        linkedit.padToAlignment(16)
+        if linkedit.count == 0 {
+            linkedit.appendUInt64(0)
+        }
+
+        let linkeditVMSize = (linkedit.count + 0x3FFF) & ~0x3FFF
+
+        var lc = BinaryBufferWriter(capacity: 1024, endianness: .little)
+        var ncmds: UInt32 = 0
+
+        func writeSeg64(name: String, vmaddr: UInt64, vmsize: UInt64, fileoff: UInt64, filesize: UInt64, prot: Int32, hasTextSec: Bool) {
+            let cmdSize: UInt32 = hasTextSec ? (72 + 80) : 72
+            lc.appendUInt32(MachOConstants.lcSegment64)
+            lc.appendUInt32(cmdSize)
+            lc.appendFixedASCII(name, length: 16)
+            lc.appendUInt64(vmaddr)
+            lc.appendUInt64(vmsize)
+            lc.appendUInt64(fileoff)
+            lc.appendUInt64(filesize)
+            lc.appendUInt32(UInt32(bitPattern: prot))
+            lc.appendUInt32(UInt32(bitPattern: prot))
+            lc.appendUInt32(hasTextSec ? 1 : 0)
+            lc.appendUInt32(0)
+            if hasTextSec {
+                lc.appendFixedASCII("__text", length: 16)
+                lc.appendFixedASCII("__TEXT", length: 16)
+                lc.appendUInt64(textVA)
+                lc.appendUInt64(UInt64(insnWords.count * 4))
+                lc.appendUInt32(0x1000)
+                lc.appendUInt32(2)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+            }
+            ncmds += 1
+        }
+
+        if fileType == MachOConstants.mhExecute {
+            writeSeg64(name: "__PAGEZERO", vmaddr: 0, vmsize: imageBase, fileoff: 0, filesize: 0, prot: 0, hasTextSec: false)
+        }
+        writeSeg64(name: "__TEXT", vmaddr: imageBase, vmsize: 0x4000, fileoff: 0, filesize: 0x4000, prot: 5, hasTextSec: true)
+        writeSeg64(name: "__LINKEDIT", vmaddr: linkeditVA, vmsize: UInt64(linkeditVMSize), fileoff: UInt64(linkeditFileOff), filesize: UInt64(linkedit.count), prot: 1, hasTextSec: false)
+
+        func writeDylibCmd(cmd: UInt32, name: String, current: UInt32, compat: UInt32) {
+            let nameBytes = Array(name.utf8) + [0]
+            let cmdSize = (24 + nameBytes.count + 7) & ~7
+            lc.appendUInt32(cmd)
+            lc.appendUInt32(UInt32(cmdSize))
+            lc.appendUInt32(24)
+            lc.appendUInt32(2)
+            lc.appendUInt32(current)
+            lc.appendUInt32(compat)
+            lc.appendBytes(nameBytes)
+            lc.padToAlignment(8)
+            ncmds += 1
+        }
+
+        if let id = installID {
+            writeDylibCmd(cmd: MachOConstants.lcIdDylib, name: id.name, current: id.current, compat: id.compat)
+        }
+        for d in dylibs {
+            writeDylibCmd(cmd: d.cmd, name: d.name, current: d.current, compat: d.compat)
+        }
+
+        if !trieData.isEmpty {
+            lc.appendUInt32(MachOConstants.lcDyldExportsTrie)
+            lc.appendUInt32(16)
+            lc.appendUInt32(UInt32(trieOff))
+            lc.appendUInt32(UInt32(trieData.count))
+            ncmds += 1
+        }
+
+        lc.appendUInt32(MachOConstants.lcSymtab)
+        lc.appendUInt32(24)
+        lc.appendUInt32(UInt32(symtabOff))
+        lc.appendUInt32(UInt32(symtabEntries.count))
+        lc.appendUInt32(UInt32(strtabOff))
+        lc.appendUInt32(UInt32(strPool.count))
+        ncmds += 1
+
+        var hdr = BinaryBufferWriter(capacity: 32 + lc.count, endianness: .little)
+        hdr.appendUInt32(MachOConstants.mhMagic64)
+        hdr.appendUInt32(UInt32(bitPattern: MachOConstants.cpuTypeARM64))
+        hdr.appendUInt32(0)
+        hdr.appendUInt32(fileType)
+        hdr.appendUInt32(ncmds)
+        hdr.appendUInt32(UInt32(lc.count))
+        hdr.appendUInt32(MachOConstants.mhTwoLevel | MachOConstants.mhPIE)
+        hdr.appendUInt32(0)
+        hdr.appendBytes(lc.bytes)
+
+        for (i, b) in hdr.bytes.enumerated() {
+            sliceBytes[i] = b
+        }
+        return Data(sliceBytes + linkedit.bytes)
+    }
+
+    @Test("M3 D-M3-3: LC_SYMTAB preserves all defined symbols at the same address including identical-name multiset entries")
+    func m3SymtabPreservesSameAddressAliasesAndMultisetDuplicates() throws {
+        let data = Self.buildSyntheticMachOForSymbolAndDylibTests(
+            symtabEntries: [
+                (name: "_bseek.cold.1", va: 0x1_0000_1000, ext: false),
+                (name: "_btell.cold.1", va: 0x1_0000_1000, ext: false),
+                (name: "_OUTLINED_FUNCTION_1", va: 0x1_0000_1008, ext: false),
+                (name: "_OUTLINED_FUNCTION_1", va: 0x1_0000_1008, ext: false)
+            ]
+        )
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "SameAddrAliases.arm64")
+        let symtabSymbols = image.symbols.filter { !$0.isInferred }
+
+        #expect(symtabSymbols.count == 4)
+        let at1000 = symtabSymbols.filter { $0.address == VirtualAddress(0x1_0000_1000) }.map(\.name)
+        #expect(at1000.sorted() == ["_bseek.cold.1", "_btell.cold.1"])
+        let at1008 = symtabSymbols.filter { $0.address == VirtualAddress(0x1_0000_1008) }.map(\.name)
+        #expect(at1008 == ["_OUTLINED_FUNCTION_1", "_OUTLINED_FUNCTION_1"])
+
+        if FileManager.default.isReadableFile(atPath: "/bin/csh") {
+            let csh = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: "/bin/csh"))
+            let cshRealNames = Set(csh.symbols.filter { !$0.isInferred }.map(\.name))
+            #expect(cshRealNames.contains("_bseek.cold.1"))
+            #expect(cshRealNames.contains("_btell.cold.1"))
+        }
+    }
+
+    @Test("M3 D-M3-3: Inferred symbols never overwrite LC_SYMTAB symbol names at the same address")
+    func m3InferredSymbolsNeverOverwriteRealSymtabNames() throws {
+        // Local LC_SYMTAB symbol (.localSymbol, priority 30) collides at 0x100001000 with an Export Trie entry (.function, priority 50).
+        let data = Self.buildSyntheticMachOForSymbolAndDylibTests(
+            symtabEntries: [
+                (name: "_real_symtab_local_thunk", va: 0x1_0000_1000, ext: false)
+            ],
+            exportTrieEntries: [
+                .init(name: "_inferred_export_trie_winner", offsetFromImageBase: 0x1000, flags: 0)
+            ]
+        )
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "NoInferredOverwrite.arm64")
+        let realNames = image.symbols.filter { !$0.isInferred }.map(\.name)
+        #expect(realNames == ["_real_symtab_local_thunk"])
+        #expect(!realNames.contains("_inferred_export_trie_winner"))
+
+        if FileManager.default.isReadableFile(atPath: "/usr/libexec/cryptexd") {
+            let cryptexd = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: "/usr/libexec/cryptexd"))
+            let cryptexdRealNames = Set(cryptexd.symbols.filter { !$0.isInferred }.map(\.name))
+            #expect(cryptexdRealNames.contains("_$s8cryptexd12DaemonServerC5queueACSo012OS_dispatch_D7_serialC_tKcfcTo"))
+            #expect(!cryptexdRealNames.contains("-[TtC8cryptexd12DaemonServer initWithQueue:error:]"))
+        }
+    }
+
+    @Test("M3 D-M3-5: Imported dylibs format versions as three-part major.minor.patch while preserving minOSVersion")
+    func m3DylibVersionsUseThreePartFormatWithoutChangingPlatformVersion() throws {
+        let execData = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
+        let execImage = try UniversalBinaryDispatcher.load(data: execData, fileName: "Demo.arm64e")
+
+        // Platform versions must continue using compact formatting.
+        #expect(execImage.minOSVersion == "14.0")
+        #expect(execImage.sdkVersion == "15.0")
+
+        // Dylib versions must always use three-part X.Y.Z formatting matching otool -L.
+        let libSys = try #require(execImage.importedLibraries.first { $0.installName == "/usr/lib/libSystem.B.dylib" })
+        #expect(libSys.currentVersion == "1355.0.0")
+        #expect(libSys.compatibilityVersion == "1.0.0")
+    }
 }

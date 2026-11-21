@@ -1263,4 +1263,191 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect((infoCS["flags"] as? NSNumber)?.uint32Value == 0x10000)
         #expect(infoCS["flagsHex"] as? String == "0x10000")
     }
+
+    // MARK: - 9. M3 Stage 1: CLI symbols --json & info (JSON + text) Dylib Parity
+
+    private static func buildSyntheticDylibFixture() -> Data {
+        let textFileOff = 0x1000
+        let linkeditFileOff = 0x4000
+        var sliceBytes = [UInt8](repeating: 0, count: linkeditFileOff)
+        // Two RET instructions in __TEXT,__text at VM 0x1000 and 0x1004
+        for off in [textFileOff, textFileOff + 4] {
+            sliceBytes[off + 0] = 0xC0
+            sliceBytes[off + 1] = 0x03
+            sliceBytes[off + 2] = 0x5F
+            sliceBytes[off + 3] = 0xD6
+        }
+
+        var strPool = BinaryBufferWriter(capacity: 128, endianness: .little)
+        strPool.appendUInt8(0)
+        var nlist = BinaryBufferWriter(capacity: 32, endianness: .little)
+        for symName in ["_alias_alpha", "_alias_beta"] {
+            let sOff = UInt32(strPool.count)
+            strPool.appendCString(symName)
+            nlist.appendUInt32(sOff)
+            nlist.appendUInt8(MachOConstants.nSect | MachOConstants.nExt)
+            nlist.appendUInt8(1)
+            nlist.appendUInt16(0)
+            nlist.appendUInt64(0x1000)
+        }
+        strPool.padToAlignment(8)
+
+        var linkedit = BinaryBufferWriter(capacity: 256, endianness: .little)
+        let symtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(nlist.bytes)
+        let strtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(strPool.bytes)
+        linkedit.padToAlignment(16)
+
+        var lc = BinaryBufferWriter(capacity: 512, endianness: .little)
+        var ncmds: UInt32 = 0
+
+        // __TEXT with __text section
+        lc.appendUInt32(MachOConstants.lcSegment64)
+        lc.appendUInt32(72 + 80)
+        lc.appendFixedASCII("__TEXT", length: 16)
+        lc.appendUInt64(0)
+        lc.appendUInt64(0x4000)
+        lc.appendUInt64(0)
+        lc.appendUInt64(0x4000)
+        lc.appendUInt32(5)
+        lc.appendUInt32(5)
+        lc.appendUInt32(1)
+        lc.appendUInt32(0)
+        lc.appendFixedASCII("__text", length: 16)
+        lc.appendFixedASCII("__TEXT", length: 16)
+        lc.appendUInt64(0x1000)
+        lc.appendUInt64(8)
+        lc.appendUInt32(0x1000)
+        lc.appendUInt32(2)
+        lc.appendUInt32(0)
+        lc.appendUInt32(0)
+        lc.appendUInt32(MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions)
+        lc.appendUInt32(0)
+        lc.appendUInt32(0)
+        lc.appendUInt32(0)
+        ncmds += 1
+
+        // __LINKEDIT
+        lc.appendUInt32(MachOConstants.lcSegment64)
+        lc.appendUInt32(72)
+        lc.appendFixedASCII("__LINKEDIT", length: 16)
+        lc.appendUInt64(0x4000)
+        lc.appendUInt64(0x4000)
+        lc.appendUInt64(UInt64(linkeditFileOff))
+        lc.appendUInt64(UInt64(linkedit.count))
+        lc.appendUInt32(1)
+        lc.appendUInt32(1)
+        lc.appendUInt32(0)
+        lc.appendUInt32(0)
+        ncmds += 1
+
+        func appendDylib(cmd: UInt32, name: String, current: UInt32, compat: UInt32) {
+            let bytes = Array(name.utf8) + [0]
+            let sz = (24 + bytes.count + 7) & ~7
+            lc.appendUInt32(cmd)
+            lc.appendUInt32(UInt32(sz))
+            lc.appendUInt32(24)
+            lc.appendUInt32(2)
+            lc.appendUInt32(current)
+            lc.appendUInt32(compat)
+            lc.appendBytes(bytes)
+            lc.padToAlignment(8)
+            ncmds += 1
+        }
+
+        appendDylib(cmd: MachOConstants.lcIdDylib, name: "/usr/local/lib/libdemo.1.dylib", current: 0x0002_0300, compat: 0x0001_0000)
+        appendDylib(cmd: MachOConstants.lcLoadDylib, name: "/usr/lib/libSystem.B.dylib", current: 0x054B_0000, compat: 0x0001_0000)
+        appendDylib(cmd: MachOConstants.lcLoadWeakDylib, name: "/usr/lib/libweak_opt.dylib", current: 0x0004_0000, compat: 0x0002_0000)
+
+        lc.appendUInt32(MachOConstants.lcSymtab)
+        lc.appendUInt32(24)
+        lc.appendUInt32(UInt32(symtabOff))
+        lc.appendUInt32(2)
+        lc.appendUInt32(UInt32(strtabOff))
+        lc.appendUInt32(UInt32(strPool.count))
+        ncmds += 1
+
+        var hdr = BinaryBufferWriter(capacity: 32 + lc.count, endianness: .little)
+        hdr.appendUInt32(MachOConstants.mhMagic64)
+        hdr.appendUInt32(UInt32(bitPattern: MachOConstants.cpuTypeARM64))
+        hdr.appendUInt32(0)
+        hdr.appendUInt32(MachOConstants.mhDylib)
+        hdr.appendUInt32(ncmds)
+        hdr.appendUInt32(UInt32(lc.count))
+        hdr.appendUInt32(MachOConstants.mhTwoLevel)
+        hdr.appendUInt32(0)
+        hdr.appendBytes(lc.bytes)
+
+        for (i, b) in hdr.bytes.enumerated() {
+            sliceBytes[i] = b
+        }
+        return Data(sliceBytes + linkedit.bytes)
+    }
+
+    @Test("M3 D-M3-3 & D-M3-5: CLI symbols --json preserves same-address symbols and info --json exports compatibilityVersion and installID")
+    func m3CLISymbolsAndInfoJSONExportCompatibilityVersionAndInstallID() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let dylibURL = tempDir.appendingPathComponent("libdemo.1.dylib")
+        try Self.buildSyntheticDylibFixture().write(to: dylibURL)
+
+        let cli = MachCLIRunner()
+
+        let symsRaw = try await cli.execute(arguments: ["symbols", dylibURL.path, "--json"])
+        let symsObj = try #require(JSONSerialization.jsonObject(with: Data(symsRaw.utf8)) as? [String: Any])
+        let realSyms = try #require(symsObj["realSymbols"] as? [[String: Any]])
+        let realNames = realSyms.compactMap { $0["name"] as? String }.sorted()
+        #expect(realNames == ["_alias_alpha", "_alias_beta"])
+
+        let infoRaw = try await cli.execute(arguments: ["info", dylibURL.path, "--json"])
+        let infoObj = try #require(JSONSerialization.jsonObject(with: Data(infoRaw.utf8)) as? [String: Any])
+
+        let installID = try #require(infoObj["installID"] as? [String: Any])
+        #expect(installID["installName"] as? String == "/usr/local/lib/libdemo.1.dylib")
+        #expect(installID["compatibilityVersion"] as? String == "1.0.0")
+        #expect(installID["currentVersion"] as? String == "2.3.0")
+
+        let libs = try #require(infoObj["libraries"] as? [[String: Any]])
+        #expect(libs.count == 2)
+        #expect(libs[0]["installName"] as? String == "/usr/lib/libSystem.B.dylib")
+        #expect(libs[0]["compatibilityVersion"] as? String == "1.0.0")
+        #expect(libs[0]["currentVersion"] as? String == "1355.0.0")
+        #expect(libs[0]["isWeak"] as? Bool == false)
+        #expect(libs[1]["installName"] as? String == "/usr/lib/libweak_opt.dylib")
+        #expect(libs[1]["compatibilityVersion"] as? String == "2.0.0")
+        #expect(libs[1]["currentVersion"] as? String == "4.0.0")
+        #expect(libs[1]["isWeak"] as? Bool == true)
+
+        let lsInfoRaw = try await cli.execute(arguments: ["info", "/bin/ls", "--json"])
+        let lsInfo = try #require(JSONSerialization.jsonObject(with: Data(lsInfoRaw.utf8)) as? [String: Any])
+        #expect(lsInfo["installID"] is NSNull)
+        let lsLibs = try #require(lsInfo["libraries"] as? [[String: Any]])
+        #expect(!lsLibs.isEmpty)
+        for lib in lsLibs {
+            let compat = try #require(lib["compatibilityVersion"] as? String)
+            let current = try #require(lib["currentVersion"] as? String)
+            #expect(compat.split(separator: ".").count == 3)
+            #expect(current.split(separator: ".").count == 3)
+        }
+    }
+
+    @Test("M3 D-M3-5: CLI info text mode prints dependent libraries and MH_DYLIB install ID")
+    func m3CLIInfoTextModePrintsLibrariesAndInstallID() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let dylibURL = tempDir.appendingPathComponent("libdemo.1.dylib")
+        try Self.buildSyntheticDylibFixture().write(to: dylibURL)
+
+        let cli = MachCLIRunner()
+        let dylibText = try await cli.execute(arguments: ["info", dylibURL.path])
+        #expect(dylibText.contains("Install ID:    /usr/local/lib/libdemo.1.dylib (compatibility version 1.0.0, current version 2.3.0)"))
+        #expect(dylibText.contains("/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1355.0.0)"))
+        #expect(dylibText.contains("/usr/lib/libweak_opt.dylib (compatibility version 2.0.0, current version 4.0.0, weak)"))
+
+        let lsText = try await cli.execute(arguments: ["info", "/bin/ls"])
+        #expect(lsText.contains("/usr/lib/libSystem.B.dylib"))
+        #expect(lsText.contains("compatibility version "))
+        #expect(lsText.contains("current version "))
+    }
 }

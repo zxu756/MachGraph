@@ -553,10 +553,18 @@ public struct MachCLIRunner: Sendable {
                         "isExecutable": img.executableSections().contains(where: { $0.id == sec.id })
                     ] as [String: Any]
                 },
+                "installID": img.dylibInstallID.map { idLib in
+                    [
+                        "installName": idLib.installName,
+                        "compatibilityVersion": idLib.compatibilityVersion,
+                        "currentVersion": idLib.currentVersion
+                    ] as [String: Any]
+                } ?? NSNull(),
                 "libraries": img.importedLibraries.map { lib in
                     [
                         "ordinal": lib.ordinal,
                         "installName": lib.installName,
+                        "compatibilityVersion": lib.compatibilityVersion,
                         "currentVersion": lib.currentVersion,
                         "isWeak": lib.isWeak,
                         "isReexport": lib.isReexport
@@ -597,6 +605,14 @@ public struct MachCLIRunner: Sendable {
         lines.append("Fixups:        \(img.chainedFixups.count)")
         lines.append("Instructions:  \(insnCount)")
         lines.append("CodeSign:      signed=\(img.codeSignature.isSigned) adhoc=\(img.codeSignature.isAdHoc) cdhash=\(img.codeSignature.cdHashHex)")
+        if let idLib = img.dylibInstallID {
+            lines.append("Install ID:    \(idLib.installName) (compatibility version \(idLib.compatibilityVersion), current version \(idLib.currentVersion))")
+        }
+        lines.append("Libraries:     \(img.importedLibraries.count)")
+        for lib in img.importedLibraries {
+            let tagSuffix = lib.isWeak ? ", weak" : (lib.isReexport ? ", reexport" : "")
+            lines.append("  \(lib.installName) (compatibility version \(lib.compatibilityVersion), current version \(lib.currentVersion)\(tagSuffix))")
+        }
         return lines.joined(separator: "\n")
     }
 

@@ -545,6 +545,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
     public let functionStarts: [VirtualAddress]
     public let segments: [BinarySegment]
     public let sections: [BinarySection]
+    public let dylibInstallID: ImportedLibrary?
     public let importedLibraries: [ImportedLibrary]
     public let symbols: [BinarySymbol]
     public let strings: [ExtractedStringLiteral]
@@ -576,6 +577,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         functionStarts: [VirtualAddress] = [],
         segments: [BinarySegment],
         sections: [BinarySection],
+        dylibInstallID: ImportedLibrary? = nil,
         importedLibraries: [ImportedLibrary] = [],
         symbols: [BinarySymbol] = [],
         strings: [ExtractedStringLiteral] = [],
@@ -606,6 +608,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         self.functionStarts = functionStarts
         self.segments = segments
         self.sections = sections
+        self.dylibInstallID = dylibInstallID
         self.importedLibraries = importedLibraries
         self.symbols = symbols
         self.strings = strings
