@@ -1,0 +1,12 @@
+# M3 Mutation 7 (entitlements): serialize CFBoolean entitlement values as string 'true'/'false'
+--- a/Sources/MachBinaryFormats/CodeSignatureAndCMSParser.swift
++++ b/Sources/MachBinaryFormats/CodeSignatureAndCMSParser.swift
+@@ -462,7 +462,7 @@
+     private static func convertPropertyListValue(_ value: Any) -> EntitlementValue {
+         if let num = value as? NSNumber {
+             if CFGetTypeID(num) == CFBooleanGetTypeID() {
+-                return .bool(num.boolValue)
++                return .string(num.boolValue ? "true" : "false")
+             }
+             if CFNumberIsFloatType(num) {
+                 return .real(num.doubleValue)

@@ -9,6 +9,7 @@ usage() {
 Usage:
   Scripts/test.sh scope <ModuleOrFilter...>
   Scripts/test.sh milestone <N> [--record]
+  Scripts/test.sh mutations
   Scripts/test.sh release
 
 milestone writes the acceptance logs to a temporary directory and leaves the work tree untouched.
@@ -264,6 +265,10 @@ case "$MODE" in
                 ;;
         esac
         ;;
+    mutations)
+        echo "==> [mutations] Running Scripts/acceptance/m3-mutations.sh"
+        "$ROOT_DIR/Scripts/acceptance/m3-mutations.sh"
+        ;;
     release)
         echo "==> [release] Full unit test suite"
         swift test --no-parallel
@@ -300,6 +305,10 @@ case "$MODE" in
             python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" standard --machgraph "$REL_BIN"
             echo "==> [release] Running Scripts/acceptance/m3-metadata-differential.py objc --only objc"
             python3 -I "$ROOT_DIR/Scripts/acceptance/m3-metadata-differential.py" objc --only objc --machgraph "$REL_BIN"
+        fi
+        if [ -x "$ROOT_DIR/Scripts/acceptance/m3-mutations.sh" ]; then
+            echo "==> [release] Running Scripts/acceptance/m3-mutations.sh"
+            "$ROOT_DIR/Scripts/acceptance/m3-mutations.sh"
         fi
         if [ "${MACHGRAPH_CORPUS:-}" = "full" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py full"

@@ -1,0 +1,11 @@
+# M3 Mutation 1 (symbols): skip local LC_SYMTAB symbols in MachO64Loader.loadSlice
+--- a/Sources/MachBinaryFormats/UniversalAndMachOLoader.swift
++++ b/Sources/MachBinaryFormats/UniversalAndMachOLoader.swift
+@@ -1255,6 +1255,7 @@
+                     } else {
+                         binding = .local
+                     }
++                    if binding == .local { continue }
+ 
+                     collectedSymbols.append(
+                         BinarySymbol(

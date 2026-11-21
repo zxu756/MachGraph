@@ -1,0 +1,24 @@
+# M3 Mutation 6b (xrefs G25): restore unconditional .stringReference on ADRP+ADD without string-section check
+--- a/Sources/MachA64Decoder/A64SequenceIdiomsRecognizer.swift
++++ b/Sources/MachA64Decoder/A64SequenceIdiomsRecognizer.swift
+@@ -344,7 +344,7 @@
+                         targetAddress: resolvedAddr,
+                         constantValue: resolvedAddr.rawValue,
+                         resolvedSymbol: sym,
+-                        xrefKind: classifiedXrefKind,
++                        xrefKind: .stringReference,
+                         summary: summary
+                     )
+                 )
+--- a/Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift
++++ b/Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift
+@@ -1423,9 +1423,6 @@
+                             guard let tgt = idiom.targetAddress else { continue }
+ 
+                             switch idiom.kind {
+-                            case .adrpAddAddress:
+-                                let resolved = classifyAddressTakenTarget(tgt)
+-                                emitXref(from: insn.address, fromFn: fnAddr, to: resolved.to, kind: resolved.kind, preview: preview)
+                             case .adrpStoreData:
+                                 emitXref(from: insn.address, fromFn: fnAddr, to: tgt, kind: .dataPointerWrite, preview: preview)
+                             default:

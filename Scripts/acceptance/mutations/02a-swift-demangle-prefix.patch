@@ -1,0 +1,15 @@
+# M3 Mutation 2a (Swift demangle agreement rate): corrupt '_$s' Swift. module prefix into Swift_
+--- a/Sources/MachGraphModels/SymbolDemangler.swift
++++ b/Sources/MachGraphModels/SymbolDemangler.swift
+@@ -167,7 +167,10 @@
+         guard let unwrapped = rawResult, !unwrapped.isEmpty, unwrapped != query, unwrapped != symbol else {
+             return nil
+         }
+-        return synthesizeSwiftTypeSugar(unwrapped)
++        let mutated = symbol.hasPrefix("_$s")
++            ? unwrapped.replacingOccurrences(of: "Swift.", with: "Swift_")
++            : unwrapped
++        return synthesizeSwiftTypeSugar(mutated)
+         #else
+         return nil
+         #endif

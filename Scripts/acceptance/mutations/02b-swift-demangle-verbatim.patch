@@ -1,0 +1,21 @@
+# M3 Mutation 2b (Swift demangle verbatim guard): strip leading '_' on un-demangleable Swift symbols
+--- a/Sources/MachGraphModels/SymbolDemangler.swift
++++ b/Sources/MachGraphModels/SymbolDemangler.swift
+@@ -103,7 +103,7 @@
+             #if canImport(Darwin)
+             if useSystemRuntime {
+                 // System swift_demangle is linked in-process and rejected the symbol as invalid/truncated.
+-                return rawSymbol
++                return rawSymbol.hasPrefix("_") ? String(rawSymbol.dropFirst()) : rawSymbol
+             }
+             #endif
+             if let fallbackOut = Self.demangleSwiftWithHandwrittenFallback(core),
+@@ -111,7 +111,7 @@
+                !Self.isMerelyUnderscoreStripped(raw: core, candidate: fallbackOut) {
+                 return stubSuffix.isEmpty ? fallbackOut : "\(fallbackOut)\(stubSuffix)"
+             }
+-            return rawSymbol
++            return rawSymbol.hasPrefix("_") ? String(rawSymbol.dropFirst()) : rawSymbol
+         }
+ 
+         // Preserve any other "_$" prefix untouched.

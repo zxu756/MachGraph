@@ -1,0 +1,14 @@
+# M3 Mutation 6a (xrefs bl edges): skip emitting .directCall xrefs targeting __auth_stubs
+--- a/Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift
++++ b/Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift
+@@ -1441,7 +1441,9 @@
+                     // 2. Instruction-level control-flow & PC-relative operands
+                     switch insn.flow {
+                     case .directCall(let target):
+-                        emitXref(from: insn.address, fromFn: fnAddr, to: target, kind: .directCall, preview: preview)
++                        if findSection(containing: target)?.sectionName != "__auth_stubs" {
++                            emitXref(from: insn.address, fromFn: fnAddr, to: target, kind: .directCall, preview: preview)
++                        }
+                         if let imp = importByAddress[target], seenImportSiteAddrs.insert(insn.address).inserted {
+                             importCallSites.append(
+                                 ImportCallSiteRecord(

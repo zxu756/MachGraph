@@ -1,0 +1,12 @@
+# M3 Mutation 4 (ObjC metadata): skip metaclass method list traversal in ObjCAndSwiftMetadataParser.parseObjCClass
+--- a/Sources/MachBinaryFormats/ObjCAndSwiftMetadataParser.swift
++++ b/Sources/MachBinaryFormats/ObjCAndSwiftMetadataParser.swift
+@@ -359,7 +359,7 @@
+         }
+ 
+         // Walk metaclass for +[ClassName method] class methods
+-        if let metaClassVA = nonHeaderInternalAddress(isaResolved, memory: memory), metaClassVA != classVA {
++        if false, let metaClassVA = nonHeaderInternalAddress(isaResolved, memory: memory), metaClassVA != classVA {
+             if case .internalAddress(let rawMetaRO) = memory.resolvePointer(at: metaClassVA + 0x20) {
+                 let metaROVA = VirtualAddress(rawMetaRO.rawValue & fastDataMask64)
+                 if metaROVA != .zero,

@@ -1,0 +1,13 @@
+# M3 Mutation 3 (C++ demangle): strip leading '_' on single-'_Z' plain C symbols such as _ZeroFilesTested
+--- a/Sources/MachGraphModels/SymbolDemangler.swift
++++ b/Sources/MachGraphModels/SymbolDemangler.swift
+@@ -128,6 +128,9 @@
+                     return stubSuffix.isEmpty ? sysCpp : "\(sysCpp)\(stubSuffix)"
+                 }
+                 #if canImport(Darwin)
++                if core.hasPrefix("_Z") && !core.hasPrefix("__Z") {
++                    return String(rawSymbol.dropFirst())
++                }
+                 return rawSymbol
+                 #endif
+             }

@@ -1,0 +1,13 @@
+# M3 Mutation 5 (dylibs): drop '.0' patch segment when patch == 0 in MachOConstants.formatDylibVersion
+--- a/Sources/MachBinaryFormats/UniversalAndMachOLoader.swift
++++ b/Sources/MachBinaryFormats/UniversalAndMachOLoader.swift
+@@ -180,6 +180,9 @@
+         let major = (raw >> 16) & 0xFFFF
+         let minor = (raw >> 8) & 0xFF
+         let patch = raw & 0xFF
++        if patch == 0 {
++            return "\(major).\(minor)"
++        }
+         return "\(major).\(minor).\(patch)"
+     }
+ 

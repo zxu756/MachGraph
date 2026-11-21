@@ -1,0 +1,13 @@
+# M3 Mutation 8 (demangle 4th bucket): strip leading '_' on ordinary single-underscore symbols (_main -> main)
+--- a/Sources/MachGraphModels/SymbolDemangler.swift
++++ b/Sources/MachGraphModels/SymbolDemangler.swift
+@@ -140,6 +140,9 @@
+         }
+ 
+         // 4. Plain C symbols (e.g. `_main`, `_verify_license`) and all non-mangled strings return verbatim.
++        if core.hasPrefix("_") && !core.hasPrefix("__") && core.count > 1 {
++            return String(rawSymbol.dropFirst())
++        }
+         return rawSymbol
+     }
+ 
