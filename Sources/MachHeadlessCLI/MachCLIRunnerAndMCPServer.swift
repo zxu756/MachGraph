@@ -2487,8 +2487,8 @@ public struct MachCLIRunner: Sendable {
 
     public static func versionBanner(in language: MachLanguage) -> String {
         language.select(
-            "MachGraph 1.4.0 (macOS arm64 · Mach-O & Universal Loader + ARM64 Disassembler & CFG · 中文/EN)",
-            "MachGraph 1.4.0 (macOS arm64 · Mach-O 与通用二进制加载器 + ARM64 反汇编与控制流图 · 中文/EN)"
+            "MachGraph 1.5.0 (macOS arm64 · Mach-O & Universal Loader + ARM64 Disassembler & CFG · 中文/EN)",
+            "MachGraph 1.5.0 (macOS arm64 · Mach-O 与通用二进制加载器 + ARM64 反汇编与控制流图 · 中文/EN)"
         )
     }
 
@@ -2500,8 +2500,8 @@ public struct MachCLIRunner: Sendable {
         var lines: [String] = []
         lines.append(
             language.select(
-                "MachGraph 1.4.0 - macOS ARM64 & Mach-O Binary Inspector, Disassembler & CFG Analyzer (中文 / EN)",
-                "MachGraph 1.4.0 - macOS ARM64 与 Mach-O 二进制检视、反汇编与控制流图分析工具 (中文 / EN)"
+                "MachGraph 1.5.0 - macOS ARM64 & Mach-O Binary Inspector, Disassembler & CFG Analyzer (中文 / EN)",
+                "MachGraph 1.5.0 - macOS ARM64 与 Mach-O 二进制检视、反汇编与控制流图分析工具 (中文 / EN)"
             )
         )
         lines.append(
@@ -2656,7 +2656,7 @@ public struct MachMCPServer: Sendable {
                 "result": [
                     "protocolVersion": "2024-11-05",
                     "capabilities": ["tools": ["listChanged": false]],
-                    "serverInfo": ["name": "machgraph-mcp", "version": "1.4.0"]
+                    "serverInfo": ["name": "machgraph-mcp", "version": "1.5.0"]
                 ]
             ])
 
