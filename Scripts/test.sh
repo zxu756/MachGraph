@@ -296,6 +296,8 @@ case "$MODE" in
     mutations)
         echo "==> [mutations] Running Scripts/acceptance/m3-mutations.sh"
         "$ROOT_DIR/Scripts/acceptance/m3-mutations.sh"
+        echo "==> [mutations] Running Scripts/acceptance/m4-mutations.sh"
+        "$ROOT_DIR/Scripts/acceptance/m4-mutations.sh"
         ;;
     release)
         echo "==> [release] Full unit test suite"
@@ -355,6 +357,10 @@ case "$MODE" in
             elif [ "$gh_rc" -ne 0 ]; then
                 exit "$gh_rc"
             fi
+        fi
+        if [ -x "$ROOT_DIR/Scripts/acceptance/m4-mutations.sh" ]; then
+            echo "==> [release] Running Scripts/acceptance/m4-mutations.sh"
+            "$ROOT_DIR/Scripts/acceptance/m4-mutations.sh"
         fi
         if [ "${MACHGRAPH_CORPUS:-}" = "full" ]; then
             echo "==> [release] Running Scripts/acceptance/differential.py full"
