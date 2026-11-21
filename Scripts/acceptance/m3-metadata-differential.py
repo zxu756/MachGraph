@@ -21,6 +21,13 @@ Implemented subchecks:
               `protocols` sets) vs `xcrun otool -arch <slice> -ov <file>` (+ `otool -l`
               `__objc_selrefs` base VA for relative selector resolution). Defaults to
               `Calculator`, `assetutil`, `screencapture`, and `log` when `--only objc` omits targets.
+  - demangle: corpus-wide `machgraph demangle` (stdin + `--json`) across all unique `nm --no-dyldinfo`
+              symbols partitioned into 4 disjoint buckets: Swift (`_$s`/`$s`/`_$S`/`$S`/`_T0`/`__T0` vs
+              `xcrun swift-demangle -compact`), C++ (`__Z`/`___Z`/`____Z` vs `/usr/bin/c++filt <arg...>`),
+              plain C `_Z` (100% verbatim vs `c++filt`), and all remaining symbols (100% verbatim).
+  - xrefs   : `machgraph xrefs <file> --json` (`CALL` `(fromAddress, toAddress)` edge set and G25
+              `STRING_REF` target-section check) vs `xcrun llvm-objdump --macho -d` across `__TEXT,__text`
+              plus `--section=<seg>,<sect>` for all other `S_ATTR_PURE_INSTRUCTIONS` sections.
 
 Slice selection follows `arm64e` -> `arm64` via `lipo -archs <file>`, matching MachGraph's preferred slice.
 At most 6 child processes are spawned concurrently (`MAX_CONCURRENT_SUBPROCESSES = 6`).
@@ -96,11 +103,12 @@ CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE = "/usr/bin/codesign -a <slice> -d --en
 SWIFT_DEMANGLE_REFERENCE_TEMPLATE = "xcrun swift-demangle -compact  (stdin line-by-line)"
 CPPFILT_REFERENCE_TEMPLATE = "/usr/bin/c++filt <symbol...>"
 
+S_ATTR_PURE_INSTRUCTIONS = 0x80000000
 SWIFT_DEMANGLE_PREFIXES: Tuple[str, ...] = ("_$s", "$s", "_$S", "$S", "_T0", "__T0")
 DEMANGLE_MIN_EQUAL_PCT = 99.0
 LLVM_OBJDUMP_XREFS_REFERENCE_TEMPLATE = (
     "xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands "
-    "--arch=<slice> --mcpu=apple-m1 --mattr=+bti <file>"
+    "--arch=<slice> --mcpu=apple-m1 --mattr=+bti [--section=<seg>,<sect> for non-__text S_ATTR_PURE_INSTRUCTIONS] <file>"
 )
 
 MACHO_STRING_SECTION_NAMES = frozenset(
@@ -357,9 +365,9 @@ def parse_only_checks(raw_only: Optional[str]) -> List[str]:
     return requested
 
 
-def default_record_path(date_str: str, repo_root: Optional[str] = None) -> str:
+def default_record_path(date_str: str, repo_root: Optional[str] = None, corpus_name: str = "full") -> str:
     root = repo_root if repo_root is not None else REPO_ROOT
-    return os.path.join(root, "reports", f"m3-metadata-{date_str}.json")
+    return os.path.join(root, "reports", f"m3-metadata-{corpus_name}-{date_str}.json")
 
 
 def select_arm64_slice(path: str, timeout_sec: float = 30.0) -> Optional[str]:
@@ -1159,9 +1167,22 @@ def is_macho_string_section_name(sectname: str) -> bool:
 
 
 def parse_llvm_objdump_bl_edges(
-    path: str, arch: str, timeout_sec: float
+    path: str,
+    arch: str,
+    timeout_sec: float,
+    sections: Optional[Sequence[Tuple[str, str, int, int, int]]] = None,
 ) -> Tuple[Optional[set], Optional[str], bool, bool]:
-    """Run `llvm-objdump --macho -d` and return the set of `(from_addr, to_addr)` `bl` call edges."""
+    """Run `llvm-objdump --macho -d` across `__TEXT,__text` and all other `S_ATTR_PURE_INSTRUCTIONS` sections."""
+    if sections is None:
+        sections = inspect_macho_slice_sections(path, arch)
+    extra_pure_sections: List[str] = []
+    seen_sec_pairs: Set[Tuple[str, str]] = set()
+    for seg, sect, _, s_size, s_flags in sections:
+        if s_size > 0 and (s_flags & S_ATTR_PURE_INSTRUCTIONS) != 0 and (seg, sect) != ("__TEXT", "__text"):
+            if (seg, sect) not in seen_sec_pairs:
+                seen_sec_pairs.add((seg, sect))
+                extra_pure_sections.append(f"--section={seg},{sect}")
+
     ref_timeout = max(300.0, timeout_sec)
     cmd = [
         "xcrun",
@@ -1173,6 +1194,7 @@ def parse_llvm_objdump_bl_edges(
         f"--arch={arch}",
         "--mcpu=apple-m1",
         "--mattr=+bti",
+        *extra_pure_sections,
         path,
     ]
     try:
@@ -1203,7 +1225,10 @@ def check_xrefs_for_binary(
     env: Dict[str, str],
     timeout_sec: float,
 ) -> Dict[str, Any]:
-    ref_bl_edges, ref_err, ref_to, ref_non_utf8 = parse_llvm_objdump_bl_edges(path, arch, timeout_sec)
+    sections = inspect_macho_slice_sections(path, arch)
+    ref_bl_edges, ref_err, ref_to, ref_non_utf8 = parse_llvm_objdump_bl_edges(
+        path, arch, timeout_sec, sections=sections
+    )
     if ref_err is not None or ref_bl_edges is None:
         return {
             "status": "failure",
@@ -1253,7 +1278,6 @@ def check_xrefs_for_binary(
             "non_utf8": had_non_utf8,
         }
 
-    sections = inspect_macho_slice_sections(path, arch)
     raw_xrefs: List[Any] = mg_payload["xrefs"]
     mg_call_edges = set()
     kind_counts: CounterType[str] = collections.Counter()
@@ -1676,8 +1700,8 @@ CHECK_HANDLERS: Dict[str, Callable[[str, str, str, Dict[str, str], float], Dict[
 
 def extract_demangle_candidates_for_binary(
     path: str, arch: str, timeout_sec: float
-) -> Tuple[Optional[Tuple[List[str], List[str], List[str]]], Optional[str], bool, bool]:
-    """Run `xcrun nm --no-dyldinfo -arch <arch> <path>` and extract Swift, `__Z`, and plain `_Z` symbols."""
+) -> Tuple[Optional[Tuple[List[str], List[str], List[str], List[str]]], Optional[str], bool, bool]:
+    """Run `xcrun nm --no-dyldinfo -arch <arch> <path>` and extract Swift, C++ (`__Z`/`___Z`/`____Z`), plain `_Z`, and other symbols."""
     cmd = ["xcrun", "nm", "--no-dyldinfo", "-arch", arch, path]
     try:
         proc = run_subprocess_bytes(cmd, timeout=max(120.0, timeout_sec))
@@ -1693,6 +1717,7 @@ def extract_demangle_candidates_for_binary(
     swift_syms: List[str] = []
     cpp_zz_syms: List[str] = []
     plain_z_syms: List[str] = []
+    other_syms: List[str] = []
     for line in out_txt.splitlines():
         m = _NM_LINE_RE.match(line)
         if not m:
@@ -1702,12 +1727,14 @@ def extract_demangle_candidates_for_binary(
             continue
         if name.startswith(SWIFT_DEMANGLE_PREFIXES):
             swift_syms.append(name)
-        elif name.startswith("__Z"):
+        elif name.startswith(("__Z", "___Z", "____Z")) and not name.startswith("_____"):
             cpp_zz_syms.append(name)
         elif name.startswith("_Z"):
             plain_z_syms.append(name)
+        else:
+            other_syms.append(name)
 
-    return ((swift_syms, cpp_zz_syms, plain_z_syms), None, False, had_non_utf8)
+    return ((swift_syms, cpp_zz_syms, plain_z_syms, other_syms), None, False, had_non_utf8)
 
 
 def _run_stdin_line_batch(
@@ -1911,8 +1938,9 @@ def evaluate_corpus_demangle(
     machgraph_bin: str,
     isolated_home: str,
     compared_files: int,
+    other_syms: Sequence[str] = (),
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
-    """Run corpus-wide batch demangling checks for Swift, C++ (`__Z`), and plain C (`_Z`)."""
+    """Run corpus-wide batch demangling checks for Swift, C++ (`__Z`/`___Z`/`____Z`), plain C (`_Z`), and all other symbols."""
     t0 = time.monotonic()
     env = dict(
         os.environ,
@@ -1960,9 +1988,16 @@ def evaluate_corpus_demangle(
     if err is not None or mg_plain_z is None:
         return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "machgraph demangle (_Z) failed", "timed_out": to}, any_non_utf8)
 
-    # Verify `--json` mode consistency across a representative slice (up to 512 symbols from each bucket)
-    sample_syms = list(swift_syms[:256]) + list(cpp_zz_syms[:256]) + list(plain_z_syms[:128])
-    sample_exp = list(mg_swift[:256]) + list(mg_cpp[:256]) + list(mg_plain_z[:128])
+    mg_other, err, to, nu = _run_stdin_line_batch(
+        [machgraph_bin, "demangle"], "machgraph demangle (other)", other_syms, env=env
+    )
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or mg_other is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "machgraph demangle (other) failed", "timed_out": to}, any_non_utf8)
+
+    # Verify `--json` mode consistency across a representative slice from all four buckets
+    sample_syms = list(swift_syms[:256]) + list(cpp_zz_syms[:256]) + list(plain_z_syms[:128]) + list(other_syms[:128])
+    sample_exp = list(mg_swift[:256]) + list(mg_cpp[:256]) + list(mg_plain_z[:128]) + list(mg_other[:128])
     json_err, json_mismatches, nu_json = _run_machgraph_demangle_json_check(
         machgraph_bin, sample_syms, sample_exp, env=env
     )
@@ -1973,6 +2008,7 @@ def evaluate_corpus_demangle(
     swift_sum, swift_ex = _classify_demangle_bucket("swift", swift_syms, ref_swift, mg_swift, first_file_of)
     cpp_sum, cpp_ex = _classify_demangle_bucket("cpp", cpp_zz_syms, ref_cpp, mg_cpp, first_file_of)
     plain_sum, plain_ex = _classify_demangle_bucket("plain_c_z", plain_z_syms, ref_plain_z, mg_plain_z, first_file_of)
+    other_sum, other_ex = _classify_demangle_bucket("other", other_syms, other_syms, mg_other, first_file_of)
 
     # Plain `_Z` C symbols must be 100% verbatim (`mg == sym` whenever `ref == sym`).
     plain_verbatim_violations = 0
@@ -1983,11 +2019,12 @@ def evaluate_corpus_demangle(
     swift_ok = swift_sum["wrong"] == 0 and swift_sum["equal_pct"] >= DEMANGLE_MIN_EQUAL_PCT
     cpp_ok = cpp_sum["wrong"] == 0 and cpp_sum["equal_pct"] >= DEMANGLE_MIN_EQUAL_PCT
     plain_ok = plain_sum["wrong"] == 0 and plain_verbatim_violations == 0 and plain_sum["equal"] == plain_sum["unique_symbols"]
+    other_ok = other_sum["wrong"] == 0 and other_sum["equal"] == other_sum["unique_symbols"]
     json_ok = len(json_mismatches) == 0
-    all_ok = swift_ok and cpp_ok and plain_ok and json_ok
+    all_ok = swift_ok and cpp_ok and plain_ok and other_ok and json_ok
 
     examples: List[Dict[str, Any]] = []
-    for item in [*swift_ex, *cpp_ex, *plain_ex, *json_mismatches]:
+    for item in [*swift_ex, *cpp_ex, *plain_ex, *other_ex, *json_mismatches]:
         if len(examples) < MAX_EXAMPLES_PER_CHECK:
             examples.append(item)
 
@@ -2008,9 +2045,20 @@ def evaluate_corpus_demangle(
             }
         )
 
-    total_unique = swift_sum["unique_symbols"] + cpp_sum["unique_symbols"] + plain_sum["unique_symbols"]
-    total_equal = swift_sum["equal"] + cpp_sum["equal"] + plain_sum["equal"]
-    total_wrong = swift_sum["wrong"] + cpp_sum["wrong"] + plain_sum["wrong"] + len(json_mismatches)
+    total_unique = (
+        swift_sum["unique_symbols"]
+        + cpp_sum["unique_symbols"]
+        + plain_sum["unique_symbols"]
+        + other_sum["unique_symbols"]
+    )
+    total_equal = swift_sum["equal"] + cpp_sum["equal"] + plain_sum["equal"] + other_sum["equal"]
+    total_wrong = (
+        swift_sum["wrong"]
+        + cpp_sum["wrong"]
+        + plain_sum["wrong"]
+        + other_sum["wrong"]
+        + len(json_mismatches)
+    )
     diff_count = total_wrong
     if not all_ok and diff_count == 0:
         diff_count = (total_unique - total_equal) or 1
@@ -2028,6 +2076,7 @@ def evaluate_corpus_demangle(
         "swift": swift_sum,
         "cpp": cpp_sum,
         "plain_c_z": plain_sum,
+        "other": other_sum,
         "examples": examples,
     }
     return (summary, None, any_non_utf8)
@@ -2071,7 +2120,7 @@ def evaluate_one_binary(
 
     per_check: Dict[str, Dict[str, Any]] = {}
     any_non_utf8 = False
-    demangle_cands: Optional[Tuple[List[str], List[str], List[str]]] = None
+    demangle_cands: Optional[Tuple[List[str], List[str], List[str], List[str]]] = None
     for chk in selected_checks:
         if chk == "demangle":
             cands_tuple, dm_err, dm_to, dm_nu = extract_demangle_candidates_for_binary(path, arch, timeout_sec)
@@ -2131,7 +2180,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument(
         "--record",
         action="store_true",
-        help="write JSON report to reports/m3-metadata-<YYYY-MM-DD>.json (requires clean git worktree)",
+        help="write JSON report to reports/m3-metadata-<corpus>-<YYYY-MM-DD>.json (requires clean git worktree)",
     )
     parser.add_argument(
         "--workers",
@@ -2203,13 +2252,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             swift_set = set()
             cpp_zz_set = set()
             plain_z_set = set()
+            other_set = set()
             first_file_of: Dict[str, str] = {}
             valid_file_count = 0
             for r in rows:
                 if "skipped" in r or "failure" in r:
                     continue
                 valid_file_count += 1
-                sw_l, cz_l, pz_l = r.get("demangle_candidates", ([], [], []))
+                sw_l, cz_l, pz_l, ot_l = r.get("demangle_candidates", ([], [], [], []))
                 for s in sw_l:
                     swift_set.add(s)
                     if s not in first_file_of:
@@ -2222,6 +2272,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     plain_z_set.add(s)
                     if s not in first_file_of:
                         first_file_of[s] = r["path"]
+                for s in ot_l:
+                    other_set.add(s)
+                    if s not in first_file_of:
+                        first_file_of[s] = r["path"]
             corpus_demangle_summary, corpus_demangle_failure, corpus_demangle_non_utf8 = evaluate_corpus_demangle(
                 sorted(swift_set),
                 sorted(cpp_zz_set),
@@ -2230,6 +2284,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.machgraph,
                 isolated_home,
                 valid_file_count,
+                sorted(other_set),
             )
     finally:
         if temp_home_ctx is not None:
@@ -2240,7 +2295,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     date_str = utc_now.strftime("%Y-%m-%d")
     json_out_path = args.json_out
     if args.record and json_out_path is None:
-        json_out_path = default_record_path(date_str)
+        json_out_path = default_record_path(date_str, corpus_name=corpus_name)
 
     env_meta = collect_environment_metadata(args.machgraph)
 
@@ -2320,14 +2375,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         for chk in selected_checks:
             if chk == "demangle":
-                sw_l, cz_l, pz_l = r.get("demangle_candidates", ([], [], []))
-                cand_cnt = len(sw_l) + len(cz_l) + len(pz_l)
+                sw_l, cz_l, pz_l, ot_l = r.get("demangle_candidates", ([], [], [], []))
+                cand_cnt = len(sw_l) + len(cz_l) + len(pz_l) + len(ot_l)
                 part_Tokens.append(f"demangle=SCAN({cand_cnt})")
                 compact_checks["demangle"] = {
                     "status": "pass",
                     "swift_candidates": len(sw_l),
                     "cpp_candidates": len(cz_l),
                     "plain_c_z_candidates": len(pz_l),
+                    "other_candidates": len(ot_l),
                 }
                 continue
             cres = per_check[chk]
@@ -2393,7 +2449,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[{tag}] {disp_path} ({arch}): {' '.join(part_Tokens)} ({r['seconds']:.2f}s)")
         if not file_passed:
             for chk in selected_checks:
-                cres = per_check[chk]
+                cres = per_check.get(chk)
+                if not cres:
+                    continue
                 for ex in cres.get("examples", [])[:MAX_EXAMPLES_PER_CHECK]:
                     print(f"    [{chk} example] {json.dumps(ex, ensure_ascii=False)}")
 
@@ -2432,17 +2490,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             sw = csum["swift"]
             cp = csum["cpp"]
             pz = csum["plain_c_z"]
+            ot = csum["other"]
             print(
                 f"  Swift ({sw['unique_symbols']} unique): equal={sw['equal']} ({sw['equal_pct']:.2f}%) "
                 f"raw_passthrough={sw['raw_passthrough']} ({sw['raw_passthrough_pct']:.2f}%) wrong={sw['wrong']}"
             )
             print(
-                f"  C++ __Z ({cp['unique_symbols']} unique): equal={cp['equal']} ({cp['equal_pct']:.2f}%) "
+                f"  C++ __Z/___Z/____Z ({cp['unique_symbols']} unique): equal={cp['equal']} ({cp['equal_pct']:.2f}%) "
                 f"raw_passthrough={cp['raw_passthrough']} ({cp['raw_passthrough_pct']:.2f}%) wrong={cp['wrong']}"
             )
             print(
                 f"  Plain C _Z ({pz['unique_symbols']} unique): equal_verbatim={pz['equal']} ({pz['equal_pct']:.2f}%) "
-                f"wrong={pz['wrong']} batch_elapsed={csum.get('batch_elapsed_seconds', 0.0):.2f}s"
+                f"wrong={pz['wrong']}"
+            )
+            print(
+                f"  Other verbatim ({ot['unique_symbols']} unique): equal_verbatim={ot['equal']} ({ot['equal_pct']:.2f}%) "
+                f"wrong={ot['wrong']} batch_elapsed={csum.get('batch_elapsed_seconds', 0.0):.2f}s"
             )
         if chk == "xrefs":
             print(

@@ -404,11 +404,86 @@ class TestM3NonUTF8CrashesConcurrencyAndRecord(unittest.TestCase):
                 rc_dirty = m3_diff.main(["quick", "--record", "--machgraph", fake_mg])
             self.assertEqual(rc_dirty, 1)
 
-            # Verify default_record_path uses reports/m3-metadata-<YYYY-MM-DD>.json
+            # Verify default_record_path uses reports/m3-metadata-<corpus>-<YYYY-MM-DD>.json
             rec_path = m3_diff.default_record_path("2026-11-21", repo_root=tmp)
-            self.assertEqual(rec_path, os.path.join(tmp, "reports", "m3-metadata-2026-11-21.json"))
+            self.assertEqual(rec_path, os.path.join(tmp, "reports", "m3-metadata-full-2026-11-21.json"))
+            rec_std = m3_diff.default_record_path("2026-11-21", repo_root=tmp, corpus_name="standard")
+            self.assertEqual(rec_std, os.path.join(tmp, "reports", "m3-metadata-standard-2026-11-21.json"))
             self.assertEqual(m3_diff.resolve_targets(["quick"]), ("quick", ["/bin/ls"]))
             self.assertEqual(m3_diff.resolve_targets(["standard"]), ("standard", ["/bin/ls", "/usr/bin/ssh", "/usr/bin/vim"]))
+
+    def test_per_file_mismatch_with_demangle_enabled_reports_failure_and_exits_1_without_keyerror(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_bad = os.path.join(tmp, "auvaltool_like")
+            bin_good = os.path.join(tmp, "ls_like")
+            _write_thin_arm64_with_sections(bin_bad)
+            _write_thin_arm64_with_sections(bin_good)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "combined_mismatch.json")
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:3] == ["xcrun", "nm", "--no-dyldinfo"]:
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=b"0000000100001000 T _main\n", stderr=b""
+                    )
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=b"100001004:\tbl\t0x100001200\n", stderr=b""
+                    )
+                if cmd[:3] == ["xcrun", "swift-demangle", "-compact"] or cmd[0] == "/usr/bin/c++filt":
+                    raw_in = kwargs.get("input", b"").decode("utf-8").splitlines()
+                    if not raw_in and cmd[0] == "/usr/bin/c++filt":
+                        raw_in = cmd[1:]
+                    out = "\n".join(raw_in) + ("\n" if raw_in else "")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "symbols":
+                    payload = {
+                        "fileName": os.path.basename(cmd[2]),
+                        "isDemo": False,
+                        "realCount": 1,
+                        "inferredCount": 0,
+                        "realSymbols": [
+                            {"name": "_main", "address": 0x100001000, "inferred": False, "source": "lc_symtab"}
+                        ],
+                        "inferredSymbols": [],
+                    }
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode("utf-8"), stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    target = cmd[2]
+                    xrefs = [{"fromAddress": 0x100001004, "toAddress": 0x100001200, "kind": "CALL"}]
+                    if target == bin_bad:
+                        xrefs.append({"fromAddress": 0x100001030, "toAddress": 0x100001400, "kind": "CALL"})
+                    payload = {"fileName": os.path.basename(target), "isDemo": False, "xrefs": xrefs}
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(payload).encode("utf-8"), stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "demangle":
+                    lines = kwargs.get("input", b"").decode("utf-8").splitlines()
+                    if "--json" in cmd:
+                        arr = [{"input": s, "output": s, "demangled": False} for s in lines]
+                        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(arr).encode("utf-8"), stderr=b"")
+                    out = "\n".join(lines) + ("\n" if lines else "")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main(
+                    [bin_bad, bin_good, "--only", "symbols,xrefs,demangle", "--machgraph", fake_mg, "--json-out", out_json]
+                )
+
+            self.assertEqual(rc, 1)
+            stdout_txt = buf.getvalue()
+            self.assertIn(f"[FAIL] {m3_diff.sanitize_display_path(bin_bad)}", stdout_txt)
+            self.assertIn(f"[PASS] {m3_diff.sanitize_display_path(bin_good)}", stdout_txt)
+            self.assertIn("[xrefs example]", stdout_txt)
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "FAIL")
+            self.assertEqual(report["summary"]["compared_files"], 2)
+            self.assertEqual(report["summary"]["mismatched_files"], 1)
+            self.assertEqual(report["checks"]["xrefs"]["mismatched_files"], 1)
+            self.assertEqual(report["checks"]["symbols"]["matched_files"], 2)
+            self.assertEqual(report["checks"]["demangle"]["mismatched_files"], 0)
 
 
 class TestM3EntitlementsSubcheck(unittest.TestCase):
@@ -731,6 +806,101 @@ class TestM3DemangleSubcheck(unittest.TestCase):
                 rep = _read_json(out_json)
                 self.assertEqual(rep["verdict"], "FAIL")
 
+    def test_demangle_fourth_bucket_other_verbatim_and_block_cpp_argv_demangling(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "mixed_bin")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+
+            block_spaced = "____ZZ31-[_ANEServer handleIOKitEvent:]E9onceToken_block_invoke"
+            nm_stdout = (
+                b"0000000100001000 T _$s4Demo4FuncyyF\n"
+                b"0000000100001010 T __Z4funci\n"
+                b"0000000100001020 t ___Z10blk_helperv_block_invoke\n"
+                + f"0000000100001030 t {block_spaced}\n".encode("utf-8")
+                + b"0000000100002000 D _ZeroFilesTested\n"
+                b"0000000100003000 T _main\n"
+                b"                 U _printf\n"
+                b"0000000100003010 t -[AppDelegate init]\n"
+                b"0000000100004000 S _OBJC_CLASS_$_NSObject\n"
+                b"                 U ___stack_chk_guard\n"
+            )
+
+            def ref_demangle(sym: str) -> str:
+                if sym == "_$s4Demo4FuncyyF":
+                    return "Demo.Func() -> ()"
+                if sym == "__Z4funci":
+                    return "func(int)"
+                if sym == "___Z10blk_helperv_block_invoke":
+                    return "invocation function for block in blk_helper()"
+                if sym == block_spaced:
+                    return "invocation function for block in -[_ANEServer handleIOKitEvent:]::onceToken"
+                return sym
+
+            def make_runner(strip_main_underscore: bool):
+                def mg_demangle(sym: str) -> str:
+                    if strip_main_underscore and sym == "_main":
+                        return "main"
+                    return ref_demangle(sym)
+
+                def fake_run(cmd, *args, **kwargs):
+                    if cmd[0] == "lipo":
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                    if cmd[:3] == ["xcrun", "nm", "--no-dyldinfo"]:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=nm_stdout, stderr=b"")
+                    if cmd[:3] == ["xcrun", "swift-demangle", "-compact"]:
+                        lines = kwargs.get("input", b"").decode("utf-8").splitlines()
+                        out = "\n".join(ref_demangle(x) for x in lines) + ("\n" if lines else "")
+                        return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                    if cmd[0] == "/usr/bin/c++filt":
+                        # Verify c++filt is called with argv arguments (not stdin), preserving spaces in symbols
+                        self.assertFalse(kwargs.get("input"), "c++filt must be invoked via argv, not stdin")
+                        syms = cmd[1:]
+                        out = "\n".join(ref_demangle(x) for x in syms) + ("\n" if syms else "")
+                        return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                    if cmd[0] == fake_mg and cmd[1] == "demangle":
+                        lines = kwargs.get("input", b"").decode("utf-8").splitlines()
+                        if "--json" in cmd:
+                            arr = [{"input": x, "output": mg_demangle(x), "demangled": mg_demangle(x) != x} for x in lines]
+                            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(arr).encode("utf-8"), stderr=b"")
+                        out = "\n".join(mg_demangle(x) for x in lines) + ("\n" if lines else "")
+                        return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+                return fake_run
+
+            # Mutation check first: stripping '_' from `_main` -> `main` MUST FAIL the 4th bucket!
+            out_fail = os.path.join(tmp, "other_fail.json")
+            with mock.patch.object(
+                m3_diff.subprocess, "run", side_effect=make_runner(strip_main_underscore=True)
+            ), contextlib.redirect_stdout(io.StringIO()):
+                rc_fail = m3_diff.main([bin_path, "--only", "demangle", "--machgraph", fake_mg, "--json-out", out_fail])
+            self.assertEqual(rc_fail, 1, "Stripping leading underscore on _main must fail demangle check")
+            rep_fail = _read_json(out_fail)
+            self.assertEqual(rep_fail["verdict"], "FAIL")
+            self.assertEqual(rep_fail["checks"]["demangle"]["other"]["wrong"], 1)
+            self.assertEqual(rep_fail["checks"]["demangle"]["examples"][0]["bucket"], "other")
+            self.assertEqual(rep_fail["checks"]["demangle"]["examples"][0]["symbol"], "_main")
+            self.assertEqual(rep_fail["checks"]["demangle"]["examples"][0]["mg"], "main")
+
+            # Clean pass check: all 4 buckets (Swift, C++ incl. ___Z/____Z, _Z, and other) pass 100%
+            out_ok = os.path.join(tmp, "other_ok.json")
+            with mock.patch.object(
+                m3_diff.subprocess, "run", side_effect=make_runner(strip_main_underscore=False)
+            ), contextlib.redirect_stdout(io.StringIO()):
+                rc_ok = m3_diff.main([bin_path, "--only", "demangle", "--machgraph", fake_mg, "--json-out", out_ok])
+            self.assertEqual(rc_ok, 0)
+            rep_ok = _read_json(out_ok)
+            self.assertEqual(rep_ok["verdict"], "PASS")
+            dem_ok = rep_ok["checks"]["demangle"]
+            self.assertEqual(dem_ok["swift"]["unique_symbols"], 1)
+            self.assertEqual(dem_ok["cpp"]["unique_symbols"], 3)
+            self.assertEqual(dem_ok["cpp"]["equal"], 3)
+            self.assertEqual(dem_ok["plain_c_z"]["unique_symbols"], 1)
+            self.assertEqual(dem_ok["other"]["unique_symbols"], 5)
+            self.assertEqual(dem_ok["other"]["equal"], 5)
+            self.assertEqual(dem_ok["other"]["wrong"], 0)
+
 
 def _write_thin_arm64_with_sections(path: str) -> None:
     """Write a minimal thin ARM64e Mach-O header with __TEXT (__text, __cstring) and __DATA (__data, __cfstring)."""
@@ -947,6 +1117,101 @@ class TestM3XrefsSubcheck(unittest.TestCase):
             self.assertEqual(rc_old, 1)
             rep_old = _read_json(out_old)
             self.assertEqual(rep_old["checks"]["xrefs"]["examples"][0]["kind"], "invalid_xrefs_field")
+
+    def test_xrefs_disassembles_all_pure_instruction_sections_beyond_text(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "auvaltool_sections")
+            secs = [
+                (b"__text", b"__TEXT", 0x100001000, 0x1000, 0x80000400),
+                (b"__realtime", b"__TEXT", 0x100018000, 0x90, 0x80000400),
+                (b"__auth_stubs", b"__TEXT", 0x1000180A8, 0x80, 0x80000408),
+                (b"__data", b"__DATA", 0x100020000, 0x100, 0x00000000),
+            ]
+            seg_hdr = struct.pack(
+                "<II16sQQQQiiII",
+                0x19,
+                72 + len(secs) * 80,
+                b"__TEXT".ljust(16, b"\x00"),
+                0x100000000,
+                0x30000,
+                0,
+                0x1000,
+                5,
+                5,
+                len(secs),
+                0,
+            )
+            sec_blobs = [
+                struct.pack(
+                    "<16s16sQQIIIIIIII",
+                    sect.ljust(16, b"\x00"),
+                    seg.ljust(16, b"\x00"),
+                    addr,
+                    size,
+                    0,
+                    2,
+                    0,
+                    0,
+                    flags,
+                    0,
+                    0,
+                    0,
+                )
+                for sect, seg, addr, size, flags in secs
+            ]
+            lc_bytes = seg_hdr + b"".join(sec_blobs)
+            mh = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 2, 2, 1, len(lc_bytes), 0x85, 0)
+            with open(bin_path, "wb") as fh:
+                fh.write(mh + lc_bytes + b"\x00" * 128)
+
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "realtime_ok.json")
+            seen_objdump_cmds = []
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    seen_objdump_cmds.append(list(cmd))
+                    lines = [b"(__TEXT,__text) section\n", b"100001004:\tbl\t0x100001200\n"]
+                    if "--section=__TEXT,__realtime" in cmd:
+                        lines.extend(
+                            [
+                                b"Contents of (__TEXT,__realtime) section\n",
+                                b"100018030:\tbl\t0x1000181e8\n",
+                            ]
+                        )
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"".join(lines), stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    mg_payload = {
+                        "fileName": "auvaltool_sections",
+                        "isDemo": False,
+                        "xrefs": [
+                            {"fromAddress": 0x100001004, "toAddress": 0x100001200, "kind": "CALL"},
+                            {"fromAddress": 0x100018030, "toAddress": 0x1000181E8, "kind": "CALL"},
+                        ],
+                    }
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=json.dumps(mg_payload).encode("utf-8"), stderr=b""
+                    )
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main([bin_path, "--only", "xrefs", "--machgraph", fake_mg, "--json-out", out_json])
+
+            self.assertEqual(rc, 0, buf.getvalue())
+            self.assertEqual(len(seen_objdump_cmds), 1)
+            objdump_cmd = seen_objdump_cmds[0]
+            self.assertIn("--section=__TEXT,__realtime", objdump_cmd)
+            self.assertIn("--section=__TEXT,__auth_stubs", objdump_cmd)
+            self.assertNotIn("--section=__TEXT,__text", objdump_cmd)
+            self.assertNotIn("--section=__DATA,__data", objdump_cmd)
+            rep = _read_json(out_json)
+            self.assertEqual(rep["verdict"], "PASS")
+            self.assertEqual(rep["checks"]["xrefs"]["total_ref_items"], 2)
+            self.assertEqual(rep["checks"]["xrefs"]["total_mg_items"], 2)
+            self.assertEqual(rep["checks"]["xrefs"]["total_diffs"], 0)
 
 class TestM3ObjCSubcheck(unittest.TestCase):
     """Verify ObjC `otool -ov` + `otool -l` relative `__objc_selrefs` extraction and 4-set comparison."""
