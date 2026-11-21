@@ -268,6 +268,55 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(csOut.contains("Verified=true"))
     }
 
+    @Test("M3 D-M3-6: MachCLIRunner xrefs --json without --address or --symbol emits full-binary xrefs array while keeping targeted incoming/outgoing mode")
+    func m3CLIRunnerXrefsFullTableJSONAndTargetedCompatibility() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let targetBin = tempDir.appendingPathComponent("xrefs_full.arm64e")
+        let binData = SyntheticBinaryFixtureBuilder.buildARM64MachOExecutable(useARM64E: true)
+        try binData.write(to: targetBin)
+
+        let expectedIndex = try BinaryAnalysisCoordinator().analyzeBinary(data: binData, fileName: "xrefs_full.arm64e")
+        let cli = MachCLIRunner()
+
+        let fullJSONRaw = try await cli.execute(arguments: ["xrefs", targetBin.path, "--json"])
+        let fullObj = try #require(JSONSerialization.jsonObject(with: Data(fullJSONRaw.utf8)) as? [String: Any])
+        #expect(fullObj["fileName"] as? String == "xrefs_full.arm64e")
+        #expect(fullObj["isDemo"] as? Bool == false)
+        #expect(fullObj["incoming"] == nil)
+        #expect(fullObj["outgoing"] == nil)
+
+        let xrefsArray = try #require(fullObj["xrefs"] as? [[String: Any]])
+        #expect(xrefsArray.count == expectedIndex.crossReferences.allRecords.count)
+        #expect((fullObj["xrefCount"] as? Int ?? fullObj["count"] as? Int) == xrefsArray.count)
+        #expect(!xrefsArray.isEmpty)
+
+        for item in xrefsArray {
+            #expect(item["fromAddress"] as? UInt64 != nil || item["fromAddress"] as? Int != nil)
+            #expect(item["toAddress"] as? UInt64 != nil || item["toAddress"] as? Int != nil)
+            let kind = try #require(item["kind"] as? String)
+            #expect(XrefKind(rawValue: kind) != nil)
+        }
+        let kinds = Set(xrefsArray.compactMap { $0["kind"] as? String })
+        #expect(kinds.contains("CALL"))
+        #expect(kinds.contains("STRING_REF"))
+
+        // Targeted mode (--address and --symbol) keeps incoming/outgoing schema unchanged
+        let verifyFn = try #require(expectedIndex.function(named: "_verify_license"))
+        let byAddrRaw = try await cli.execute(arguments: ["xrefs", targetBin.path, "--address", verifyFn.address.hexString, "--json"])
+        let byAddrObj = try #require(JSONSerialization.jsonObject(with: Data(byAddrRaw.utf8)) as? [String: Any])
+        #expect(byAddrObj["xrefs"] == nil)
+        let incomingByAddr = try #require(byAddrObj["incoming"] as? [[String: Any]])
+        #expect(!incomingByAddr.isEmpty)
+        #expect(byAddrObj["outgoing"] as? [[String: Any]] != nil)
+
+        let bySymRaw = try await cli.execute(arguments: ["xrefs", targetBin.path, "--symbol", "_verify_license", "--json"])
+        let bySymObj = try #require(JSONSerialization.jsonObject(with: Data(bySymRaw.utf8)) as? [String: Any])
+        #expect(bySymObj["xrefs"] == nil)
+        let incomingBySym = try #require(bySymObj["incoming"] as? [[String: Any]])
+        #expect(incomingBySym.count == incomingByAddr.count)
+    }
+
     @Test("MachCLIRunner executes patch-asm, resign, audit-plugins, export-html, and rejects unknown subcommand")
     func cliRunnerPatchAsmResignAuditPluginsAndExportHTML() async throws {
         let tempDir = try makeTempDirectory()
