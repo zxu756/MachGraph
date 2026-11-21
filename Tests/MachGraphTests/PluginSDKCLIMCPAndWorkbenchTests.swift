@@ -1450,4 +1450,431 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(lsText.contains("compatibility version "))
         #expect(lsText.contains("current version "))
     }
+
+    // MARK: - 10. M3 Stage 2 (D-M3-7): CLI codesign --json Native Entitlements & DER Fallback
+
+    private static func m3DerEncodeLength(_ length: Int) -> [UInt8] {
+        if length < 0x80 {
+            return [UInt8(length)]
+        }
+        var tmp = length
+        var octets: [UInt8] = []
+        while tmp > 0 {
+            octets.insert(UInt8(tmp & 0xFF), at: 0)
+            tmp >>= 8
+        }
+        return [UInt8(0x80 | octets.count)] + octets
+    }
+
+    private static func m3DerTLV(tagByte: UInt8, content: [UInt8]) -> [UInt8] {
+        [tagByte] + m3DerEncodeLength(content.count) + content
+    }
+
+    private static func m3DerBool(_ value: Bool) -> [UInt8] {
+        m3DerTLV(tagByte: 0x01, content: [value ? 0xFF : 0x00])
+    }
+
+    private static func m3DerInt(_ value: Int64) -> [UInt8] {
+        var v = value
+        var bytes: [UInt8] = []
+        repeat {
+            bytes.insert(UInt8(truncatingIfNeeded: v), at: 0)
+            v >>= 8
+        } while !((v == 0 && (bytes[0] & 0x80) == 0) || (v == -1 && (bytes[0] & 0x80) != 0))
+        return m3DerTLV(tagByte: 0x02, content: bytes)
+    }
+
+    private static func m3DerUTF8(_ value: String) -> [UInt8] {
+        m3DerTLV(tagByte: 0x0C, content: Array(value.utf8))
+    }
+
+    private static func m3DerSequence(_ items: [[UInt8]]) -> [UInt8] {
+        m3DerTLV(tagByte: 0x30, content: items.flatMap { $0 })
+    }
+
+    private static func m3DerContextDict(_ entries: [(String, [UInt8])]) -> [UInt8] {
+        let pairs = entries.map { k, v in m3DerSequence([m3DerUTF8(k), v]) }
+        return m3DerTLV(tagByte: 0xB0, content: pairs.flatMap { $0 })
+    }
+
+    private static func m3BuildCoreEntitlementsDER(_ entries: [(String, [UInt8])]) -> [UInt8] {
+        m3DerTLV(tagByte: 0x70, content: m3DerInt(1) + m3DerContextDict(entries))
+    }
+
+    private static func buildSyntheticCodeSignMachO(
+        includeSignature: Bool = true,
+        xmlPayloadBytes: [UInt8]? = nil,
+        derPayloadBytes: [UInt8]? = nil
+    ) -> Data {
+        let textFileOff = 0x1000
+        let linkeditFileOff = 0x4000
+        var sliceBytes = [UInt8](repeating: 0, count: linkeditFileOff)
+        // Single RET instruction at 0x100001000
+        sliceBytes[textFileOff + 0] = 0xC0
+        sliceBytes[textFileOff + 1] = 0x03
+        sliceBytes[textFileOff + 2] = 0x5F
+        sliceBytes[textFileOff + 3] = 0xD6
+
+        var linkedit = BinaryBufferWriter(capacity: 2048, endianness: .little)
+        // Minimal symtab (1 symbol _main)
+        let symtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendUInt32(1)
+        linkedit.appendUInt8(0x0F)
+        linkedit.appendUInt8(1)
+        linkedit.appendUInt16(0)
+        linkedit.appendUInt64(0x1_0000_1000)
+        let strtabOff = linkeditFileOff + linkedit.count
+        let strBytes: [UInt8] = [0] + Array("_main".utf8) + [0]
+        linkedit.appendBytes(strBytes)
+        linkedit.padToAlignment(16)
+
+        var codeSigOff = 0
+        var codeSigSize = 0
+        if includeSignature {
+            let baseSig = AdHocCodeSignatureBuilder.buildSuperBlob(
+                binarySliceWithoutSignature: Data(sliceBytes),
+                identifier: "com.machgraph.m3.synthetic"
+            )
+            var cdBytes: [UInt8] = []
+            var reader = BinarySliceReader(data: baseSig, endianness: .big)
+            _ = try? reader.readUInt32()
+            _ = try? reader.readUInt32()
+            let count = Int((try? reader.readUInt32()) ?? 0)
+            for _ in 0..<count {
+                let slot = (try? reader.readUInt32()) ?? 0xFFFF
+                let off = Int((try? reader.readUInt32()) ?? 0)
+                if slot == CodeSignatureConstants.slotCodeDirectory, off + 8 <= baseSig.count {
+                    let len = (Int(baseSig[off + 4]) << 24)
+                        | (Int(baseSig[off + 5]) << 16)
+                        | (Int(baseSig[off + 6]) << 8)
+                        | Int(baseSig[off + 7])
+                    cdBytes = Array(baseSig[off..<(off + len)])
+                    break
+                }
+            }
+            var subBlobs: [(slot: UInt32, bytes: [UInt8])] = [
+                (CodeSignatureConstants.slotCodeDirectory, cdBytes)
+            ]
+            if let xb = xmlPayloadBytes {
+                var w = BinaryBufferWriter(capacity: 8 + xb.count, endianness: .big)
+                w.appendUInt32(CodeSignatureConstants.magicEmbeddedEntitlements)
+                w.appendUInt32(UInt32(8 + xb.count))
+                w.appendBytes(xb)
+                subBlobs.append((CodeSignatureConstants.slotEntitlements, w.bytes))
+            }
+            if let db = derPayloadBytes {
+                var w = BinaryBufferWriter(capacity: 8 + db.count, endianness: .big)
+                w.appendUInt32(CodeSignatureConstants.magicEmbeddedDEREntitlements)
+                w.appendUInt32(UInt32(8 + db.count))
+                w.appendBytes(db)
+                subBlobs.append((CodeSignatureConstants.slotDEREntitlements, w.bytes))
+            }
+            var cms = BinaryBufferWriter(capacity: 8, endianness: .big)
+            cms.appendUInt32(CodeSignatureConstants.magicBlobWrapper)
+            cms.appendUInt32(8)
+            subBlobs.append((CodeSignatureConstants.slotCMSWrapper, cms.bytes))
+
+            var running = 12 + subBlobs.count * 8
+            var offsets: [Int] = []
+            for item in subBlobs {
+                offsets.append(running)
+                running += item.bytes.count
+            }
+            var superW = BinaryBufferWriter(capacity: running, endianness: .big)
+            superW.appendUInt32(CodeSignatureConstants.magicEmbeddedSignature)
+            superW.appendUInt32(UInt32(running))
+            superW.appendUInt32(UInt32(subBlobs.count))
+            for (i, item) in subBlobs.enumerated() {
+                superW.appendUInt32(item.slot)
+                superW.appendUInt32(UInt32(offsets[i]))
+            }
+            for item in subBlobs {
+                superW.appendBytes(item.bytes)
+            }
+            codeSigOff = linkeditFileOff + linkedit.count
+            codeSigSize = superW.count
+            linkedit.appendBytes(superW.bytes)
+        }
+        linkedit.padToAlignment(16)
+
+        let linkeditVMSize = max(0x4000, (linkedit.count + 0x3FFF) & ~0x3FFF)
+        var lc = BinaryBufferWriter(capacity: 512, endianness: .little)
+        var ncmds: UInt32 = 0
+
+        func writeSeg64(name: String, vmaddr: UInt64, vmsize: UInt64, fileoff: UInt64, filesize: UInt64, prot: UInt32, hasTextSec: Bool) {
+            let nsects: UInt32 = hasTextSec ? 1 : 0
+            let cmdSize: UInt32 = 72 + nsects * 80
+            lc.appendUInt32(MachOConstants.lcSegment64)
+            lc.appendUInt32(cmdSize)
+            lc.appendFixedASCII(name, length: 16)
+            lc.appendUInt64(vmaddr)
+            lc.appendUInt64(vmsize)
+            lc.appendUInt64(fileoff)
+            lc.appendUInt64(filesize)
+            lc.appendUInt32(prot)
+            lc.appendUInt32(prot)
+            lc.appendUInt32(nsects)
+            lc.appendUInt32(0)
+            if hasTextSec {
+                lc.appendFixedASCII("__text", length: 16)
+                lc.appendFixedASCII("__TEXT", length: 16)
+                lc.appendUInt64(0x1_0000_1000)
+                lc.appendUInt64(4)
+                lc.appendUInt32(UInt32(textFileOff))
+                lc.appendUInt32(2)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+            }
+            ncmds += 1
+        }
+
+        writeSeg64(name: "__PAGEZERO", vmaddr: 0, vmsize: 0x1_0000_0000, fileoff: 0, filesize: 0, prot: 0, hasTextSec: false)
+        writeSeg64(name: "__TEXT", vmaddr: 0x1_0000_0000, vmsize: 0x4000, fileoff: 0, filesize: 0x4000, prot: 5, hasTextSec: true)
+        writeSeg64(name: "__LINKEDIT", vmaddr: 0x1_0000_4000, vmsize: UInt64(linkeditVMSize), fileoff: UInt64(linkeditFileOff), filesize: UInt64(linkedit.count), prot: 1, hasTextSec: false)
+
+        lc.appendUInt32(MachOConstants.lcSymtab)
+        lc.appendUInt32(24)
+        lc.appendUInt32(UInt32(symtabOff))
+        lc.appendUInt32(1)
+        lc.appendUInt32(UInt32(strtabOff))
+        lc.appendUInt32(UInt32(strBytes.count))
+        ncmds += 1
+
+        if includeSignature {
+            lc.appendUInt32(MachOConstants.lcCodeSignature)
+            lc.appendUInt32(16)
+            lc.appendUInt32(UInt32(codeSigOff))
+            lc.appendUInt32(UInt32(codeSigSize))
+            ncmds += 1
+        }
+
+        var hdr = BinaryBufferWriter(capacity: 32 + lc.count, endianness: .little)
+        hdr.appendUInt32(MachOConstants.mhMagic64)
+        hdr.appendUInt32(UInt32(bitPattern: MachOConstants.cpuTypeARM64))
+        hdr.appendUInt32(0)
+        hdr.appendUInt32(MachOConstants.mhExecute)
+        hdr.appendUInt32(ncmds)
+        hdr.appendUInt32(UInt32(lc.count))
+        hdr.appendUInt32(MachOConstants.mhTwoLevel | MachOConstants.mhPIE)
+        hdr.appendUInt32(0)
+        hdr.appendBytes(lc.bytes)
+
+        for (i, b) in hdr.bytes.enumerated() {
+            sliceBytes[i] = b
+        }
+        return Data(sliceBytes + linkedit.bytes)
+    }
+
+    private static func isStrictJSONBool(_ value: Any?, expected: Bool) -> Bool {
+        guard let num = value as? NSNumber else { return false }
+        guard CFGetTypeID(num) == CFBooleanGetTypeID() else { return false }
+        return num.boolValue == expected
+    }
+
+    private static func isStrictJSONInt(_ value: Any?, expected: Int64) -> Bool {
+        guard let num = value as? NSNumber else { return false }
+        guard CFGetTypeID(num) != CFBooleanGetTypeID() else { return false }
+        guard !CFNumberIsFloatType(num) else { return false }
+        return num.int64Value == expected
+    }
+
+    @Test("M3 D-M3-7: CLI codesign --json outputs native JSON entitlement types and {} when unsigned or unentitled")
+    func m3CLICodeSignJSONExportsNativeEntitlementTypesAndEmptyWhenUnsigned() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let cli = MachCLIRunner()
+
+        // 1) Unsigned binary -> entitlements == {}
+        let unsignedURL = tempDir.appendingPathComponent("unsigned.macho")
+        try Self.buildSyntheticCodeSignMachO(includeSignature: false).write(to: unsignedURL)
+        let unsignedRaw = try await cli.execute(arguments: ["codesign", unsignedURL.path, "--json"])
+        let unsignedJSON = try #require(JSONSerialization.jsonObject(with: Data(unsignedRaw.utf8)) as? [String: Any])
+        #expect(unsignedJSON["isSigned"] as? Bool == false)
+        let unsignedEnt = try #require(unsignedJSON["entitlements"] as? [String: Any])
+        #expect(unsignedEnt.isEmpty)
+
+        // 2) Signed binary without entitlements -> entitlements == {}
+        let unentitledURL = tempDir.appendingPathComponent("unentitled.macho")
+        try Self.buildSyntheticCodeSignMachO(includeSignature: true).write(to: unentitledURL)
+        let unentitledRaw = try await cli.execute(arguments: ["codesign", unentitledURL.path, "--json"])
+        let unentitledJSON = try #require(JSONSerialization.jsonObject(with: Data(unentitledRaw.utf8)) as? [String: Any])
+        let unentitledEnt = try #require(unentitledJSON["entitlements"] as? [String: Any])
+        #expect(unentitledEnt.isEmpty)
+
+        // 3) Signed binary with 0xFADE7171 XML slot + trailing NULs -> native Bool, Int, String, Array, Nested Dict
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key>com.apple.security.app-sandbox</key>
+            <true/>
+            <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+            <false/>
+            <key>com.apple.private.amfi.version-restriction</key>
+            <integer>1</integer>
+            <key>com.machgraph.negative-quota</key>
+            <integer>-42</integer>
+            <key>com.machgraph.spaced-string</key>
+            <string>  preserve leading and trailing  </string>
+            <key>keychain-access-groups</key>
+            <array>
+                <string>com.apple.aea.cli</string>
+                <string>item, with, commas</string>
+                <integer>9</integer>
+                <true/>
+            </array>
+            <key>com.apple.private.MobileContainerManager.lookup</key>
+            <dict>
+                <key>daemon</key>
+                <array>
+                    <string>com.apple.bird</string>
+                </array>
+                <key>enabled</key>
+                <true/>
+                <key>emptySub</key>
+                <dict/>
+            </dict>
+        </dict>
+        </plist>
+        """
+        let entitledURL = tempDir.appendingPathComponent("xml_native.macho")
+        try Self.buildSyntheticCodeSignMachO(
+            includeSignature: true,
+            xmlPayloadBytes: Array(xml.utf8) + [0, 0]
+        ).write(to: entitledURL)
+
+        let raw = try await cli.execute(arguments: ["codesign", entitledURL.path, "--json"])
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let ent = try #require(obj["entitlements"] as? [String: Any])
+        #expect(ent.count == 7)
+        #expect(Self.isStrictJSONBool(ent["com.apple.security.app-sandbox"], expected: true))
+        #expect(Self.isStrictJSONBool(ent["com.apple.security.cs.allow-dyld-environment-variables"], expected: false))
+        #expect(Self.isStrictJSONInt(ent["com.apple.private.amfi.version-restriction"], expected: 1))
+        #expect(Self.isStrictJSONInt(ent["com.machgraph.negative-quota"], expected: -42))
+        #expect(ent["com.machgraph.spaced-string"] as? String == "  preserve leading and trailing  ")
+
+        let arr = try #require(ent["keychain-access-groups"] as? [Any])
+        #expect(arr.count == 4)
+        #expect(arr[0] as? String == "com.apple.aea.cli")
+        #expect(arr[1] as? String == "item, with, commas")
+        #expect(Self.isStrictJSONInt(arr[2], expected: 9))
+        #expect(Self.isStrictJSONBool(arr[3], expected: true))
+
+        let subDict = try #require(ent["com.apple.private.MobileContainerManager.lookup"] as? [String: Any])
+        #expect(subDict["daemon"] as? [String] == ["com.apple.bird"])
+        #expect(Self.isStrictJSONBool(subDict["enabled"], expected: true))
+        #expect((subDict["emptySub"] as? [String: Any])?.isEmpty == true)
+    }
+
+    @Test("M3 D-M3-7: CLI codesign --json preserves leading-space keys and ignores DER slot when XML slot is present")
+    func m3CLICodeSignJSONPreservesLeadingSpaceKeysWithoutDERDuplicateMerge() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let cli = MachCLIRunner()
+
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key> com.apple.security.app-sandbox</key>
+            <true/>
+            <key> com.apple.private.spindump.cli</key>
+            <true/>
+        </dict>
+        </plist>
+        """
+        let der = Self.m3BuildCoreEntitlementsDER([
+            (" com.apple.security.app-sandbox", Self.m3DerBool(true)),
+            (" com.apple.private.spindump.cli", Self.m3DerBool(true)),
+            ("der.extra.must.not.merge", Self.m3DerBool(true))
+        ])
+
+        let dualSlotURL = tempDir.appendingPathComponent("wifip2pd_like.macho")
+        try Self.buildSyntheticCodeSignMachO(
+            includeSignature: true,
+            xmlPayloadBytes: Array(xml.utf8) + [0],
+            derPayloadBytes: der
+        ).write(to: dualSlotURL)
+
+        let raw = try await cli.execute(arguments: ["codesign", dualSlotURL.path, "--json"])
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let ent = try #require(obj["entitlements"] as? [String: Any])
+        #expect(ent.count == 2)
+        #expect(Self.isStrictJSONBool(ent[" com.apple.security.app-sandbox"], expected: true))
+        #expect(Self.isStrictJSONBool(ent[" com.apple.private.spindump.cli"], expected: true))
+        #expect(ent["com.apple.security.app-sandbox"] == nil)
+        #expect(ent["com.apple.private.spindump.cli"] == nil)
+        #expect(ent["der.extra.must.not.merge"] == nil)
+
+        // Empty XML <dict/> slot alongside non-empty DER slot (like /usr/bin/mdls) must yield {}
+        let emptyXML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict/>
+        </plist>
+        """
+        let emptyDictURL = tempDir.appendingPathComponent("mdls_like_empty_xml.macho")
+        try Self.buildSyntheticCodeSignMachO(
+            includeSignature: true,
+            xmlPayloadBytes: Array(emptyXML.utf8) + [0],
+            derPayloadBytes: der
+        ).write(to: emptyDictURL)
+
+        let emptyRaw = try await cli.execute(arguments: ["codesign", emptyDictURL.path, "--json"])
+        let emptyObj = try #require(JSONSerialization.jsonObject(with: Data(emptyRaw.utf8)) as? [String: Any])
+        let emptyEnt = try #require(emptyObj["entitlements"] as? [String: Any])
+        #expect(emptyEnt.isEmpty)
+    }
+
+    @Test("M3 D-M3-7: CLI codesign --json falls back to DER 0xFADE7172 slot with native JSON types when XML slot is absent")
+    func m3CLICodeSignJSONParsesDEROnlyEntitlementsSlotWithNativeTypes() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let cli = MachCLIRunner()
+
+        let der = Self.m3BuildCoreEntitlementsDER([
+            ("com.apple.private.persona-mgmt", Self.m3DerBool(true)),
+            ("com.apple.security.cs.disable-library-validation", Self.m3DerBool(false)),
+            ("com.apple.private.amfi.version-restriction", Self.m3DerInt(1)),
+            ("com.machgraph.negative-quota", Self.m3DerInt(-7)),
+            (" com.machgraph.der-spaced", Self.m3DerUTF8(" value with spaces ")),
+            ("keychain-access-groups", Self.m3DerSequence([Self.m3DerUTF8("com.apple.aea.cli"), Self.m3DerUTF8("com.machgraph.group")])),
+            ("com.apple.private.MobileContainerManager.lookup", Self.m3DerContextDict([
+                ("daemon", Self.m3DerSequence([Self.m3DerUTF8("com.apple.bird")])),
+                ("appData", Self.m3DerBool(true)),
+                ("empty", Self.m3DerContextDict([]))
+            ]))
+        ])
+
+        let derOnlyURL = tempDir.appendingPathComponent("der_only.macho")
+        try Self.buildSyntheticCodeSignMachO(
+            includeSignature: true,
+            xmlPayloadBytes: nil,
+            derPayloadBytes: der
+        ).write(to: derOnlyURL)
+
+        let raw = try await cli.execute(arguments: ["codesign", derOnlyURL.path, "--json"])
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(raw.utf8)) as? [String: Any])
+        let ent = try #require(obj["entitlements"] as? [String: Any])
+        #expect(ent.count == 7)
+        #expect(Self.isStrictJSONBool(ent["com.apple.private.persona-mgmt"], expected: true))
+        #expect(Self.isStrictJSONBool(ent["com.apple.security.cs.disable-library-validation"], expected: false))
+        #expect(Self.isStrictJSONInt(ent["com.apple.private.amfi.version-restriction"], expected: 1))
+        #expect(Self.isStrictJSONInt(ent["com.machgraph.negative-quota"], expected: -7))
+        #expect(ent[" com.machgraph.der-spaced"] as? String == " value with spaces ")
+        #expect(ent["keychain-access-groups"] as? [String] == ["com.apple.aea.cli", "com.machgraph.group"])
+        #expect(ent["daemon"] == nil)
+
+        let nested = try #require(ent["com.apple.private.MobileContainerManager.lookup"] as? [String: Any])
+        #expect(nested["daemon"] as? [String] == ["com.apple.bird"])
+        #expect(Self.isStrictJSONBool(nested["appData"], expected: true))
+        #expect((nested["empty"] as? [String: Any])?.isEmpty == true)
+    }
 }

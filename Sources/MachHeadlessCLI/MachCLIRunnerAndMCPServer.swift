@@ -581,7 +581,7 @@ public struct MachCLIRunner: Sendable {
                     "hashAlgorithm": img.codeSignature.hashAlgorithm,
                     "pageSize": img.codeSignature.pageSize,
                     "codeDirectoryVersion": img.codeSignature.codeDirectoryVersion,
-                    "entitlementCount": img.codeSignature.entitlementsPairs.count
+                    "entitlementCount": img.codeSignature.entitlements.count
                 ] as [String: Any]
             ]
             return try Self.encodeJSONObject(dict)
@@ -1173,7 +1173,7 @@ public struct MachCLIRunner: Sendable {
                 "pageSize": cs.pageSize,
                 "codeDirectoryVersion": cs.codeDirectoryVersion,
                 "verified": verification?.isValid ?? false,
-                "entitlements": cs.entitlementsPairs,
+                "entitlements": cs.entitlementsJSONObject(),
                 "cmsSigners": cs.cmsSignerCommonNames
             ]
             return try Self.encodeJSONObject(dict)
@@ -1184,7 +1184,7 @@ public struct MachCLIRunner: Sendable {
             lines.append(banner)
         }
         lines.append(
-            "Signed=\(cs.isSigned) AdHoc=\(cs.isAdHoc) Identifier=\(cs.identifier) CDHash=\(cs.cdHashHex) Hash=\(cs.hashAlgorithm) Verified=\(verification?.isValid ?? false) Entitlements=\(cs.entitlementsPairs.count)"
+            "Signed=\(cs.isSigned) AdHoc=\(cs.isAdHoc) Identifier=\(cs.identifier) CDHash=\(cs.cdHashHex) Hash=\(cs.hashAlgorithm) Verified=\(verification?.isValid ?? false) Entitlements=\(cs.entitlements.count)"
         )
         return lines.joined(separator: "\n")
     }

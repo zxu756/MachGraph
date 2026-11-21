@@ -1037,7 +1037,7 @@ public struct MachJavaScriptPluginSandbox: Sendable {
             "hasEnforcementFlag": (flags & CodeSignatureConstants.flagEnforcement) != 0,
             "isLinkerSigned": (flags & CodeSignatureConstants.flagLinkerSigned) != 0,
             "entitlementsXML": signature.entitlementsXML ?? NSNull(),
-            "entitlements": signature.entitlementsPairs,
+            "entitlements": signature.entitlementsJSONObject(),
             "cmsSignerCommonNames": signature.cmsSignerCommonNames
         ]
     }

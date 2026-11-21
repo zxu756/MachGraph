@@ -271,9 +271,9 @@ struct BinaryFormatLoadersTests {
         #expect(cs.hashAlgorithm == "SHA-256")
         #expect(cs.pageSize == 16384)
         #expect(cs.cdHashHex.count >= 40)
-        #expect(cs.entitlementsPairs["com.apple.security.cs.allow-jit"] == "true")
-        #expect(cs.entitlementsPairs["com.apple.security.get-task-allow"] == "true")
-        #expect(cs.entitlementsPairs["com.machgraph.analysis-tier"] == "enterprise")
+        #expect(cs.entitlements["com.apple.security.cs.allow-jit"] == .bool(true))
+        #expect(cs.entitlements["com.apple.security.get-task-allow"] == .bool(true))
+        #expect(cs.entitlements["com.machgraph.analysis-tier"] == .string("enterprise"))
     }
 
     @Test("CMS PKCS#7 X.509 signer CommonName extraction and detailed CodeDirectory inspection")
@@ -307,8 +307,8 @@ struct BinaryFormatLoadersTests {
         #expect(!detailed.summary.isAdHoc)
         #expect(detailed.summary.identifier == "com.machgraph.cms.test")
         #expect(detailed.summary.cmsSignerCommonNames == expectedSigners)
-        #expect(detailed.summary.entitlementsPairs["com.apple.security.app-sandbox"] == "true")
-        #expect(detailed.summary.entitlementsPairs["com.apple.developer.team-identifier"] == "TEAM99XMGH")
+        #expect(detailed.summary.entitlements["com.apple.security.app-sandbox"] == .bool(true))
+        #expect(detailed.summary.entitlements["com.apple.developer.team-identifier"] == .string("TEAM99XMGH"))
 
         let primaryDir = try #require(detailed.directories.first)
         #expect(primaryDir.nCodeSlots == 2)
@@ -1020,5 +1020,212 @@ struct BinaryFormatLoadersTests {
         let libSys = try #require(execImage.importedLibraries.first { $0.installName == "/usr/lib/libSystem.B.dylib" })
         #expect(libSys.currentVersion == "1355.0.0")
         #expect(libSys.compatibilityVersion == "1.0.0")
+    }
+
+    // MARK: - M3 Stage 2 (D-M3-7): Synthetic SuperBlob Builders & Entitlements Parser Tests
+
+    private static func derEncodeLength(_ length: Int) -> [UInt8] {
+        if length < 0x80 {
+            return [UInt8(length)]
+        }
+        var tmp = length
+        var octets: [UInt8] = []
+        while tmp > 0 {
+            octets.insert(UInt8(tmp & 0xFF), at: 0)
+            tmp >>= 8
+        }
+        return [UInt8(0x80 | octets.count)] + octets
+    }
+
+    private static func derTLV(tagByte: UInt8, content: [UInt8]) -> [UInt8] {
+        [tagByte] + derEncodeLength(content.count) + content
+    }
+
+    private static func derBool(_ value: Bool) -> [UInt8] {
+        derTLV(tagByte: 0x01, content: [value ? 0xFF : 0x00])
+    }
+
+    private static func derInt(_ value: Int64) -> [UInt8] {
+        var v = value
+        var bytes: [UInt8] = []
+        repeat {
+            bytes.insert(UInt8(truncatingIfNeeded: v), at: 0)
+            v >>= 8
+        } while !((v == 0 && (bytes[0] & 0x80) == 0) || (v == -1 && (bytes[0] & 0x80) != 0))
+        return derTLV(tagByte: 0x02, content: bytes)
+    }
+
+    private static func derUTF8(_ value: String) -> [UInt8] {
+        derTLV(tagByte: 0x0C, content: Array(value.utf8))
+    }
+
+    private static func derSequence(_ items: [[UInt8]]) -> [UInt8] {
+        derTLV(tagByte: 0x30, content: items.flatMap { $0 })
+    }
+
+    private static func derContextDict(_ entries: [(String, [UInt8])]) -> [UInt8] {
+        let encodedPairs = entries.map { key, valBytes in
+            derSequence([derUTF8(key), valBytes])
+        }
+        return derTLV(tagByte: 0xB0, content: encodedPairs.flatMap { $0 })
+    }
+
+    private static func buildCoreEntitlementsDER(_ entries: [(String, [UInt8])]) -> [UInt8] {
+        let body = derInt(1) + derContextDict(entries)
+        return derTLV(tagByte: 0x70, content: body)
+    }
+
+    private static func buildCustomSuperBlob(
+        codePayloadSize: Int = 4096,
+        identifier: String = "com.machgraph.m3.entitlements",
+        xmlPayloadBytes: [UInt8]? = nil,
+        derPayloadBytes: [UInt8]? = nil
+    ) -> Data {
+        let dummySlice = Data(repeating: 0xC0, count: codePayloadSize)
+        let baseSuperBlob = AdHocCodeSignatureBuilder.buildSuperBlob(
+            binarySliceWithoutSignature: dummySlice,
+            identifier: identifier
+        )
+        // Extract primary CodeDirectory blob from baseSuperBlob (slot 0)
+        var reader = BinarySliceReader(data: baseSuperBlob, endianness: .big)
+        _ = try? reader.readUInt32() // magic
+        _ = try? reader.readUInt32() // length
+        let count = Int((try? reader.readUInt32()) ?? 0)
+        var cdBytes: [UInt8] = []
+        for _ in 0..<count {
+            let slot = (try? reader.readUInt32()) ?? 0xFFFF
+            let off = Int((try? reader.readUInt32()) ?? 0)
+            if slot == CodeSignatureConstants.slotCodeDirectory, off + 8 <= baseSuperBlob.count {
+                let len = (Int(baseSuperBlob[off + 4]) << 24)
+                    | (Int(baseSuperBlob[off + 5]) << 16)
+                    | (Int(baseSuperBlob[off + 6]) << 8)
+                    | Int(baseSuperBlob[off + 7])
+                cdBytes = Array(baseSuperBlob[off..<(off + len)])
+                break
+            }
+        }
+
+        var subBlobs: [(slot: UInt32, bytes: [UInt8])] = [
+            (CodeSignatureConstants.slotCodeDirectory, cdBytes)
+        ]
+        if let xmlBytes = xmlPayloadBytes {
+            var w = BinaryBufferWriter(capacity: 8 + xmlBytes.count, endianness: .big)
+            w.appendUInt32(CodeSignatureConstants.magicEmbeddedEntitlements)
+            w.appendUInt32(UInt32(8 + xmlBytes.count))
+            w.appendBytes(xmlBytes)
+            subBlobs.append((CodeSignatureConstants.slotEntitlements, w.bytes))
+        }
+        if let derBytes = derPayloadBytes {
+            var w = BinaryBufferWriter(capacity: 8 + derBytes.count, endianness: .big)
+            w.appendUInt32(CodeSignatureConstants.magicEmbeddedDEREntitlements)
+            w.appendUInt32(UInt32(8 + derBytes.count))
+            w.appendBytes(derBytes)
+            subBlobs.append((CodeSignatureConstants.slotDEREntitlements, w.bytes))
+        }
+        var cms = BinaryBufferWriter(capacity: 8, endianness: .big)
+        cms.appendUInt32(CodeSignatureConstants.magicBlobWrapper)
+        cms.appendUInt32(8)
+        subBlobs.append((CodeSignatureConstants.slotCMSWrapper, cms.bytes))
+
+        var runningOff = 12 + subBlobs.count * 8
+        var offsets: [Int] = []
+        for item in subBlobs {
+            offsets.append(runningOff)
+            runningOff += item.bytes.count
+        }
+        var superOut = BinaryBufferWriter(capacity: runningOff, endianness: .big)
+        superOut.appendUInt32(CodeSignatureConstants.magicEmbeddedSignature)
+        superOut.appendUInt32(UInt32(runningOff))
+        superOut.appendUInt32(UInt32(subBlobs.count))
+        for (i, item) in subBlobs.enumerated() {
+            superOut.appendUInt32(item.slot)
+            superOut.appendUInt32(UInt32(offsets[i]))
+        }
+        for item in subBlobs {
+            superOut.appendBytes(item.bytes)
+        }
+        return superOut.data
+    }
+
+    @Test("M3 D-M3-7: CodeSignatureAndCMSParser preserves leading-space keys and does not merge DER when XML slot exists")
+    func m3ParserPreservesLeadingSpaceKeysAndIgnoresDERWhenXMLPresent() throws {
+        let xml = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+            <key> com.apple.security.app-sandbox</key>
+            <true/>
+            <key> com.apple.private.spindump.cli</key>
+            <true/>
+        </dict>
+        </plist>
+        """
+        let xmlWithTrailingNULs = Array(xml.utf8) + [0, 0, 0]
+        let der = Self.buildCoreEntitlementsDER([
+            (" com.apple.security.app-sandbox", Self.derBool(true)),
+            (" com.apple.private.spindump.cli", Self.derBool(true)),
+            ("der.only.extra.key", Self.derBool(true))
+        ])
+        let superBlob = Self.buildCustomSuperBlob(
+            xmlPayloadBytes: xmlWithTrailingNULs,
+            derPayloadBytes: der
+        )
+        let detailed = try CodeSignatureAndCMSParser.parseDetailed(signatureData: superBlob)
+        let ent = detailed.summary.entitlements
+        #expect(ent.count == 2)
+        #expect(ent[" com.apple.security.app-sandbox"] == .bool(true))
+        #expect(ent[" com.apple.private.spindump.cli"] == .bool(true))
+        #expect(ent["com.apple.security.app-sandbox"] == nil)
+        #expect(ent["der.only.extra.key"] == nil)
+    }
+
+    @Test("M3 D-M3-7: CodeSignatureAndCMSParser decodes DER-only 0xFADE7172 slot with nested dicts, arrays, signed ints, and booleans")
+    func m3ParserDecodesDEROnlySlotIntoStructuredEntitlements() throws {
+        let der = Self.buildCoreEntitlementsDER([
+            ("com.apple.private.persona-mgmt", Self.derBool(true)),
+            ("com.apple.private.amfi.version-restriction", Self.derInt(1)),
+            ("com.machgraph.negative-limit", Self.derInt(-7)),
+            (" com.machgraph.der-spaced", Self.derUTF8(" keep spaces ")),
+            ("keychain-access-groups", Self.derSequence([Self.derUTF8("com.apple.aea.cli"), Self.derUTF8("com.machgraph.team")])),
+            ("com.apple.private.MobileContainerManager.lookup", Self.derContextDict([
+                ("daemon", Self.derSequence([Self.derUTF8("com.apple.bird")])),
+                ("appData", Self.derBool(true)),
+                ("empty", Self.derContextDict([]))
+            ]))
+        ])
+        let superBlob = Self.buildCustomSuperBlob(
+            xmlPayloadBytes: nil,
+            derPayloadBytes: der
+        )
+        let detailed = try CodeSignatureAndCMSParser.parseDetailed(signatureData: superBlob)
+        let ent = detailed.summary.entitlements
+        #expect(ent.count == 6)
+        #expect(ent["com.apple.private.persona-mgmt"] == .bool(true))
+        #expect(ent["com.apple.private.amfi.version-restriction"] == .integer(1))
+        #expect(ent["com.machgraph.negative-limit"] == .integer(-7))
+        #expect(ent[" com.machgraph.der-spaced"] == .string(" keep spaces "))
+        #expect(ent["keychain-access-groups"] == .array([.string("com.apple.aea.cli"), .string("com.machgraph.team")]))
+        #expect(ent["com.apple.private.MobileContainerManager.lookup"] == .dictionary([
+            "daemon": .array([.string("com.apple.bird")]),
+            "appData": .bool(true),
+            "empty": .dictionary([:])
+        ]))
+
+        let synthesizedXML = try #require(detailed.summary.entitlementsXML)
+        let plistObj = try PropertyListSerialization.propertyList(
+            from: Data(synthesizedXML.utf8),
+            options: [],
+            format: nil
+        )
+        let rootDict = try #require(plistObj as? [String: Any])
+        #expect(rootDict.count == 6)
+        #expect(rootDict["daemon"] == nil)
+        #expect(rootDict[" com.machgraph.der-spaced"] as? String == " keep spaces ")
+        #expect((rootDict["com.machgraph.negative-limit"] as? NSNumber)?.int64Value == -7)
+        #expect(rootDict["keychain-access-groups"] as? [String] == ["com.apple.aea.cli", "com.machgraph.team"])
+        let nested = try #require(rootDict["com.apple.private.MobileContainerManager.lookup"] as? [String: Any])
+        #expect(nested["daemon"] as? [String] == ["com.apple.bird"])
+        #expect((nested["empty"] as? [String: Any])?.isEmpty == true)
     }
 }

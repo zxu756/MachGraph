@@ -166,7 +166,7 @@ public enum CodeSignatureAndCMSParser {
                 pageSize: detail.pageSize,
                 flags: detail.flags,
                 entitlementsXML: nil,
-                entitlementsPairs: [:],
+                entitlements: [:],
                 cmsSignerCommonNames: []
             )
             return (summary, [detail])
@@ -199,8 +199,8 @@ public enum CodeSignatureAndCMSParser {
         }
 
         var codeDirectories: [CodeDirectoryDetail] = []
-        var entitlementsXML: String?
-        var entitlementsPairs: [String: String] = [:]
+        var xmlEntitlementsPayload: Data?
+        var derEntitlementsPayload: Data?
         var cmsCommonNames: [String] = []
         var sawNonEmptyCMS = false
 
@@ -230,26 +230,12 @@ public enum CodeSignatureAndCMSParser {
 
             case CodeSignatureConstants.magicEmbeddedEntitlements:
                 if safeLen > 8 {
-                    let xmlPayload = Data(blobSlice.dropFirst(8))
-                    let trimmedBytes = xmlPayload.prefix { $0 != 0 }
-                    let xmlString = String(decoding: trimmedBytes, as: UTF8.self)
-                        .trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !xmlString.isEmpty {
-                        entitlementsXML = xmlString
-                        let parsed = parseXMLEntitlementsPlist(xmlString)
-                        for (k, v) in parsed {
-                            entitlementsPairs[k] = v
-                        }
-                    }
+                    xmlEntitlementsPayload = Data(blobSlice.dropFirst(8))
                 }
 
             case CodeSignatureConstants.magicEmbeddedDEREntitlements:
                 if safeLen > 8 {
-                    let derPayload = Data(blobSlice.dropFirst(8))
-                    let derPairs = ASN1DERWalker.parseDEREntitlements(derData: derPayload)
-                    for (k, v) in derPairs where entitlementsPairs[k] == nil {
-                        entitlementsPairs[k] = v
-                    }
+                    derEntitlementsPayload = Data(blobSlice.dropFirst(8))
                 }
 
             case CodeSignatureConstants.magicBlobWrapper:
@@ -277,9 +263,31 @@ public enum CodeSignatureAndCMSParser {
         let isAdHoc = (preferredCD.flags & CodeSignatureConstants.flagAdhoc) != 0
             || (!sawNonEmptyCMS && cmsCommonNames.isEmpty)
 
-        // Synthesize readable XML representation if binary carries only DER entitlements (0xFADE7172)
-        if entitlementsXML == nil && !entitlementsPairs.isEmpty {
-            entitlementsXML = synthesizeXMLPlist(from: entitlementsPairs)
+        var entitlementsXML: String?
+        var entitlements: [String: EntitlementValue] = [:]
+
+        if let rawXML = xmlEntitlementsPayload {
+            // Strip trailing NUL bytes only; never trim keys or string values inside the plist.
+            let xmlWithoutTrailingNulls: Data
+            if let lastNonZero = rawXML.lastIndex(where: { $0 != 0 }) {
+                xmlWithoutTrailingNulls = Data(rawXML[rawXML.startIndex...lastNonZero])
+            } else {
+                xmlWithoutTrailingNulls = Data()
+            }
+            if !xmlWithoutTrailingNulls.isEmpty {
+                let rawText = String(decoding: xmlWithoutTrailingNulls, as: UTF8.self)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !rawText.isEmpty {
+                    entitlementsXML = rawText
+                }
+                entitlements = parseXMLEntitlementsData(xmlWithoutTrailingNulls)
+            }
+        } else if let rawDER = derEntitlementsPayload {
+            // Fall back to CoreEntitlements DER (0xFADE7172) only when XML slot (0xFADE7171) is absent.
+            entitlements = ASN1DERWalker.parseDEREntitlements(derData: rawDER)
+            if !entitlements.isEmpty {
+                entitlementsXML = synthesizeXMLPlist(from: entitlements)
+            }
         }
 
         let summary = CodeSignatureSummary(
@@ -293,7 +301,7 @@ public enum CodeSignatureAndCMSParser {
             pageSize: preferredCD.pageSize,
             flags: preferredCD.flags,
             entitlementsXML: entitlementsXML,
-            entitlementsPairs: entitlementsPairs,
+            entitlements: entitlements,
             cmsSignerCommonNames: cmsCommonNames
         )
 
@@ -431,228 +439,76 @@ public enum CodeSignatureAndCMSParser {
         )
     }
 
-    // MARK: - Handwritten XML Entitlements Plist Parser
+    // MARK: - Native XML Entitlements Plist Parser (`PropertyListSerialization`)
 
-    public static func parseXMLEntitlementsPlist(_ xml: String) -> [String: String] {
-        var result: [String: String] = [:]
-        let tokens = tokenizePlistXML(xml)
-        var idx = 0
-
-        // Locate outer <dict>
-        while idx < tokens.count {
-            if case .openTag("dict") = tokens[idx] {
-                idx += 1
-                break
-            }
-            idx += 1
+    public static func parseXMLEntitlementsData(_ xmlData: Data) -> [String: EntitlementValue] {
+        guard !xmlData.isEmpty,
+              let plistObject = try? PropertyListSerialization.propertyList(
+                  from: xmlData,
+                  options: [],
+                  format: nil
+              ),
+              let rootDict = plistObject as? [String: Any] else {
+            return [:]
         }
-
-        func parseValueDescription() -> String? {
-            guard idx < tokens.count else { return nil }
-            switch tokens[idx] {
-            case .selfClosingTag("true"):
-                idx += 1
-                return "true"
-            case .selfClosingTag("false"):
-                idx += 1
-                return "false"
-            case .selfClosingTag("string"):
-                idx += 1
-                return ""
-            case .selfClosingTag("array"):
-                idx += 1
-                return "[]"
-            case .selfClosingTag("dict"):
-                idx += 1
-                return "{}"
-            case .openTag(let tagName) where tagName == "string" || tagName == "integer" || tagName == "real" || tagName == "data" || tagName == "date":
-                idx += 1
-                var textValue = ""
-                while idx < tokens.count {
-                    if case .closeTag(let closing) = tokens[idx], closing == tagName {
-                        idx += 1
-                        break
-                    } else if case .text(let chunk) = tokens[idx] {
-                        textValue += chunk
-                    }
-                    idx += 1
-                }
-                return unescapeXML(textValue.trimmingCharacters(in: .whitespacesAndNewlines))
-            case .openTag("array"):
-                idx += 1
-                var items: [String] = []
-                while idx < tokens.count {
-                    if case .closeTag("array") = tokens[idx] {
-                        idx += 1
-                        break
-                    }
-                    if let elem = parseValueDescription() {
-                        items.append(elem)
-                    } else {
-                        idx += 1
-                    }
-                }
-                return "[\(items.joined(separator: ", "))]"
-            case .openTag("dict"):
-                idx += 1
-                var nested: [String] = []
-                while idx < tokens.count {
-                    if case .closeTag("dict") = tokens[idx] {
-                        idx += 1
-                        break
-                    }
-                    if case .openTag("key") = tokens[idx] {
-                        idx += 1
-                        var subKey = ""
-                        while idx < tokens.count {
-                            if case .closeTag("key") = tokens[idx] {
-                                idx += 1
-                                break
-                            } else if case .text(let t) = tokens[idx] {
-                                subKey += t
-                            }
-                            idx += 1
-                        }
-                        let subVal = parseValueDescription() ?? ""
-                        nested.append("\(unescapeXML(subKey)): \(subVal)")
-                    } else {
-                        idx += 1
-                    }
-                }
-                return "{\(nested.joined(separator: ", "))}"
-            default:
-                return nil
-            }
+        var out: [String: EntitlementValue] = [:]
+        out.reserveCapacity(rootDict.count)
+        for (key, value) in rootDict {
+            out[key] = convertPropertyListValue(value)
         }
-
-        while idx < tokens.count {
-            if case .closeTag("dict") = tokens[idx] {
-                break
-            }
-            if case .openTag("key") = tokens[idx] {
-                idx += 1
-                var keyText = ""
-                while idx < tokens.count {
-                    if case .closeTag("key") = tokens[idx] {
-                        idx += 1
-                        break
-                    } else if case .text(let chunk) = tokens[idx] {
-                        keyText += chunk
-                    }
-                    idx += 1
-                }
-                let cleanKey = unescapeXML(keyText.trimmingCharacters(in: .whitespacesAndNewlines))
-                if let val = parseValueDescription(), !cleanKey.isEmpty {
-                    result[cleanKey] = val
-                }
-            } else {
-                idx += 1
-            }
-        }
-
-        return result
+        return out
     }
 
-    private enum XMLToken {
-        case openTag(String)
-        case closeTag(String)
-        case selfClosingTag(String)
-        case text(String)
-    }
-
-    private static func tokenizePlistXML(_ xml: String) -> [XMLToken] {
-        var tokens: [XMLToken] = []
-        let scalars = Array(xml.unicodeScalars)
-        var i = 0
-
-        while i < scalars.count {
-            if scalars[i] == "<" {
-                // Skip comments <!-- ... -->, processing instructions <? ... ?>, and <!DOCTYPE ... >
-                if i + 3 < scalars.count && scalars[i + 1] == "!" && scalars[i + 2] == "-" && scalars[i + 3] == "-" {
-                    i += 4
-                    while i + 2 < scalars.count {
-                        if scalars[i] == "-" && scalars[i + 1] == "-" && scalars[i + 2] == ">" {
-                            i += 3
-                            break
-                        }
-                        i += 1
-                    }
-                    continue
-                }
-                if i + 1 < scalars.count && (scalars[i + 1] == "?" || scalars[i + 1] == "!") {
-                    i += 2
-                    while i < scalars.count && scalars[i] != ">" {
-                        i += 1
-                    }
-                    if i < scalars.count { i += 1 }
-                    continue
-                }
-
-                i += 1
-                var rawTag = ""
-                while i < scalars.count && scalars[i] != ">" {
-                    rawTag.unicodeScalars.append(scalars[i])
-                    i += 1
-                }
-                if i < scalars.count { i += 1 }
-
-                let trimmed = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.hasPrefix("/") {
-                    let name = trimmed.dropFirst().trimmingCharacters(in: .whitespacesAndNewlines)
-                    tokens.append(.closeTag(String(name)))
-                } else if trimmed.hasSuffix("/") {
-                    let core = trimmed.dropLast().trimmingCharacters(in: .whitespacesAndNewlines)
-                    let name = core.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? core
-                    tokens.append(.selfClosingTag(name))
-                } else {
-                    let name = trimmed.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? trimmed
-                    tokens.append(.openTag(name))
-                }
-            } else {
-                var content = ""
-                while i < scalars.count && scalars[i] != "<" {
-                    content.unicodeScalars.append(scalars[i])
-                    i += 1
-                }
-                if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    tokens.append(.text(content))
+    private static func convertPropertyListValue(_ value: Any) -> EntitlementValue {
+        if let num = value as? NSNumber {
+            if CFGetTypeID(num) == CFBooleanGetTypeID() {
+                return .bool(num.boolValue)
+            }
+            if CFNumberIsFloatType(num) {
+                return .real(num.doubleValue)
+            }
+            if String(cString: num.objCType) == "Q" {
+                let u = num.uint64Value
+                if u > UInt64(Int64.max) {
+                    return .unsignedInteger(u)
                 }
             }
+            return .integer(num.int64Value)
         }
-
-        return tokens
-    }
-
-    private static func unescapeXML(_ text: String) -> String {
-        text
-            .replacingOccurrences(of: "&quot;", with: "\"")
-            .replacingOccurrences(of: "&apos;", with: "'")
-            .replacingOccurrences(of: "&lt;", with: "<")
-            .replacingOccurrences(of: "&gt;", with: ">")
-            .replacingOccurrences(of: "&amp;", with: "&")
-    }
-
-    private static func synthesizeXMLPlist(from pairs: [String: String]) -> String {
-        var lines: [String] = [
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
-            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
-            "<plist version=\"1.0\">",
-            "<dict>"
-        ]
-        for key in pairs.keys.sorted() {
-            let val = pairs[key] ?? ""
-            lines.append("    <key>\(key)</key>")
-            if val == "true" || val == "false" {
-                lines.append("    <\(val)/>")
-            } else if Int64(val) != nil {
-                lines.append("    <integer>\(val)</integer>")
-            } else {
-                lines.append("    <string>\(val)</string>")
+        if let str = value as? String {
+            return .string(str)
+        }
+        if let rawData = value as? Data {
+            return .data(rawData)
+        }
+        if let date = value as? Date {
+            return .date(ISO8601DateFormatter().string(from: date))
+        }
+        if let array = value as? [Any] {
+            return .array(array.map { convertPropertyListValue($0) })
+        }
+        if let dict = value as? [String: Any] {
+            var mapped: [String: EntitlementValue] = [:]
+            mapped.reserveCapacity(dict.count)
+            for (k, v) in dict {
+                mapped[k] = convertPropertyListValue(v)
             }
+            return .dictionary(mapped)
         }
-        lines.append("</dict>")
-        lines.append("</plist>")
-        return lines.joined(separator: "\n")
+        return .string(String(describing: value))
+    }
+
+    private static func synthesizeXMLPlist(from entitlements: [String: EntitlementValue]) -> String? {
+        let plistDict = entitlements.mapValues { $0.toPropertyListObject() }
+        guard let xmlData = try? PropertyListSerialization.data(
+            fromPropertyList: plistDict,
+            format: .xml,
+            options: 0
+        ) else {
+            return nil
+        }
+        return String(decoding: xmlData, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -885,53 +741,95 @@ public enum ASN1DERWalker {
         }
     }
 
-    /// Parses Apple CoreEntitlements DER (`0xFADE7172`) key-value dictionary entries.
-    public static func parseDEREntitlements(derData: Data) -> [String: String] {
+    /// Parses Apple CoreEntitlements DER (`0xFADE7172`) key-value dictionary entries into native `EntitlementValue` types.
+    public static func parseDEREntitlements(derData: Data) -> [String: EntitlementValue] {
         let bytes = Array(derData)
         let top = parseNodes(bytes: bytes[...])
-        var pairs: [String: String] = [:]
+        guard let root = top.first else { return [:] }
 
-        func walkEntitlementContainer(_ nodes: [Node]) {
-            for node in nodes {
-                // Key-value pair in CoreEntitlements DER: SEQUENCE { UTF8String key, value }
-                if node.tagClass == .universal,
-                   node.tagNumber == 16,
-                   node.children.count == 2,
-                   let key = decodeASN1String(node.children[0]),
-                   !key.isEmpty {
-                    let valNode = node.children[1]
-                    pairs[key] = describeDEREntitlementValue(valNode)
-                } else if !node.children.isEmpty {
-                    walkEntitlementContainer(node.children)
+        // Standard CoreEntitlements v1/v2 container: [APPLICATION 16] { INTEGER version, [CONTEXT-SPECIFIC 16] dictionary }
+        if root.tagClass == .application && root.isConstructed && root.tagNumber == 16 {
+            for child in root.children {
+                if child.tagClass == .contextSpecific && child.isConstructed && child.tagNumber == 16 {
+                    return decodeDEREntitlementDictionaryEntries(child.children)
                 }
             }
+            return [:]
         }
 
-        walkEntitlementContainer(top)
-        return pairs
+        // Direct [CONTEXT-SPECIFIC 16] dictionary container
+        if root.tagClass == .contextSpecific && root.isConstructed && root.tagNumber == 16 {
+            return decodeDEREntitlementDictionaryEntries(root.children)
+        }
+
+        // Fallback: top-level SEQUENCE / SET of [key, value] pairs
+        if root.tagClass == .universal && root.isConstructed && (root.tagNumber == 16 || root.tagNumber == 17) {
+            return decodeDEREntitlementDictionaryEntries(root.children)
+        }
+
+        return [:]
     }
 
-    private static func describeDEREntitlementValue(_ node: Node) -> String {
+    private static func decodeDEREntitlementDictionaryEntries(_ entries: [Node]) -> [String: EntitlementValue] {
+        var out: [String: EntitlementValue] = [:]
+        out.reserveCapacity(entries.count)
+        for entry in entries {
+            // CoreEntitlements dictionary entry: SEQUENCE { String key, Value val }
+            if entry.tagClass == .universal,
+               entry.isConstructed,
+               entry.tagNumber == 16,
+               entry.children.count == 2,
+               let key = decodeASN1String(entry.children[0]) {
+                out[key] = decodeDEREntitlementValue(entry.children[1])
+            }
+        }
+        return out
+    }
+
+    private static func decodeDEREntitlementValue(_ node: Node) -> EntitlementValue {
+        // Nested CoreEntitlements dictionary: [CONTEXT-SPECIFIC 16] constructed
+        if node.tagClass == .contextSpecific && node.isConstructed && node.tagNumber == 16 {
+            return .dictionary(decodeDEREntitlementDictionaryEntries(node.children))
+        }
+
         if node.tagClass == .universal {
             switch node.tagNumber {
             case 1: // BOOLEAN
-                return (node.valueBytes.first ?? 0) != 0 ? "true" : "false"
-            case 2: // INTEGER
-                var acc: Int64 = 0
-                for b in node.valueBytes.prefix(8) {
-                    acc = (acc << 8) | Int64(b)
+                return .bool((node.valueBytes.first ?? 0) != 0)
+
+            case 2: // INTEGER (big-endian two's complement)
+                if node.valueBytes.isEmpty {
+                    return .integer(0)
                 }
-                return "\(acc)"
-            case 12, 19, 22: // Strings
-                return String(decoding: node.valueBytes, as: UTF8.self)
-            case 16, 17: // SEQUENCE / SET (Array of strings/ints)
-                let items = node.children.map { describeDEREntitlementValue($0) }
-                return "[\(items.joined(separator: ", "))]"
+                if node.valueBytes.count == 9 && node.valueBytes[0] == 0 {
+                    var u: UInt64 = 0
+                    for b in node.valueBytes.dropFirst() {
+                        u = (u << 8) | UInt64(b)
+                    }
+                    return u <= UInt64(Int64.max) ? .integer(Int64(u)) : .unsignedInteger(u)
+                }
+                let isNegative = (node.valueBytes[0] & 0x80) != 0
+                var bits: UInt64 = isNegative ? UInt64.max : 0
+                for b in node.valueBytes.suffix(8) {
+                    bits = (bits << 8) | UInt64(b)
+                }
+                return .integer(Int64(bitPattern: bits))
+
+            case 4: // OCTET STRING
+                return .data(Data(node.valueBytes))
+
+            case 12, 19, 22, 20, 26, 27, 30: // Strings
+                return .string(decodeASN1String(node) ?? String(decoding: node.valueBytes, as: UTF8.self))
+
+            case 16 where node.isConstructed, 17 where node.isConstructed: // SEQUENCE / SET -> Array
+                return .array(node.children.map { decodeDEREntitlementValue($0) })
+
             default:
                 break
             }
         }
-        return "0x" + node.valueBytes.map { String(format: "%02x", $0) }.joined()
+
+        return .data(Data(node.valueBytes))
     }
 }
 

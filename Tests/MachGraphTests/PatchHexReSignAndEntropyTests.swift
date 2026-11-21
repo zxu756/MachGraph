@@ -496,7 +496,7 @@ struct PatchHexReSignAndEntropyTests {
         #expect(result.verificationReport.isValid)
         #expect(result.verificationReport.mismatchedCodeSlots.isEmpty)
         #expect(result.updatedCDHashHex != result.previousCDHashHex)
-        #expect(result.updatedSummary.entitlementsPairs["com.apple.security.cs.allow-jit"] == "true")
+        #expect(result.updatedSummary.entitlements["com.apple.security.cs.allow-jit"] == .bool(true))
     }
 
     @Test("MachOAdHocReSigner rebuildSuperBlob strategy updates custom identifier and entitlements XML")
@@ -525,7 +525,7 @@ struct PatchHexReSignAndEntropyTests {
         #expect(result.verificationReport.isValid)
         #expect(result.updatedSummary.isAdHoc)
         #expect(result.updatedSummary.identifier == "com.machgraph.custom.resigned")
-        #expect(result.updatedSummary.entitlementsPairs["com.machgraph.rebuilt"] == "true")
+        #expect(result.updatedSummary.entitlements["com.machgraph.rebuilt"] == .bool(true))
     }
 
     @Test("SlidingWindowEntropyProfiler computes 0.0 bits/byte on zeros and ~8.0 bits/byte on uniform/CSPRNG streams")

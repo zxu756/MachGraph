@@ -1058,13 +1058,13 @@ public struct EntropyAndCodeSignStudioView: View {
             .background(ColdTungstenPalette.chassisBackground)
             .clipShape(RoundedRectangle(cornerRadius: 4))
 
-            if !summary.entitlementsPairs.isEmpty {
+            if !summary.entitlements.isEmpty {
                 Text(localizer.L("EMBEDDED ENTITLEMENTS DER / PLIST", "内嵌权限声明 DER / PLIST"))
                     .font(ColdTungstenTypography.microBadgeMono(size: 9.5, weight: .bold))
                     .foregroundStyle(ColdTungstenPalette.mutedOffsetInk)
 
-                ForEach(summary.entitlementsPairs.keys.sorted(), id: \.self) { entKey in
-                    let val = summary.entitlementsPairs[entKey] ?? "true"
+                ForEach(summary.entitlements.keys.sorted(), id: \.self) { entKey in
+                    let val = summary.entitlements[entKey].map(Self.formatEntitlementBadge) ?? ""
                     let risky = entKey.contains("get-task-allow") || entKey.contains("disable-library-validation") || entKey.contains("cs.allow")
                     HStack(spacing: 6) {
                         Image(systemName: risky ? "exclamationmark.shield.fill" : "checkmark.circle.fill")
@@ -1097,6 +1097,20 @@ public struct EntropyAndCodeSignStudioView: View {
                 .strokeBorder(ColdTungstenPalette.tungstenSeam, lineWidth: ColdTungstenMetrics.borderHairline)
         )
         .clipShape(RoundedRectangle(cornerRadius: ColdTungstenMetrics.cornerRadiusPanel))
+    }
+
+    private static func formatEntitlementBadge(_ value: EntitlementValue) -> String {
+        switch value {
+        case .bool(let b): return b ? "true" : "false"
+        case .integer(let i): return "\(i)"
+        case .unsignedInteger(let u): return "\(u)"
+        case .real(let d): return "\(d)"
+        case .string(let s): return s
+        case .data(let raw): return "<\(raw.count) B>"
+        case .date(let iso): return iso
+        case .array(let items): return "[\(items.count)]"
+        case .dictionary(let dict): return "{\(dict.count)}"
+        }
     }
 
     private func sigKeyValRow(key: String, value: String) -> some View {

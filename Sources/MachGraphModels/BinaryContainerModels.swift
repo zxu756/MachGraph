@@ -376,6 +376,67 @@ public struct ChainedFixupRecord: Sendable, Codable, Hashable, Identifiable {
 
 // MARK: - Code Signature, ObjC & Swift Metadata
 
+public enum EntitlementValue: Sendable, Codable, Hashable {
+    case bool(Bool)
+    case integer(Int64)
+    case unsignedInteger(UInt64)
+    case real(Double)
+    case string(String)
+    case data(Data)
+    case date(String)
+    case array([EntitlementValue])
+    case dictionary([String: EntitlementValue])
+
+    /// Converts this value into a Foundation object suitable for `JSONSerialization` and JavaScriptCore,
+    /// keeping `Bool` (`CFBoolean`) distinct from integer `NSNumber`.
+    public func toFoundationJSONObject() -> Any {
+        switch self {
+        case .bool(let b):
+            return NSNumber(value: b)
+        case .integer(let i):
+            return NSNumber(value: i)
+        case .unsignedInteger(let u):
+            return NSNumber(value: u)
+        case .real(let d):
+            return NSNumber(value: d)
+        case .string(let s):
+            return s
+        case .data(let raw):
+            return raw.base64EncodedString()
+        case .date(let iso):
+            return iso
+        case .array(let items):
+            return items.map { $0.toFoundationJSONObject() }
+        case .dictionary(let dict):
+            return dict.mapValues { $0.toFoundationJSONObject() }
+        }
+    }
+
+    /// Converts this value into a Foundation object suitable for `PropertyListSerialization`.
+    public func toPropertyListObject() -> Any {
+        switch self {
+        case .bool(let b):
+            return NSNumber(value: b)
+        case .integer(let i):
+            return NSNumber(value: i)
+        case .unsignedInteger(let u):
+            return NSNumber(value: u)
+        case .real(let d):
+            return NSNumber(value: d)
+        case .string(let s):
+            return s
+        case .data(let raw):
+            return raw
+        case .date(let iso):
+            return iso
+        case .array(let items):
+            return items.map { $0.toPropertyListObject() }
+        case .dictionary(let dict):
+            return dict.mapValues { $0.toPropertyListObject() }
+        }
+    }
+}
+
 public struct CodeSignatureSummary: Sendable, Codable, Hashable {
     public let isSigned: Bool
     public let isAdHoc: Bool
@@ -387,7 +448,7 @@ public struct CodeSignatureSummary: Sendable, Codable, Hashable {
     public let pageSize: Int
     public let flags: UInt32
     public let entitlementsXML: String?
-    public let entitlementsPairs: [String: String]
+    public let entitlements: [String: EntitlementValue]
     public let cmsSignerCommonNames: [String]
 
     public init(
@@ -401,7 +462,7 @@ public struct CodeSignatureSummary: Sendable, Codable, Hashable {
         pageSize: Int = 4096,
         flags: UInt32 = 0,
         entitlementsXML: String? = nil,
-        entitlementsPairs: [String: String] = [:],
+        entitlements: [String: EntitlementValue] = [:],
         cmsSignerCommonNames: [String] = []
     ) {
         self.isSigned = isSigned
@@ -414,8 +475,12 @@ public struct CodeSignatureSummary: Sendable, Codable, Hashable {
         self.pageSize = pageSize
         self.flags = flags
         self.entitlementsXML = entitlementsXML
-        self.entitlementsPairs = entitlementsPairs
+        self.entitlements = entitlements
         self.cmsSignerCommonNames = cmsSignerCommonNames
+    }
+
+    public func entitlementsJSONObject() -> [String: Any] {
+        entitlements.mapValues { $0.toFoundationJSONObject() }
     }
 
     public static let unsigned = CodeSignatureSummary(isSigned: false)
