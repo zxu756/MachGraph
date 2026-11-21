@@ -12,14 +12,15 @@
 
 ---
 
-## 已通过 `M0` 验收的能力
+## 已通过 `M0`–`M2` 验收的能力
 
-| 领域 | 子命令 | `M0` 已验证范围 |
+| 领域 | 子命令 | `M0`–`M2` 已验证范围 |
 |---|---|---|
 | **Universal 与 Mach-O 64 容器解析** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN` 与动态库依赖（支持文本与 `--json`）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
 | **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），输出整个文件的一个香农熵数值，以及字节卡方值、零字节占比、1024 字节滑动窗口的个数与异常数（`entropy`；不输出各节的熵），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
 | **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤，查询调用/跳转/数据交叉引用（`xrefs`），导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
 | **内联 ARM64 微型汇编与临时重签名** | `asm`、`patch-asm`、`resign` | `asm` 从 `--asm` 或标准输入读取 ARM64 语句并在 `--at` 起逐条汇编成机器码，不读写任何文件（退出码 `0` 全部成功，`3` 表示有合法 A64 写法汇编器还不支持，`1` 表示有写错的语句）。`patch-asm` 将汇编结果写入副本并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。`;` 只是语句分隔符（注释用 `//` 或 `/* */`）：只要有一条语句汇编不了，`patch-asm` 就以非零退出码报错，不写出文件。补丁内部盖住跳转目标、函数起点、符号或 PAC/BTI 落点时默认拒绝写入，加 `--force` 可跳过这项安全检查。 |
+| **解码器与汇编器差分对照验收（`M2`）** | `disasm`、`asm` | `2026-11-21` 验收通过（见 [`reports/MachGraph-M2.md`](reports/MachGraph-M2.md) 与 [`reports/differential-full-2026-11-20.json`](reports/differential-full-2026-11-20.json)，复现命令 `./Scripts/test.sh milestone 2`），对照 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>`（助记符归一规则 `0` 条，操作数规则 `O1`–`O4` 共 `4` 条）：`full` `1,278` 个文件实测崩溃 `0`、判错 `0`、不认识 `0`、助记符一致 `65,969,542 / 65,969,684`（`99.9998%`）、操作数一致 `100%`（`65,969,542 / 65,969,542`）；`standard`（`ls`、`ssh`、`vim`）判错 `0`、不认识 `0`、操作数一致 `707,444 / 707,444`；汇编对照 `Scripts/acceptance/asm-clang.py standard` 共 `912` 种形态中 `911` 种经 `clang` 汇编得到原机器码（`adrp` 跳过 `1` 种），`Scripts/acceptance/asm-roundtrip.py standard` 中 `M2` 之前的 `699,038` 条指令（`814` 种形态）返回 `ok`、新解码 `8,406` 条中 `ok` `6,667` 条、`unsupported` `1,739` 条（`mismatch` `0`、`error` `0`）。 |
 | **中英双语命令行、HTML 报告与 MCP 服务端** | `export-html`、`mcp` | 支持 `--lang zh|en` 与 `MACHGRAPH_LANG=zh|en`（简体中文环境自动默认中文），导出单文件离线双语（`中文 \| EN`）HTML 分诊报告（`export-html`），并提供基于 `stdio` 的 JSON-RPC 2.0 MCP 服务端（`mcp`，所有工具调用均要求显式传入 `binaryPath`）。 |
 
 ---
@@ -97,7 +98,6 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"
 
 以下路线图事项及仓库内既有模块**尚未**完成独立参考工具对照验收，不计入上方已验证能力表：
 
-- **M2 — SIMD 整数向量指令补齐与操作数对照：** 补齐当前输出为 `.inst` 的 AdvSIMD 整数向量指令族，补齐剩余首选别名（`movz`/`movn` 印作 `mov`），并加入操作数级对照与解码->汇编回环验证。
 - **M3 — 元数据与符号解混淆对照：** `symbols --json` 与 `nm -arch arm64e` 完整集合对齐（含未定义外部导入符号 `U`）、Swift `$s`（对照 `swift-demangle`）与 C++ `_Z`（对照 `c++filt`）解混淆基准、ObjC 元数据（对照 `otool -ov`）及 entitlements 键值对照。
 - **M4 — 控制流图不变量与性能：** 基本块划分不变量校验、与 Ghidra 基本块边界对比，以及 `ssh` / `vim` 全量建图性能剖析与优化。
 - **M5 — MCP 工具补齐与 SwiftPM 库接口：** 为 `mcp` 增补 `mach_disasm_function`、`mach_list_symbols`、`mach_cfg`、`mach_find_strings`，并提供可独立编译运行的 SwiftPM 库调用示例。
