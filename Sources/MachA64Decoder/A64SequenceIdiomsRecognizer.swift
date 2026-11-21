@@ -224,7 +224,8 @@ public struct A64IdiomRecognizer: Sendable {
     /// to recover `ADRP+ADD`, `ADRP+LDR`, `ADRP+STR`, `MOVZ/MOVN+MOVK`, Darwin syscalls, import thunks, and switch dispatches.
     public func recognizeIdioms(
         in instructions: [A64DecodedInstruction],
-        symbolLookup: (@Sendable (VirtualAddress) -> String?)? = nil
+        symbolLookup: (@Sendable (VirtualAddress) -> String?)? = nil,
+        addressXrefClassifier: (@Sendable (VirtualAddress) -> XrefKind)? = nil
     ) -> [A64RecognizedIdiom] {
         guard !instructions.isEmpty else { return [] }
 
@@ -331,6 +332,7 @@ public struct A64IdiomRecognizer: Sendable {
                 let summary = sym != nil
                     ? "\(rd.canonicalName) -> \(resolvedAddr.compactHexString) (\(sym!))"
                     : "\(rd.canonicalName) -> \(resolvedAddr.compactHexString)"
+                let classifiedXrefKind = addressXrefClassifier?(resolvedAddr) ?? .dataPointerRead
 
                 idioms.append(
                     A64RecognizedIdiom(
@@ -342,7 +344,7 @@ public struct A64IdiomRecognizer: Sendable {
                         targetAddress: resolvedAddr,
                         constantValue: resolvedAddr.rawValue,
                         resolvedSymbol: sym,
-                        xrefKind: .stringReference,
+                        xrefKind: classifiedXrefKind,
                         summary: summary
                     )
                 )

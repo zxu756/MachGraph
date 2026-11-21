@@ -137,8 +137,8 @@ public struct MachCLIRunner: Sendable {
             primaryName: "xrefs",
             usageArgsEN: "<file> [--address <0x...> | --symbol <name>] [--json]",
             usageArgsZH: "<文件> [--address <0x...> | --symbol <名称>] [--json]",
-            summaryEN: "Query incoming & outgoing code/data cross-references",
-            summaryZH: "查询目标地址或符号的传入与传出交叉引用"
+            summaryEN: "Query incoming & outgoing code/data cross-references (or dump all xrefs when target is omitted)",
+            summaryZH: "查询目标地址或符号的传入与传出交叉引用（省略目标时输出全文件交叉引用）"
         ),
         CLISubcommandSpec(
             primaryName: "codesign",
@@ -1093,6 +1093,59 @@ public struct MachCLIRunner: Sendable {
         return body
     }
 
+    private struct CLIXrefRecordPayload: Encodable {
+        let fromAddress: UInt64
+        let fromAddressHex: String
+        let fromFunction: UInt64?
+        let toAddress: UInt64
+        let toAddressHex: String
+        let kind: String
+        let instructionPreview: String
+
+        enum CodingKeys: String, CodingKey {
+            case fromAddress
+            case fromAddressHex
+            case fromFunction
+            case toAddress
+            case toAddressHex
+            case kind
+            case instructionPreview
+        }
+
+        init(_ rec: XrefRecord) {
+            self.fromAddress = rec.fromAddress.rawValue
+            self.fromAddressHex = rec.fromAddress.hexString
+            self.fromFunction = rec.fromFunction?.rawValue
+            self.toAddress = rec.toAddress.rawValue
+            self.toAddressHex = rec.toAddress.hexString
+            self.kind = rec.kind.rawValue
+            self.instructionPreview = rec.instructionPreview
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(fromAddress, forKey: .fromAddress)
+            try container.encode(fromAddressHex, forKey: .fromAddressHex)
+            if let fromFunction {
+                try container.encode(fromFunction, forKey: .fromFunction)
+            } else {
+                try container.encodeNil(forKey: .fromFunction)
+            }
+            try container.encode(toAddress, forKey: .toAddress)
+            try container.encode(toAddressHex, forKey: .toAddressHex)
+            try container.encode(kind, forKey: .kind)
+            try container.encode(instructionPreview, forKey: .instructionPreview)
+        }
+    }
+
+    private struct CLIFullXrefsPayload: Encodable {
+        let count: Int
+        let fileName: String
+        let isDemo: Bool
+        let xrefCount: Int
+        let xrefs: [CLIXrefRecordPayload]
+    }
+
     private func runXrefs(args: [String], language: MachLanguage) throws -> String {
         let parsed = try parseArguments(
             args,
@@ -1102,14 +1155,42 @@ public struct MachCLIRunner: Sendable {
             language: language
         )
         let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "xrefs", language: language)
+        let addrRaw = parsed.values["--address"]
+        let symRaw = parsed.values["--function"] ?? parsed.values["--symbol"]
+
+        if addrRaw == nil && symRaw == nil {
+            let allRecords = loaded.index.crossReferences.allRecords
+            if parsed.isJSON {
+                let payload = CLIFullXrefsPayload(
+                    count: allRecords.count,
+                    fileName: loaded.index.image.fileName,
+                    isDemo: loaded.isDemo,
+                    xrefCount: allRecords.count,
+                    xrefs: allRecords.map(CLIXrefRecordPayload.init)
+                )
+                let data = try JSONEncoder().encode(payload)
+                return String(decoding: data, as: UTF8.self)
+            }
+
+            var lines: [String] = []
+            if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+                lines.append(banner)
+            }
+            lines.append("XREFS (\(allRecords.count)):")
+            for rec in allRecords {
+                lines.append("  \(rec.fromAddress.hexString) -> \(rec.toAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
+            }
+            return lines.joined(separator: "\n")
+        }
+
         let targetAddr: VirtualAddress
-        if let addrRaw = parsed.values["--address"] {
+        if let addrRaw {
             targetAddr = try parseStrictAddress(addrRaw, language: language)
-        } else if let symRaw = parsed.values["--function"] ?? parsed.values["--symbol"] {
+        } else if let symRaw {
             let fn = try resolveRequiredFunction(in: loaded.index, symbolQuery: symRaw, addressQuery: nil, language: language)
             targetAddr = fn.address
         } else {
-            targetAddr = loaded.index.image.entryPoint ?? loaded.index.functions.first?.address ?? .zero
+            targetAddr = .zero
         }
 
         let incoming = loaded.index.crossReferences.xrefsTo(address: targetAddr)
@@ -1120,6 +1201,7 @@ public struct MachCLIRunner: Sendable {
                 [
                     "fromAddress": rec.fromAddress.rawValue,
                     "fromAddressHex": rec.fromAddress.hexString,
+                    "fromFunction": rec.fromFunction.map { NSNumber(value: $0.rawValue) } ?? NSNull(),
                     "toAddress": rec.toAddress.rawValue,
                     "toAddressHex": rec.toAddress.hexString,
                     "kind": rec.kind.rawValue,

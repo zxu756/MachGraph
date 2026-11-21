@@ -366,6 +366,8 @@ extension XrefKind {
             return language.select("JMP", "无条件跳转")
         case .conditionalBranch:
             return language.select("BRANCH", "条件分支")
+        case .codeReference:
+            return language.select("CODE_REF", "代码引用")
         case .dataPointerRead:
             return language.select("DATA_READ", "数据读取")
         case .dataPointerWrite:

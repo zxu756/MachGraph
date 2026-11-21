@@ -732,5 +732,221 @@ class TestM3DemangleSubcheck(unittest.TestCase):
                 self.assertEqual(rep["verdict"], "FAIL")
 
 
+def _write_thin_arm64_with_sections(path: str) -> None:
+    """Write a minimal thin ARM64e Mach-O header with __TEXT (__text, __cstring) and __DATA (__data, __cfstring)."""
+    secs = [
+        (b"__text", b"__TEXT", 0x100001000, 0x1000, 0x80000400),
+        (b"__cstring", b"__TEXT", 0x100003000, 0x200, 0x00000002),
+        (b"__objc_methname", b"__TEXT", 0x100003200, 0x100, 0x00000002),
+        (b"__cfstring", b"__DATA_CONST", 0x100004000, 0x80, 0x00000000),
+        (b"__data", b"__DATA", 0x100008000, 0x200, 0x00000000),
+    ]
+    seg_hdr = struct.pack(
+        "<II16sQQQQiiII",
+        0x19,
+        72 + len(secs) * 80,
+        b"__TEXT\x00" + b"\x00" * 9,
+        0x100000000,
+        0x10000,
+        0,
+        0x1000,
+        5,
+        5,
+        len(secs),
+        0,
+    )
+    sec_blobs = []
+    for sect, seg, addr, size, flags in secs:
+        sec_blobs.append(
+            struct.pack(
+                "<16s16sQQIIIIIIII",
+                sect.ljust(16, b"\x00"),
+                seg.ljust(16, b"\x00"),
+                addr,
+                size,
+                0,
+                2,
+                0,
+                0,
+                flags,
+                0,
+                0,
+                0,
+            )
+        )
+    lc_bytes = seg_hdr + b"".join(sec_blobs)
+    mh = struct.pack("<IiiIIIII", 0xFEEDFACF, 0x0100000C, 2, 2, 1, len(lc_bytes), 0x85, 0)
+    with open(path, "wb") as fh:
+        fh.write(mh + lc_bytes + b"\x00" * 128)
+
+
+class TestM3XrefsSubcheck(unittest.TestCase):
+    """Verify `bl` CALL edge equality, G25 `STRING_REF` target section enforcement, and `kind_counts` recording."""
+
+    def test_xrefs_pass_exact_bl_edges_valid_string_sections_and_kind_distribution(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "xrefs_ok")
+            _write_thin_arm64_with_sections(bin_path)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "xrefs_ok.json")
+
+            objdump_stdout = (
+                b"(__TEXT,__text) section\n"
+                b"100001000:\tb\t0x100001040\n"
+                b"100001004:\tbl\t0x100001200\n"
+                b"100001008:\tblraa\tx16, x17\n"
+                b"10000100c:\tbl\t0x100001300 ; stub\n"
+            )
+            mg_xrefs_payload = {
+                "fileName": "xrefs_ok",
+                "isDemo": False,
+                "xrefCount": 7,
+                "xrefs": [
+                    {"fromAddress": 0x100001000, "toAddress": 0x100001040, "kind": "JMP"},
+                    {"fromAddress": 0x100001004, "toAddress": 0x100001200, "kind": "CALL"},
+                    {"fromAddress": 0x10000100C, "toAddress": 0x100001300, "kind": "CALL"},
+                    {"fromAddress": 0x100001010, "toAddress": 0x100001500, "kind": "CODE_REF"},
+                    {"fromAddress": 0x100001014, "toAddress": 0x100008020, "kind": "DATA_READ"},
+                    {"fromAddress": 0x100001018, "toAddress": 0x100003010, "kind": "STRING_REF"},
+                    {"fromAddress": 0x10000101C, "toAddress": 0x100004000, "kind": "STRING_REF"},
+                ],
+            }
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    self.assertIn("--arch=arm64e", cmd)
+                    self.assertIn("--mcpu=apple-m1", cmd)
+                    self.assertIn("--mattr=+bti", cmd)
+                    return subprocess.CompletedProcess(cmd, 0, stdout=objdump_stdout, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=json.dumps(mg_xrefs_payload).encode("utf-8"), stderr=b""
+                    )
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main([bin_path, "--only", "xrefs", "--machgraph", fake_mg, "--json-out", out_json])
+
+            self.assertEqual(rc, 0, buf.getvalue())
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "PASS")
+            xchk = report["checks"]["xrefs"]
+            self.assertEqual(xchk["total_ref_items"], 2)
+            self.assertEqual(xchk["total_mg_items"], 2)
+            self.assertEqual(xchk["total_diffs"], 0)
+            self.assertEqual(xchk["total_xrefs"], 7)
+            self.assertEqual(xchk["non_string_section_string_refs"], 0)
+            self.assertEqual(
+                xchk["kind_counts"],
+                {"CALL": 2, "CODE_REF": 1, "DATA_READ": 1, "JMP": 1, "STRING_REF": 2},
+            )
+            self.assertEqual(
+                xchk["string_ref_sections"],
+                {"__DATA_CONST,__cfstring": 1, "__TEXT,__cstring": 1},
+            )
+
+    def test_xrefs_fails_on_missing_or_extra_bl_edges_and_g25_non_string_section_string_ref(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "xrefs_bad")
+            _write_thin_arm64_with_sections(bin_path)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+
+            objdump_stdout = (
+                b"100001004:\tbl\t0x100001200\n"
+                b"10000100c:\tbl\t0x100001300\n"
+            )
+
+            # Case A: G25 bug - STRING_REF pointing into __TEXT,__text and __DATA,__data
+            g25_payload = {
+                "fileName": "xrefs_bad",
+                "isDemo": False,
+                "xrefs": [
+                    {"fromAddress": 0x100001004, "toAddress": 0x100001200, "kind": "CALL"},
+                    {"fromAddress": 0x10000100C, "toAddress": 0x100001300, "kind": "CALL"},
+                    {"fromAddress": 0x100001010, "toAddress": 0x100001500, "kind": "STRING_REF"},
+                    {"fromAddress": 0x100001014, "toAddress": 0x100008020, "kind": "STRING_REF"},
+                ],
+            }
+            out_g25 = os.path.join(tmp, "g25_fail.json")
+
+            def fake_run_g25(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=objdump_stdout, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(g25_payload).encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run_g25), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc_g25 = m3_diff.main([bin_path, "--only", "xrefs", "--machgraph", fake_mg, "--json-out", out_g25])
+
+            self.assertEqual(rc_g25, 1)
+            rep_g25 = _read_json(out_g25)
+            self.assertEqual(rep_g25["verdict"], "FAIL")
+            self.assertEqual(rep_g25["checks"]["xrefs"]["non_string_section_string_refs"], 2)
+            self.assertEqual(rep_g25["checks"]["xrefs"]["total_diffs"], 2)
+            self.assertEqual(rep_g25["checks"]["xrefs"]["examples"][0]["target_section"], "__TEXT,__text")
+
+            # Case B: Missing bl edge + extra CALL edge
+            edge_diff_payload = {
+                "fileName": "xrefs_bad",
+                "isDemo": False,
+                "xrefs": [
+                    {"fromAddress": 0x100001004, "toAddress": 0x100001200, "kind": "CALL"},
+                    {"fromAddress": 0x100001020, "toAddress": 0x100001999, "kind": "CALL"},
+                ],
+            }
+            out_edge = os.path.join(tmp, "edge_fail.json")
+
+            def fake_run_edge(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=objdump_stdout, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=json.dumps(edge_diff_payload).encode("utf-8"), stderr=b""
+                    )
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run_edge), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc_edge = m3_diff.main([bin_path, "--only", "xrefs", "--machgraph", fake_mg, "--json-out", out_edge])
+
+            self.assertEqual(rc_edge, 1)
+            rep_edge = _read_json(out_edge)
+            self.assertEqual(rep_edge["checks"]["xrefs"]["total_diffs"], 2)
+
+            # Case C: Old single-address CLI JSON without `xrefs` array -> must fail!
+            old_cli_payload = {"fileName": "xrefs_bad", "isDemo": False, "incoming": [], "outgoing": []}
+            out_old = os.path.join(tmp, "old_cli_fail.json")
+
+            def fake_run_old(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "llvm-objdump"] and "-d" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=objdump_stdout, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "xrefs":
+                    return subprocess.CompletedProcess(
+                        cmd, 0, stdout=json.dumps(old_cli_payload).encode("utf-8"), stderr=b""
+                    )
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run_old), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc_old = m3_diff.main([bin_path, "--only", "xrefs", "--machgraph", fake_mg, "--json-out", out_old])
+
+            self.assertEqual(rc_old, 1)
+            rep_old = _read_json(out_old)
+            self.assertEqual(rep_old["checks"]["xrefs"]["examples"][0]["kind"], "invalid_xrefs_field")
+
 if __name__ == "__main__":
     unittest.main()

@@ -466,6 +466,37 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(annotated.contains { ($0.autoComment ?? "").contains("MACHGRAPH-PRO-2026") })
     }
 
+    @Test("G25: A64IdiomRecognizer does not default adrp+add to STRING_REF and honors optional addressXrefClassifier")
+    func idiomRecognizerAdrpAddG25Classification() throws {
+        let program = try assembler.assembleProgram("""
+            adrp x0, 0x100001000
+            add x0, x0, #0x80
+            adrp x1, 0x100008000
+            add x1, x1, #0x10
+            adrp x2, 0x100003000
+            add x2, x2, #0x40
+        """, baseAddress: VirtualAddress(0x1_0000_1200))
+
+        let unclassified = idiomRecognizer.recognizeIdioms(in: program.instructions)
+        #expect(unclassified.count == 3)
+        for idiom in unclassified where idiom.kind == .adrpAddAddress {
+            #expect(idiom.xrefKind != .stringReference)
+            #expect(idiom.xrefKind == .dataPointerRead)
+        }
+
+        let classified = idiomRecognizer.recognizeIdioms(
+            in: program.instructions,
+            addressXrefClassifier: { addr in
+                switch addr {
+                case VirtualAddress(0x1_0000_1080): return .codeReference
+                case VirtualAddress(0x1_0000_3040): return .stringReference
+                default: return .dataPointerRead
+                }
+            }
+        )
+        #expect(classified.map(\.xrefKind) == [.codeReference, .dataPointerRead, .stringReference])
+    }
+
     @Test("Prologue and epilogue analyzer recovers PAC usage, frame pointer setup, stack frame bytes, and saved registers")
     func prologueAndEpilogueAnalyzerStandardAndARM64EPACFrames() throws {
         let pacFunc = try assembler.assembleProgram("""

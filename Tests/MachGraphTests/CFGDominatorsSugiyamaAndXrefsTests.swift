@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import MachGraphModels
-import MachBinaryFormats
+@testable import MachBinaryFormats
 import MachA64Decoder
 import MachCFGEngine
 
@@ -612,5 +612,297 @@ struct CFGDominatorsSugiyamaAndXrefsTests {
         let recovered = try #require(descriptors.first)
         #expect(recovered.indexRegister?.index == 2)
         #expect(recovered.jumpTable.targetAddresses == expectedTargets)
+    }
+
+    // MARK: - M3 Stage 5 (G25): Address-Taken Classification (CODE_REF / DATA_READ / STRING_REF)
+
+    private static func buildG25SyntheticMachO() throws -> Data {
+        let imageBase: UInt64 = 0x1_0000_0000
+        let textVA: UInt64 = imageBase + 0x1000
+        let callbackVA: UInt64 = imageBase + 0x1080
+        let stubsVA: UInt64 = imageBase + 0x1200
+        let constVA: UInt64 = imageBase + 0x2000
+        let cstringVA: UInt64 = imageBase + 0x3000
+        let objcMethVA: UInt64 = imageBase + 0x3100
+        let cfstringVA: UInt64 = imageBase + 0x4000
+        let dataVA: UInt64 = imageBase + 0x8000
+        let linkeditFileOff = 0xC000
+        let linkeditVA = imageBase + UInt64(linkeditFileOff)
+
+        let assembler = A64MiniAssembler()
+        let callerProg = try assembler.assembleProgram("""
+            adrp x0, 0x100001000
+            add x0, x0, #0x80
+            adrp x1, 0x100001000
+            add x1, x1, #0x200
+            adr x2, 0x100001080
+            adrp x3, 0x100002000
+            sub x3, x3, #0xf80
+            adrp x4, 0x100002000
+            add x4, x4, #0x0
+            adrp x5, 0x100008000
+            add x5, x5, #0x0
+            adr x6, 0x100002020
+            adrp x7, 0x100003000
+            add x7, x7, #0x0
+            adr x8, 0x100003100
+            adrp x9, 0x100004000
+            add x9, x9, #0x0
+            ret
+        """, baseAddress: VirtualAddress(textVA))
+
+        let callbackProg = try assembler.assembleProgram("""
+            mov w0, #7
+            ret
+        """, baseAddress: VirtualAddress(callbackVA))
+
+        let stubProg = try assembler.assembleProgram("""
+            ret
+        """, baseAddress: VirtualAddress(stubsVA))
+
+        var sliceBytes = [UInt8](repeating: 0, count: linkeditFileOff)
+        func writeWords(_ words: [UInt32], fileOffset: Int) {
+            for (idx, w) in words.enumerated() {
+                let off = fileOffset + idx * 4
+                sliceBytes[off + 0] = UInt8(truncatingIfNeeded: w)
+                sliceBytes[off + 1] = UInt8(truncatingIfNeeded: w >> 8)
+                sliceBytes[off + 2] = UInt8(truncatingIfNeeded: w >> 16)
+                sliceBytes[off + 3] = UInt8(truncatingIfNeeded: w >> 24)
+            }
+        }
+        func writeASCII(_ s: String, fileOffset: Int) {
+            for (idx, b) in Array(s.utf8).enumerated() {
+                sliceBytes[fileOffset + idx] = b
+            }
+        }
+
+        writeWords(callerProg.words, fileOffset: 0x1000)
+        writeWords(callbackProg.words, fileOffset: 0x1080)
+        writeWords(stubProg.words, fileOffset: 0x1200)
+        // Put printable ASCII inside __TEXT,__const and __DATA,__data to ensure heuristic ASCII runs in non-string sections still classify as DATA_READ
+        writeASCII("CONST_TABLE_ASCII_BYTES", fileOffset: 0x2000)
+        writeWords([0xDEAD_BEEF, 0xCAFE_BABE], fileOffset: 0x2020)
+        writeASCII("hello cstring", fileOffset: 0x3000)
+        writeASCII("initWithKey:", fileOffset: 0x3100)
+        writeWords([0x0102_0304, 0x0000_07C8, 0x0000_3000, 0x0000_0001], fileOffset: 0x4000)
+        writeASCII("GLOBAL_DATA_STRUCT_BYTES", fileOffset: 0x8000)
+
+        var strPool = BinaryBufferWriter(capacity: 128, endianness: .little)
+        strPool.appendUInt8(0)
+        var nlistWriter = BinaryBufferWriter(capacity: 64, endianness: .little)
+        for (name, va) in [("_caller", textVA), ("_callback_fn", callbackVA)] {
+            let strOff = UInt32(strPool.count)
+            strPool.appendCString(name)
+            nlistWriter.appendUInt32(strOff)
+            nlistWriter.appendUInt8(MachOConstants.nSect | MachOConstants.nExt)
+            nlistWriter.appendUInt8(1)
+            nlistWriter.appendUInt16(0)
+            nlistWriter.appendUInt64(va)
+        }
+        strPool.padToAlignment(8)
+
+        var linkedit = BinaryBufferWriter(capacity: 256, endianness: .little)
+        let symtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(nlistWriter.bytes)
+        let strtabOff = linkeditFileOff + linkedit.count
+        linkedit.appendBytes(strPool.bytes)
+        linkedit.padToAlignment(16)
+
+        struct SecDef {
+            let sect: String
+            let seg: String
+            let addr: UInt64
+            let size: UInt64
+            let offset: UInt32
+            let flags: UInt32
+        }
+
+        var lc = BinaryBufferWriter(capacity: 2048, endianness: .little)
+        var ncmds: UInt32 = 0
+        func appendSeg(name: String, vmaddr: UInt64, vmsize: UInt64, fileoff: UInt64, filesize: UInt64, prot: Int32, secs: [SecDef]) {
+            let cmdSize = UInt32(72 + secs.count * 80)
+            lc.appendUInt32(MachOConstants.lcSegment64)
+            lc.appendUInt32(cmdSize)
+            lc.appendFixedASCII(name, length: 16)
+            lc.appendUInt64(vmaddr)
+            lc.appendUInt64(vmsize)
+            lc.appendUInt64(fileoff)
+            lc.appendUInt64(filesize)
+            lc.appendUInt32(UInt32(bitPattern: prot))
+            lc.appendUInt32(UInt32(bitPattern: prot))
+            lc.appendUInt32(UInt32(secs.count))
+            lc.appendUInt32(0)
+            for s in secs {
+                lc.appendFixedASCII(s.sect, length: 16)
+                lc.appendFixedASCII(s.seg, length: 16)
+                lc.appendUInt64(s.addr)
+                lc.appendUInt64(s.size)
+                lc.appendUInt32(s.offset)
+                lc.appendUInt32(2)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(s.flags)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+            }
+            ncmds += 1
+        }
+
+        appendSeg(name: "__PAGEZERO", vmaddr: 0, vmsize: imageBase, fileoff: 0, filesize: 0, prot: 0, secs: [])
+        appendSeg(
+            name: "__TEXT",
+            vmaddr: imageBase,
+            vmsize: 0x4000,
+            fileoff: 0,
+            filesize: 0x4000,
+            prot: 5,
+            secs: [
+                .init(sect: "__text", seg: "__TEXT", addr: textVA, size: 0x100, offset: 0x1000, flags: MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions),
+                .init(sect: "__stubs", seg: "__TEXT", addr: stubsVA, size: 0x10, offset: 0x1200, flags: MachOConstants.sSymbolStubs | MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions),
+                .init(sect: "__const", seg: "__TEXT", addr: constVA, size: 0x40, offset: 0x2000, flags: 0),
+                .init(sect: "__cstring", seg: "__TEXT", addr: cstringVA, size: 0x40, offset: 0x3000, flags: MachOConstants.sCStringLiterals),
+                .init(sect: "__objc_methname", seg: "__TEXT", addr: objcMethVA, size: 0x40, offset: 0x3100, flags: MachOConstants.sCStringLiterals)
+            ]
+        )
+        appendSeg(
+            name: "__DATA_CONST",
+            vmaddr: imageBase + 0x4000,
+            vmsize: 0x4000,
+            fileoff: 0x4000,
+            filesize: 0x4000,
+            prot: 3,
+            secs: [
+                .init(sect: "__cfstring", seg: "__DATA_CONST", addr: cfstringVA, size: 0x20, offset: 0x4000, flags: 0)
+            ]
+        )
+        appendSeg(
+            name: "__DATA",
+            vmaddr: imageBase + 0x8000,
+            vmsize: 0x4000,
+            fileoff: 0x8000,
+            filesize: 0x4000,
+            prot: 3,
+            secs: [
+                .init(sect: "__data", seg: "__DATA", addr: dataVA, size: 0x40, offset: 0x8000, flags: 0)
+            ]
+        )
+        appendSeg(
+            name: "__LINKEDIT",
+            vmaddr: linkeditVA,
+            vmsize: 0x4000,
+            fileoff: UInt64(linkeditFileOff),
+            filesize: UInt64(linkedit.count),
+            prot: 1,
+            secs: []
+        )
+
+        // LC_MAIN
+        lc.appendUInt32(MachOConstants.lcMain)
+        lc.appendUInt32(24)
+        lc.appendUInt64(0x1000)
+        lc.appendUInt64(0)
+        ncmds += 1
+
+        // LC_SYMTAB
+        lc.appendUInt32(MachOConstants.lcSymtab)
+        lc.appendUInt32(24)
+        lc.appendUInt32(UInt32(symtabOff))
+        lc.appendUInt32(2)
+        lc.appendUInt32(UInt32(strtabOff))
+        lc.appendUInt32(UInt32(strPool.count))
+        ncmds += 1
+
+        var hdr = BinaryBufferWriter(capacity: 32 + lc.count, endianness: .little)
+        hdr.appendUInt32(MachOConstants.mhMagic64)
+        hdr.appendUInt32(UInt32(bitPattern: MachOConstants.cpuTypeARM64))
+        hdr.appendUInt32(0)
+        hdr.appendUInt32(MachOConstants.mhExecute)
+        hdr.appendUInt32(ncmds)
+        hdr.appendUInt32(UInt32(lc.count))
+        hdr.appendUInt32(0x0020_0085)
+        hdr.appendUInt32(0)
+        hdr.appendBytes(lc.bytes)
+
+        for (i, b) in hdr.bytes.enumerated() {
+            sliceBytes[i] = b
+        }
+        sliceBytes.append(contentsOf: linkedit.bytes)
+        return Data(sliceBytes)
+    }
+
+    @Test("G25: adrp+add/sub and adr targeting code sections (__text, __stubs) emit CODE_REF instead of STRING_REF")
+    func g25CodeAddressReferencesEmitCodeRef() throws {
+        let data = try Self.buildG25SyntheticMachO()
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "G25Code.arm64")
+        let xrefs = index.crossReferences
+
+        // 0x100001004: add x0, x0, #0x80 -> 0x100001080 (__TEXT,__text)
+        let addToText = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1004))
+        #expect(addToText.map(\.kind) == [.codeReference])
+        #expect(addToText.first?.toAddress == VirtualAddress(0x1_0000_1080))
+
+        // 0x10000100c: add x1, x1, #0x200 -> 0x100001200 (__TEXT,__stubs)
+        let addToStubs = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_100C))
+        #expect(addToStubs.map(\.kind) == [.codeReference])
+        #expect(addToStubs.first?.toAddress == VirtualAddress(0x1_0000_1200))
+
+        // 0x100001010: adr x2, 0x100001080 -> 0x100001080 (__TEXT,__text)
+        let adrToText = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1010))
+        #expect(adrToText.map(\.kind) == [.codeReference])
+        #expect(adrToText.first?.toAddress == VirtualAddress(0x1_0000_1080))
+
+        // 0x100001018: sub x3, x3, #0xf80 -> 0x100001080 (__TEXT,__text)
+        let subToText = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1018))
+        #expect(subToText.map(\.kind) == [.codeReference])
+        #expect(subToText.first?.toAddress == VirtualAddress(0x1_0000_1080))
+    }
+
+    @Test("G25: adrp+add and adr targeting non-string data sections (__const, __data) emit DATA_READ instead of STRING_REF")
+    func g25DataAddressReferencesEmitDataRead() throws {
+        let data = try Self.buildG25SyntheticMachO()
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "G25Data.arm64")
+        let xrefs = index.crossReferences
+
+        // 0x100001020: add x4, x4, #0 -> 0x100002000 (__TEXT,__const)
+        let addToConst = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1020))
+        #expect(addToConst.map(\.kind) == [.dataPointerRead])
+        #expect(addToConst.first?.toAddress == VirtualAddress(0x1_0000_2000))
+
+        // 0x100001028: add x5, x5, #0 -> 0x100008000 (__DATA,__data)
+        let addToData = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1028))
+        #expect(addToData.map(\.kind) == [.dataPointerRead])
+        #expect(addToData.first?.toAddress == VirtualAddress(0x1_0000_8000))
+
+        // 0x10000102c: adr x6, 0x100002020 -> 0x100002020 (__TEXT,__const)
+        let adrToConst = xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_102C))
+        #expect(adrToConst.map(\.kind) == [.dataPointerRead])
+        #expect(adrToConst.first?.toAddress == VirtualAddress(0x1_0000_2020))
+    }
+
+    @Test("G25: adrp+add and adr targeting string sections emit STRING_REF and /bin/ls has 0 STRING_REFs outside string sections")
+    func g25StringSectionReferencesEmitStringRefAndRealLsHasZeroOutOfSectionStringRefs() throws {
+        let data = try Self.buildG25SyntheticMachO()
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "G25Str.arm64")
+        let xrefs = index.crossReferences
+
+        // 0x100001034 -> __TEXT,__cstring
+        #expect(xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1034)).map(\.kind) == [.stringReference])
+        // 0x100001038 -> __TEXT,__objc_methname
+        #expect(xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1038)).map(\.kind) == [.stringReference])
+        // 0x100001040 -> __DATA_CONST,__cfstring
+        #expect(xrefs.xrefsFrom(address: VirtualAddress(0x1_0000_1040)).map(\.kind) == [.stringReference])
+
+        // Real /bin/ls check: 0 STRING_REFs outside string sections, and >0 CODE_REFs
+        let lsData = try Data(contentsOf: URL(fileURLWithPath: "/bin/ls"))
+        let lsIndex = try BinaryAnalysisCoordinator().analyzeBinary(data: lsData, filePath: "/bin/ls", fileName: "ls")
+        let allowedStringSections: Set<String> = ["__cstring", "__ustring", "__oslogstring", "__objc_methname", "__cfstring"]
+        let badStringRefs = lsIndex.crossReferences.allRecords.filter { rec in
+            guard rec.kind == .stringReference else { return false }
+            guard let sec = lsIndex.image.section(containing: rec.toAddress) else { return true }
+            return !allowedStringSections.contains(sec.sectionName.lowercased())
+        }
+        #expect(badStringRefs.isEmpty, "Found \(badStringRefs.count) STRING_REFs outside string sections in /bin/ls")
+        #expect(lsIndex.crossReferences.allRecords.contains { $0.kind == .codeReference })
     }
 }

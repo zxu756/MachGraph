@@ -273,6 +273,7 @@ public enum XrefKind: String, Sendable, Codable, Hashable, CaseIterable {
     case indirectCall = "ICALL"
     case unconditionalJump = "JMP"
     case conditionalBranch = "BRANCH"
+    case codeReference = "CODE_REF"
     case dataPointerRead = "DATA_READ"
     case dataPointerWrite = "DATA_WRITE"
     case stringReference = "STRING_REF"
