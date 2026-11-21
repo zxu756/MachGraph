@@ -4,58 +4,32 @@ import MachA64Decoder
 
 // MARK: - Authoritative Known Noreturn Symbols & Bounded Fixed-Point Propagation
 
-/// Canonical table of C / POSIX / BSD-Darwin / C++ ABI / Objective-C / Swift runtime functions
-/// guaranteed never to return to their caller (`_Noreturn` / `__dead2` / `[[noreturn]]` / `-> Never`).
-///
-/// Sources:
-/// - ISO C11 / C23 `<stdlib.h>`, `<setjmp.h>`, `<threads.h>`:
-///   `abort`, `exit`, `_Exit`, `quick_exit`, `longjmp`, `thrd_exit`
-/// - POSIX.1-2017 `<unistd.h>`, `<setjmp.h>`, `<pthread.h>`:
-///   `_exit`, `_longjmp`, `siglongjmp`, `pthread_exit`
-/// - BSD & Apple Darwin `<err.h>`, `<assert.h>`, `<os/assumes.h>`, `<System/sys/reason.h>`,
-///   `<dispatch/dispatch.h>`, and LLVM compiler-rt stack protector:
-///   `err`, `errx`, `errc`, `verr`, `verrx`, `verrc`, `__stack_chk_fail`, `__assert_rtn`,
-///   `__assert_fail`, `abort_report_np`, `abort_with_reason`, `abort_with_payload`,
-///   `exit_with_payload`, `terminate_with_reason`, `terminate_with_payload`,
-///   `_os_crash`, `_os_crash_fmt`, `_os_crash_msg`, `dispatch_main`
-/// - Itanium C++ ABI & libc++abi `<cxxabi.h>`, `<exception>`:
-///   `__cxa_throw`, `__cxa_rethrow`, `__cxa_bad_cast`, `__cxa_bad_typeid`,
-///   `__cxa_pure_virtual`, `__cxa_deleted_virtual`, `__cxa_call_unexpected`,
-///   `__cxa_call_terminate`, `__clang_call_terminate`, `_ZSt9terminatev`,
-///   `_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE`
-/// - Apple Objective-C Runtime `<objc/objc-exception.h>`:
-///   `objc_exception_throw`, `objc_exception_rethrow`, `objc_terminate`
-/// - Swift Runtime `swift/Runtime/Debug.h` & `ErrorObject.h`:
-///   `swift_unexpectedError`, `swift_errorInMain`, `swift_fatalError`,
-///   `swift_deletedMethodError`, `swift_deletedAsyncMethodError`,
-///   `_swift_stdlib_reportFatalError`, `_swift_stdlib_reportFatalErrorInFile`,
-///   `_swift_stdlib_reportUnimplementedInitializer`, `_swift_stdlib_reportUnimplementedInitializerInFile`
+/// Canonical table of C / POSIX / BSD-Darwin / C++ ABI / Objective-C / embedded Perl runtime
+/// functions verified never to return to their caller via SDK header `noreturn` attributes,
+/// compiler/ABI specifications, and corpus call-site evidence (`Scripts/acceptance/noreturn-evidence.json`).
 public enum KnownNoreturnSymbols {
     public static let maxPropagationIterations: Int = 16
 
     public static let unprefixedNames: Set<String> = [
         // ISO C & POSIX
-        "abort", "exit", "_exit", "_Exit", "quick_exit", "thrd_exit",
+        "abort", "exit", "_exit", "_Exit", "quick_exit",
         "longjmp", "_longjmp", "siglongjmp", "pthread_exit",
         // BSD / Darwin Libsystem & compiler-rt SSP
         "err", "errx", "errc", "verr", "verrx", "verrc",
-        "__stack_chk_fail", "__assert_rtn", "__assert_fail",
-        "abort_report_np", "abort_with_reason", "abort_with_payload",
-        "exit_with_payload", "terminate_with_reason", "terminate_with_payload",
-        "_os_crash", "_os_crash_fmt", "_os_crash_msg", "dispatch_main",
-        // Itanium C++ ABI / libc++abi
-        "__cxa_throw", "__cxa_rethrow", "__cxa_bad_cast", "__cxa_bad_typeid",
-        "__cxa_pure_virtual", "__cxa_deleted_virtual",
-        "__cxa_call_unexpected", "__cxa_call_terminate", "__clang_call_terminate",
-        "_ZSt9terminatev",
-        "_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE",
+        "__stack_chk_fail", "__assert_rtn", "abort_report_np", "_os_crash",
+        // Dispatch & XPC event-loop noreturn entry points
+        "dispatch_main", "xpc_main",
+        // Itanium C++ ABI / libc++abi / libc++ / libunwind
+        "_Unwind_Resume", "__cxa_throw", "__cxa_rethrow",
+        "__cxa_bad_cast", "__cxa_bad_typeid", "__cxa_throw_bad_array_new_length",
+        "__cxa_pure_virtual", "__cxa_deleted_virtual", "__cxa_call_terminate",
+        "_ZSt9terminatev", "__libcpp_verbose_abort",
         // Objective-C Runtime
         "objc_exception_throw", "objc_exception_rethrow", "objc_terminate",
-        // Swift Runtime
-        "swift_unexpectedError", "swift_errorInMain", "swift_fatalError",
-        "swift_deletedMethodError", "swift_deletedAsyncMethodError",
-        "_swift_stdlib_reportFatalError", "_swift_stdlib_reportFatalErrorInFile",
-        "_swift_stdlib_reportUnimplementedInitializer", "_swift_stdlib_reportUnimplementedInitializerInFile"
+        // Embedded Perl Runtime (<CORE/proto.h>)
+        "Perl_croak", "Perl_croak_nocontext", "Perl_croak_no_modify",
+        "Perl_croak_xs_usage", "Perl_croak_memory_wrap",
+        "Perl_die", "Perl_die_nocontext", "Perl_my_exit", "Perl_my_failure_exit"
     ]
 
     /// Checks whether a Mach-O / ELF / stub symbol name refers to a known `noreturn` function.

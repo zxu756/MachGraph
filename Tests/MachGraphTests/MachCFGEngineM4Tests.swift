@@ -919,4 +919,112 @@ struct MachCFGEngineM4Tests {
         #expect(f2.blocks.contains { $0.startAddress == VirtualAddress(0x1_0000_1030) && $0.isExit })
         #expect(f2.edges.count == 2)
     }
+
+    // MARK: - 9. Unwinder Resume (`__Unwind_Resume`) Noreturn vs Returning Calls (`_xpc_transaction_exit_clean`, `_NSApplicationMain`)
+
+    @Test("BL to __Unwind_Resume terminates block as exit without fallthrough, while returning calls (_xpc_transaction_exit_clean, _NSApplicationMain) preserve fallthrough")
+    func unwindResumeSplitsBlockWithoutFallthroughWhileReturningCallsPreserveFallthrough() throws {
+        #expect(KnownNoreturnSymbols.matchesSymbolName("__Unwind_Resume"))
+        #expect(!KnownNoreturnSymbols.matchesSymbolName("_xpc_transaction_exit_clean"))
+        #expect(!KnownNoreturnSymbols.matchesSymbolName("_NSApplicationMain"))
+        #expect(!KnownNoreturnSymbols.matchesSymbolName("__Unwind_RaiseException"))
+        #expect(!KnownNoreturnSymbols.matchesSymbolName("_terminate_with_reason"))
+        #expect(!KnownNoreturnSymbols.matchesSymbolName("_os_fault_with_payload"))
+
+        let fnUnwindVA: UInt64 = 0x1_0000_1000
+        let fnXpcVA: UInt64 = 0x1_0000_1014
+        let fnAppVA: UInt64 = 0x1_0000_1024
+        let unwindStubVA: UInt64 = 0x1_0000_2000
+        let xpcStubVA: UInt64 = 0x1_0000_2004
+        let appStubVA: UInt64 = 0x1_0000_2008
+
+        // _objc_dealloc_landing_pad @ 0x100001000 (5 words = 0x14 bytes):
+        //   +0x00: cbnz w0, L_epilogue (+0x10)
+        //   +0x04: mov w0, #1
+        //   +0x08: bl __Unwind_Resume (0x100002000)         <-- ABI noreturn! Ends block here, isExit=true, 0 successors
+        //   +0x0c: nop                                      <-- untargeted instruction right after noreturn bl
+        //   +0x10: L_epilogue: ret
+        // _daemon_clean_exit @ 0x100001014 (4 words = 0x10 bytes):
+        //   +0x00: cbnz w0, L_ret (+0x0c)
+        //   +0x04: bl _xpc_transaction_exit_clean (0x100002004) <-- returns when transaction active! Must keep fallthrough
+        //   +0x08: nop
+        //   +0x0c: L_ret: ret
+        // _cocoa_main_entry @ 0x100001024 (4 words = 0x10 bytes):
+        //   +0x00: cbnz w0, L_ret (+0x0c)
+        //   +0x04: bl _NSApplicationMain (0x100002008)      <-- declared `int NSApplicationMain(...)`! Must keep fallthrough
+        //   +0x08: nop
+        //   +0x0c: L_ret: ret
+        let textWords: [UInt32] = [
+            Self.encCBNZ_W(rt: 0, from: fnUnwindVA + 0x00, to: fnUnwindVA + 0x10),
+            Self.encMOVZ_W(rd: 0, imm16: 1),
+            Self.encBL(from: fnUnwindVA + 0x08, to: unwindStubVA),
+            Self.insnNOP,
+            Self.insnRET,
+            // _daemon_clean_exit:
+            Self.encCBNZ_W(rt: 0, from: fnXpcVA + 0x00, to: fnXpcVA + 0x0C),
+            Self.encBL(from: fnXpcVA + 0x04, to: xpcStubVA),
+            Self.insnNOP,
+            Self.insnRET,
+            // _cocoa_main_entry:
+            Self.encCBNZ_W(rt: 0, from: fnAppVA + 0x00, to: fnAppVA + 0x0C),
+            Self.encBL(from: fnAppVA + 0x04, to: appStubVA),
+            Self.insnNOP,
+            Self.insnRET
+        ]
+
+        let stubWords: [UInt32] = [
+            Self.insnBR_X16,
+            Self.insnBR_X16,
+            Self.insnBR_X16
+        ]
+
+        let pureInsnFlags = MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions
+        let stubFlags = MachOConstants.sSymbolStubs | pureInsnFlags
+        let data = Self.buildSyntheticMachO(
+            textSections: [
+                .init(segment: "__TEXT", section: "__text", vmAddress: fnUnwindVA, fileOffset: 0x1000, words: textWords, flags: pureInsnFlags),
+                .init(segment: "__TEXT", section: "__stubs", vmAddress: unwindStubVA, fileOffset: 0x2000, words: stubWords, flags: stubFlags)
+            ],
+            lcFunctionStarts: [fnUnwindVA, fnXpcVA, fnAppVA],
+            symbols: [
+                .init(name: "_objc_dealloc_landing_pad", nSect: 1, vmAddress: fnUnwindVA, isExternal: true),
+                .init(name: "_daemon_clean_exit", nSect: 1, vmAddress: fnXpcVA, isExternal: true),
+                .init(name: "_cocoa_main_entry", nSect: 1, vmAddress: fnAppVA, isExternal: true),
+                .init(name: "__Unwind_Resume", nSect: 2, vmAddress: unwindStubVA, isExternal: true),
+                .init(name: "_xpc_transaction_exit_clean", nSect: 2, vmAddress: xpcStubVA, isExternal: true),
+                .init(name: "_NSApplicationMain", nSect: 2, vmAddress: appStubVA, isExternal: true)
+            ]
+        )
+
+        let index = try BinaryAnalysisCoordinator().analyzeBinary(data: data, fileName: "UnwindAndXpcNoreturn.arm64e")
+
+        // 1) __Unwind_Resume: cuts basic block, marks isExit=true, omits fallthrough edge
+        let unwindFn = try #require(index.function(named: "_objc_dealloc_landing_pad"))
+        let lpBlock = try #require(unwindFn.blocks.first { $0.startAddress == VirtualAddress(fnUnwindVA + 0x04) })
+        #expect(lpBlock.instructions.last?.address == VirtualAddress(fnUnwindVA + 0x08))
+        #expect(lpBlock.endAddress == VirtualAddress(fnUnwindVA + 0x0C))
+        #expect(lpBlock.isExit)
+        #expect(lpBlock.successorIDs.isEmpty)
+        #expect(!unwindFn.edges.contains { $0.sourceBlockID == lpBlock.id })
+
+        // 2) _xpc_transaction_exit_clean: keeps nop in block, not an exit, preserves fallthrough edge to L_ret
+        let xpcFn = try #require(index.function(named: "_daemon_clean_exit"))
+        let xpcBlock = try #require(xpcFn.blocks.first { $0.startAddress == VirtualAddress(fnXpcVA + 0x04) })
+        let xpcRetBlock = try #require(xpcFn.blocks.first { $0.startAddress == VirtualAddress(fnXpcVA + 0x0C) })
+        #expect(xpcBlock.instructions.last?.address == VirtualAddress(fnXpcVA + 0x08))
+        #expect(xpcBlock.endAddress == VirtualAddress(fnXpcVA + 0x0C))
+        #expect(!xpcBlock.isExit)
+        #expect(xpcBlock.successorIDs == [xpcRetBlock.id])
+        #expect(xpcFn.edges.contains { $0.sourceBlockID == xpcBlock.id && $0.targetBlockID == xpcRetBlock.id && $0.kind == .fallthroughEdge })
+
+        // 3) _NSApplicationMain: keeps nop in block, not an exit, preserves fallthrough edge to L_ret
+        let appFn = try #require(index.function(named: "_cocoa_main_entry"))
+        let appBlock = try #require(appFn.blocks.first { $0.startAddress == VirtualAddress(fnAppVA + 0x04) })
+        let appRetBlock = try #require(appFn.blocks.first { $0.startAddress == VirtualAddress(fnAppVA + 0x0C) })
+        #expect(appBlock.instructions.last?.address == VirtualAddress(fnAppVA + 0x08))
+        #expect(appBlock.endAddress == VirtualAddress(fnAppVA + 0x0C))
+        #expect(!appBlock.isExit)
+        #expect(appBlock.successorIDs == [appRetBlock.id])
+        #expect(appFn.edges.contains { $0.sourceBlockID == appBlock.id && $0.targetBlockID == appRetBlock.id && $0.kind == .fallthroughEdge })
+    }
 }
