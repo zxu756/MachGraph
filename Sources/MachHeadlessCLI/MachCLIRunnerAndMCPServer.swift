@@ -126,8 +126,14 @@ public struct MachCLIRunner: Sendable {
             summaryZH: "反汇编 ARM64/ARM64e 指令节区或指定目标函数"
         ),
         CLISubcommandSpec(
+            primaryName: "cfg",
+            usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--slice <index>] [--json]",
+            usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--slice <序号>] [--json]",
+            summaryEN: "Export structured control-flow graphs, dominators, loops & jump tables (or all functions when target is omitted)",
+            summaryZH: "输出结构化控制流图、支配树、自然循环与跳转表（省略目标时输出全文件所有函数）"
+        ),
+        CLISubcommandSpec(
             primaryName: "cfg-dot",
-            aliases: ["cfg"],
             usageArgsEN: "<file> [--symbol <name> | --address <0x...>] [--json]",
             usageArgsZH: "<文件> [--symbol <名称> | --address <0x...>] [--json]",
             summaryEN: "Export Graphviz DOT control-flow graph for a recovered function",
@@ -218,8 +224,8 @@ public struct MachCLIRunner: Sendable {
         ),
         (
             "--symbol <name>, --function <name>",
-            "Select one function by name (disasm, cfg-dot, decompile, xrefs)",
-            "按名称选定一个函数（disasm、cfg-dot、decompile、xrefs）"
+            "Select one function by name (disasm, cfg, cfg-dot, decompile, xrefs)",
+            "按名称选定一个函数（disasm、cfg、cfg-dot、decompile、xrefs）"
         ),
         (
             "--address <0x...>",
@@ -461,6 +467,8 @@ public struct MachCLIRunner: Sendable {
             return MachCLIOutcome(output: try runFixups(args: rest, language: resolvedLang))
         case "disasm":
             return MachCLIOutcome(output: try runDisasm(args: rest, language: resolvedLang))
+        case "cfg":
+            return MachCLIOutcome(output: try runCFG(args: rest, language: resolvedLang))
         case "cfg-dot":
             return MachCLIOutcome(output: try runCFGDot(args: rest, language: resolvedLang))
         case "decompile":
@@ -1141,6 +1149,429 @@ public struct MachCLIRunner: Sendable {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func runCFG(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "cfg",
+            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+
+        if parsed.values["--symbol"] != nil && parsed.values["--function"] != nil {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Conflicting options: specify either '--symbol' or '--function', not both.",
+                    "参数冲突：请只指定 '--symbol' 或 '--function' 之一，不要同时传入。"
+                )
+            )
+        }
+
+        let rawSymbol = parsed.values["--symbol"] ?? parsed.values["--function"]
+        let rawAddress = parsed.values["--address"]
+
+        if rawSymbol != nil && rawAddress != nil {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Conflicting options: specify either '--symbol' or '--address', not both.",
+                    "参数冲突：请只指定 '--symbol' 或 '--address' 之一，不要同时传入。"
+                )
+            )
+        }
+
+        let selector: CFGFunctionSelector?
+        if let rawAddress {
+            let addr = try parseStrictAddress(rawAddress, language: language)
+            selector = .address(addr)
+        } else if let rawSymbol {
+            let trimmed = rawSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Function/symbol name must not be empty.", "函数或符号名称不能为空。")
+                )
+            }
+            selector = .symbol(trimmed)
+        } else {
+            selector = nil
+        }
+
+        let container = try loadContainerOnly(parsed: parsed, subcommand: "cfg", language: language)
+        let cliOptions = BinaryAnalysisOptions(
+            computeSugiyamaLayouts: false,
+            computePostDominatorTrees: false
+        )
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+        let snapshot = try coordinator.analyzeCFGOnly(
+            container.image,
+            data: container.data,
+            selector: selector
+        )
+
+        if let selector {
+            if snapshot.functions.isEmpty {
+                switch selector {
+                case .address:
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "No function found at address '\(rawAddress ?? "")' in '\(container.image.fileName)'.",
+                            "在 '\(container.image.fileName)' 中未找到位于地址 '\(rawAddress ?? "")' 的函数。"
+                        )
+                    )
+                case .symbol(let sym):
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "Function or symbol '\(sym)' not found in '\(container.image.fileName)'.",
+                            "在 '\(container.image.fileName)' 中未找到函数或符号 '\(sym)'。"
+                        )
+                    )
+                }
+            }
+        } else if snapshot.functions.isEmpty {
+            throw MachGraphError.cfgAnalysisError(
+                language.select(
+                    "No functions recovered in '\(container.image.fileName)'.",
+                    "在 '\(container.image.fileName)' 中未恢复出任何函数。"
+                )
+            )
+        }
+
+        if parsed.isJSON {
+            return Self.encodeCFGJSON(snapshot: snapshot, isDemo: container.isDemo)
+        }
+        return formatCFGTextSummary(
+            snapshot: snapshot,
+            isDemo: container.isDemo,
+            isSingleFunctionMode: selector != nil,
+            language: language
+        )
+    }
+
+    private func formatCFGTextSummary(
+        snapshot: CFGAnalysisSnapshot,
+        isDemo: Bool,
+        isSingleFunctionMode: Bool,
+        language: MachLanguage
+    ) -> String {
+        let img = snapshot.image
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append(
+            language.select(
+                "CFG Summary: \(img.fileName) (\(img.architecture.displayName), slice=\(img.selectedSliceIndex)) | functions=\(snapshot.functions.count) | lcFunctionStarts=\(img.lcFunctionStarts.count) | inlineJumpTables=\(snapshot.inlineJumpTableRanges.count)",
+                "控制流图摘要: \(img.fileName) (\(img.architecture.displayName), 切片=\(img.selectedSliceIndex)) | 函数=\(snapshot.functions.count) | LC_FUNCTION_STARTS=\(img.lcFunctionStarts.count) | 内联跳转表=\(snapshot.inlineJumpTableRanges.count)"
+            )
+        )
+
+        if isSingleFunctionMode, let fn = snapshot.functions.first {
+            let boundary = snapshot.boundariesByAddress[fn.address]
+            let secName = boundary?.sectionName ?? img.section(containing: fn.address)?.fullName ?? ""
+            let isStub = boundary?.isStubSection ?? (img.section(containing: fn.address)?.kind == .stubs)
+            let stubTagEN = isStub ? ", stub" : ""
+            let stubTagZH = isStub ? ", 桩" : ""
+            lines.append(
+                language.select(
+                    "Function \(fn.demangledName) (\(fn.name)) @ \(fn.address.hexString)..\(fn.endAddress.hexString) [\(secName)\(stubTagEN)] | blocks=\(fn.blocks.count) edges=\(fn.edges.count) cc=\(fn.cyclomaticComplexity) loops=\(fn.naturalLoops.count) jumpTables=\(fn.jumpTables.count)",
+                    "函数 \(fn.demangledName) (\(fn.name)) @ \(fn.address.hexString)..\(fn.endAddress.hexString) [\(secName)\(stubTagZH)] | 基本块=\(fn.blocks.count) 边=\(fn.edges.count) 圈复杂度=\(fn.cyclomaticComplexity) 循环=\(fn.naturalLoops.count) 跳转表=\(fn.jumpTables.count)"
+                )
+            )
+            var idomByBlock: [Int: Int?] = [:]
+            for d in fn.dominatorTree {
+                idomByBlock[d.blockID] = d.immediateDominatorID
+            }
+            for blk in fn.blocks {
+                let idomVal = idomByBlock[blk.id] ?? nil
+                let idomStr = idomVal.map { "B\($0)" } ?? "null"
+                var roleTags: [String] = []
+                if blk.isEntry { roleTags.append(language.select("entry", "入口")) }
+                if blk.isExit { roleTags.append(language.select("exit", "出口")) }
+                let roleSuffix = roleTags.isEmpty ? "" : " [\(roleTags.joined(separator: ","))]"
+                let preds = blk.predecessorIDs.map { "B\($0)" }.joined(separator: ",")
+                let succs = blk.successorIDs.map { "B\($0)" }.joined(separator: ",")
+                lines.append(
+                    language.select(
+                        "  [B\(blk.id)] \(blk.startAddress.hexString)..\(blk.endAddress.hexString) insns=\(blk.instructions.count) idom=\(idomStr) loopDepth=\(blk.loopDepth)\(roleSuffix) preds=[\(preds)] succs=[\(succs)]",
+                        "  [B\(blk.id)] \(blk.startAddress.hexString)..\(blk.endAddress.hexString) 指令=\(blk.instructions.count) 直接支配=\(idomStr) 循环深度=\(blk.loopDepth)\(roleSuffix) 前驱=[\(preds)] 后继=[\(succs)]"
+                    )
+                )
+            }
+            for e in fn.edges {
+                let kindStr: String
+                switch e.kind {
+                case .unconditional: kindStr = "unconditional"
+                case .conditionalTrue: kindStr = "conditionalTrue"
+                case .conditionalFalse: kindStr = "conditionalFalse"
+                case .fallthroughEdge: kindStr = "fallthroughEdge"
+                case .switchCase(let v): kindStr = "switchCase(\(v))"
+                }
+                let backTag = e.isBackEdge ? language.select(", backEdge", ", 回边") : ""
+                lines.append("  edge B\(e.sourceBlockID) -> B\(e.targetBlockID) [\(kindStr)\(backTag)]")
+            }
+            for loop in fn.naturalLoops {
+                let latches = loop.latchBlockIDs.map { "B\($0)" }.joined(separator: ",")
+                let body = loop.bodyBlockIDs.map { "B\($0)" }.joined(separator: ",")
+                let exits = loop.exitBlockIDs.map { "B\($0)" }.joined(separator: ",")
+                lines.append(
+                    language.select(
+                        "  loop header=B\(loop.headerBlockID) depth=\(loop.nestingDepth) latches=[\(latches)] body=[\(body)] exits=[\(exits)]",
+                        "  循环 头=B\(loop.headerBlockID) 嵌套深度=\(loop.nestingDepth) 回边块=[\(latches)] 循环体=[\(body)] 出口块=[\(exits)]"
+                    )
+                )
+            }
+            for jt in fn.jumpTables {
+                lines.append(
+                    language.select(
+                        "  jumpTable dispatch=\(jt.dispatchInstructionAddress.hexString) base=\(jt.tableBaseAddress.hexString) entrySize=\(jt.entryByteSize) inline=\(jt.isInlineInCode) targets=\(jt.targetAddresses.count)",
+                        "  跳转表 分发=\(jt.dispatchInstructionAddress.hexString) 基址=\(jt.tableBaseAddress.hexString) 项宽=\(jt.entryByteSize) 内联=\(jt.isInlineInCode) 目标数=\(jt.targetAddresses.count)"
+                    )
+                )
+            }
+            return lines.joined(separator: "\n")
+        }
+
+        if !snapshot.inlineJumpTableRanges.isEmpty {
+            let startsList = snapshot.inlineJumpTableStarts.map(\.hexString).joined(separator: ", ")
+            lines.append(
+                language.select(
+                    "Inline Jump Table Starts: \(startsList)",
+                    "内联跳转表起点: \(startsList)"
+                )
+            )
+        }
+        for fn in snapshot.functions {
+            let boundary = snapshot.boundariesByAddress[fn.address]
+            let secName = boundary?.sectionName ?? img.section(containing: fn.address)?.fullName ?? ""
+            lines.append(
+                language.select(
+                    "  \(fn.address.hexString)..\(fn.endAddress.hexString)  [\(secName)]  blocks=\(fn.blocks.count) edges=\(fn.edges.count) loops=\(fn.naturalLoops.count) jumpTables=\(fn.jumpTables.count)  \(fn.demangledName)",
+                    "  \(fn.address.hexString)..\(fn.endAddress.hexString)  [\(secName)]  基本块=\(fn.blocks.count) 边=\(fn.edges.count) 循环=\(fn.naturalLoops.count) 跳转表=\(fn.jumpTables.count)  \(fn.demangledName)"
+                )
+            )
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func encodeCFGJSON(snapshot: CFGAnalysisSnapshot, isDemo: Bool) -> String {
+        let img = snapshot.image
+        var out = ""
+        let estimatedBlockCount = snapshot.functions.reduce(0) { $0 + $1.blocks.count }
+        out.reserveCapacity(max(1024, estimatedBlockCount * 220 + snapshot.functions.count * 320))
+
+        func appendUInt64Array(_ values: [UInt64]) {
+            out.append("[")
+            for (i, v) in values.enumerated() {
+                if i > 0 { out.append(", ") }
+                out.append(String(v))
+            }
+            out.append("]")
+        }
+
+        func appendIntArray(_ values: [Int]) {
+            out.append("[")
+            for (i, v) in values.enumerated() {
+                if i > 0 { out.append(", ") }
+                out.append(String(v))
+            }
+            out.append("]")
+        }
+
+        func appendAddressRanges(_ ranges: [AddressRange]) {
+            out.append("[")
+            for (i, r) in ranges.enumerated() {
+                if i > 0 { out.append(", ") }
+                out.append("{\"start\": ")
+                out.append(String(r.start.rawValue))
+                out.append(", \"end\": ")
+                out.append(String(r.end.rawValue))
+                out.append(", \"size\": ")
+                out.append(String(r.size))
+                out.append("}")
+            }
+            out.append("]")
+        }
+
+        out.append("{\n  \"schema\": \"machgraph.cfg/1\",\n  \"filePath\": ")
+        appendJSONEscapedString(img.filePath, into: &out)
+        out.append(",\n  \"fileName\": ")
+        appendJSONEscapedString(img.fileName, into: &out)
+        out.append(",\n  \"isDemo\": ")
+        out.append(isDemo ? "true" : "false")
+        out.append(",\n  \"architecture\": ")
+        appendJSONEscapedString(img.architecture.displayName, into: &out)
+        out.append(",\n  \"selectedSliceIndex\": ")
+        out.append(String(img.selectedSliceIndex))
+        out.append(",\n  \"sliceFileOffset\": ")
+        out.append(String(img.sliceFileOffset.rawValue))
+        out.append(",\n  \"lcFunctionStarts\": ")
+        appendUInt64Array(img.lcFunctionStarts.map(\.rawValue))
+        out.append(",\n  \"inlineJumpTableStarts\": ")
+        appendUInt64Array(snapshot.inlineJumpTableStarts.map(\.rawValue))
+        out.append(",\n  \"inlineJumpTableRanges\": ")
+        appendAddressRanges(snapshot.inlineJumpTableRanges)
+        out.append(",\n  \"functionCount\": ")
+        out.append(String(snapshot.functions.count))
+        out.append(",\n  \"functions\": [")
+
+        for (fIdx, fn) in snapshot.functions.enumerated() {
+            out.append(fIdx == 0 ? "\n" : ",\n")
+            let boundary = snapshot.boundariesByAddress[fn.address]
+            let secName = boundary?.sectionName ?? img.section(containing: fn.address)?.fullName ?? ""
+            let isStub = boundary?.isStubSection ?? (img.section(containing: fn.address)?.kind == .stubs)
+
+            out.append("    {\n      \"address\": ")
+            out.append(String(fn.address.rawValue))
+            out.append(",\n      \"endAddress\": ")
+            out.append(String(fn.endAddress.rawValue))
+            out.append(",\n      \"name\": ")
+            appendJSONEscapedString(fn.name, into: &out)
+            out.append(",\n      \"demangledName\": ")
+            appendJSONEscapedString(fn.demangledName, into: &out)
+            out.append(",\n      \"section\": ")
+            appendJSONEscapedString(secName, into: &out)
+            out.append(",\n      \"isStub\": ")
+            out.append(isStub ? "true" : "false")
+            out.append(",\n      \"isLeaf\": ")
+            out.append(fn.isLeaf ? "true" : "false")
+            out.append(",\n      \"isThunk\": ")
+            out.append(fn.isThunk ? "true" : "false")
+            out.append(",\n      \"usesPAC\": ")
+            out.append(fn.usesPAC ? "true" : "false")
+            out.append(",\n      \"cyclomaticComplexity\": ")
+            out.append(String(fn.cyclomaticComplexity))
+            out.append(",\n      \"instructionCount\": ")
+            out.append(String(fn.instructionCount))
+
+            // blocks
+            out.append(",\n      \"blocks\": [")
+            for (bIdx, blk) in fn.blocks.enumerated() {
+                out.append(bIdx == 0 ? "\n        {" : ",\n        {")
+                out.append("\"id\": ")
+                out.append(String(blk.id))
+                out.append(", \"startAddress\": ")
+                out.append(String(blk.startAddress.rawValue))
+                out.append(", \"endAddress\": ")
+                out.append(String(blk.endAddress.rawValue))
+                out.append(", \"isEntry\": ")
+                out.append(blk.isEntry ? "true" : "false")
+                out.append(", \"isExit\": ")
+                out.append(blk.isExit ? "true" : "false")
+                out.append(", \"loopDepth\": ")
+                out.append(String(blk.loopDepth))
+                out.append(", \"predecessorIDs\": ")
+                appendIntArray(blk.predecessorIDs)
+                out.append(", \"successorIDs\": ")
+                appendIntArray(blk.successorIDs)
+                out.append(", \"instructionCount\": ")
+                out.append(String(blk.instructions.count))
+                out.append(", \"instructionAddresses\": [")
+                for (iIdx, insn) in blk.instructions.enumerated() {
+                    if iIdx > 0 { out.append(", ") }
+                    out.append(String(insn.address.rawValue))
+                }
+                out.append("]}")
+            }
+            if !fn.blocks.isEmpty { out.append("\n      ") }
+            out.append("]")
+
+            // edges
+            out.append(",\n      \"edges\": [")
+            for (eIdx, e) in fn.edges.enumerated() {
+                out.append(eIdx == 0 ? "\n        {" : ",\n        {")
+                out.append("\"sourceBlockID\": ")
+                out.append(String(e.sourceBlockID))
+                out.append(", \"targetBlockID\": ")
+                out.append(String(e.targetBlockID))
+                out.append(", \"kind\": ")
+                let kindStr: String
+                let caseVal: Int64?
+                switch e.kind {
+                case .unconditional: kindStr = "unconditional"; caseVal = nil
+                case .conditionalTrue: kindStr = "conditionalTrue"; caseVal = nil
+                case .conditionalFalse: kindStr = "conditionalFalse"; caseVal = nil
+                case .fallthroughEdge: kindStr = "fallthroughEdge"; caseVal = nil
+                case .switchCase(let v): kindStr = "switchCase"; caseVal = v
+                }
+                appendJSONEscapedString(kindStr, into: &out)
+                out.append(", \"caseValue\": ")
+                out.append(caseVal.map(String.init) ?? "null")
+                out.append(", \"isBackEdge\": ")
+                out.append(e.isBackEdge ? "true" : "false")
+                out.append("}")
+            }
+            if !fn.edges.isEmpty { out.append("\n      ") }
+            out.append("]")
+
+            // dominatorTree (entry block explicitly emits `"immediateDominatorID": null`)
+            out.append(",\n      \"dominatorTree\": [")
+            for (dIdx, d) in fn.dominatorTree.enumerated() {
+                out.append(dIdx == 0 ? "\n        {" : ",\n        {")
+                out.append("\"blockID\": ")
+                out.append(String(d.blockID))
+                out.append(", \"immediateDominatorID\": ")
+                out.append(d.immediateDominatorID.map(String.init) ?? "null")
+                out.append(", \"dominatedChildrenIDs\": ")
+                appendIntArray(d.dominatedChildrenIDs)
+                out.append(", \"dominanceFrontierIDs\": ")
+                appendIntArray(d.dominanceFrontierIDs)
+                out.append(", \"depth\": ")
+                out.append(String(d.depth))
+                out.append("}")
+            }
+            if !fn.dominatorTree.isEmpty { out.append("\n      ") }
+            out.append("]")
+
+            // naturalLoops
+            out.append(",\n      \"naturalLoops\": [")
+            for (lIdx, l) in fn.naturalLoops.enumerated() {
+                out.append(lIdx == 0 ? "\n        {" : ",\n        {")
+                out.append("\"headerBlockID\": ")
+                out.append(String(l.headerBlockID))
+                out.append(", \"latchBlockIDs\": ")
+                appendIntArray(l.latchBlockIDs)
+                out.append(", \"bodyBlockIDs\": ")
+                appendIntArray(l.bodyBlockIDs)
+                out.append(", \"exitBlockIDs\": ")
+                appendIntArray(l.exitBlockIDs)
+                out.append(", \"nestingDepth\": ")
+                out.append(String(l.nestingDepth))
+                out.append("}")
+            }
+            if !fn.naturalLoops.isEmpty { out.append("\n      ") }
+            out.append("]")
+
+            // jumpTables
+            out.append(",\n      \"jumpTables\": [")
+            for (jIdx, jt) in fn.jumpTables.enumerated() {
+                out.append(jIdx == 0 ? "\n        {" : ",\n        {")
+                out.append("\"dispatchInstructionAddress\": ")
+                out.append(String(jt.dispatchInstructionAddress.rawValue))
+                out.append(", \"tableBaseAddress\": ")
+                out.append(String(jt.tableBaseAddress.rawValue))
+                out.append(", \"entryByteSize\": ")
+                out.append(String(jt.entryByteSize))
+                out.append(", \"isInlineInCode\": ")
+                out.append(jt.isInlineInCode ? "true" : "false")
+                out.append(", \"targetAddresses\": ")
+                appendUInt64Array(jt.targetAddresses.map(\.rawValue))
+                out.append("}")
+            }
+            if !fn.jumpTables.isEmpty { out.append("\n      ") }
+            out.append("]")
+
+            // inlineJumpTableRanges
+            out.append(",\n      \"inlineJumpTableRanges\": ")
+            appendAddressRanges(fn.inlineJumpTableRanges)
+            out.append("\n    }")
+        }
+
+        if !snapshot.functions.isEmpty {
+            out.append("\n  ")
+        }
+        out.append("]\n}")
+        return out
     }
 
     private func runCFGDot(args: [String], language: MachLanguage) throws -> String {
