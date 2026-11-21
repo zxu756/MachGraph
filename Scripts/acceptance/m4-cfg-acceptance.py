@@ -26,10 +26,13 @@ Implemented checks:
       bitset intersection, and recovers natural loops from independent dominators:
         * I1: Every block ends with a terminator or falls through contiguously into
               the adjacent block (`next.startAddress == block.endAddress`), with zero
-              interior terminators; every non-fallthrough `bl` exit block targets a
+              interior terminators; soundness: every non-fallthrough `bl` exit block targets a
               verified imported `noreturn` symbol (from `otool -Iv` against the explicit
               `KNOWN_NORETURN_IMPORT_NAMES` table) or an internal function whose every
-              reachable path is independently proven non-returning.
+              reachable path is independently proven non-returning; completeness: every direct
+              `bl` targeting such an independently proven `noreturn` function must be the final
+              instruction of its basic block (`NORETURN_CALL_NOT_BLOCK_END`) and its block must
+              be marked `isExit == true` with zero successor edges (`NORETURN_CALL_HAS_SUCCESSOR`).
         * I2: Intra-function branch and jump-table targets land on a block `startAddress`
               in the same function (with corresponding CFG edge); cross-function tail
               branches land on the `address` of another recovered function; every inline
@@ -1943,12 +1946,20 @@ def check_invariants_on_loaded(
     verified_noreturn_addrs = solve_independent_noreturn_functions(
         slice_view, cfg_fns, imported_symbols_by_addr
     )
+    fn_name_by_start: Dict[int, str] = {
+        int(fn["address"]): str(fn.get("name", hex(int(fn["address"])))) for fn in sorted_fns
+    }
 
     total_blocks = 0
     total_edges = 0
     total_loops = 0
     total_inline_jts = 0
     noreturn_exit_calls_checked = 0
+    noreturn_direct_calls_checked = 0
+    noreturn_completeness_by_kind: Dict[str, int] = {
+        "NORETURN_CALL_NOT_BLOCK_END": 0,
+        "NORETURN_CALL_HAS_SUCCESSOR": 0,
+    }
 
     for fn in sorted_fns:
         f_start = int(fn["address"])
@@ -2160,6 +2171,21 @@ def check_invariants_on_loaded(
                         "INTERIOR_TERMINATOR",
                         {"function": f_name, "blockID": bid, "pc": hex(pc), "insnKind": dec["kind"]},
                     )
+                elif dec["kind"] == "bl" and dec["target"] in verified_noreturn_addrs:
+                    tgt = dec["target"]
+                    noreturn_direct_calls_checked += 1
+                    noreturn_completeness_by_kind["NORETURN_CALL_NOT_BLOCK_END"] += 1
+                    record_violation(
+                        "I1",
+                        "NORETURN_CALL_NOT_BLOCK_END",
+                        {
+                            "function": f_name,
+                            "blockID": bid,
+                            "pc": hex(pc),
+                            "callee": hex(tgt),
+                            "calleeSymbol": imported_symbols_by_addr.get(tgt) or fn_name_by_start.get(tgt),
+                        },
+                    )
 
             # 2) Last instruction of block
             last_pc = insn_addrs[-1]
@@ -2304,23 +2330,41 @@ def check_invariants_on_loaded(
 
             elif kind == "bl":
                 tgt = dec["target"]
-                if not out_targets and is_exit:
-                    # Noreturn call at end of block: verify target is an approved imported noreturn
-                    # symbol (from otool -Iv) OR an internal function whose all reachable paths never return!
-                    noreturn_exit_calls_checked += 1
-                    if tgt not in verified_noreturn_addrs:
-                        imp_sym = imported_symbols_by_addr.get(tgt)
+                if tgt in verified_noreturn_addrs:
+                    noreturn_direct_calls_checked += 1
+                    if out_targets or blk.get("successorIDs") or not is_exit:
+                        noreturn_completeness_by_kind["NORETURN_CALL_HAS_SUCCESSOR"] += 1
                         record_violation(
                             "I1",
-                            "UNVERIFIED_NORETURN_BL_EXIT",
+                            "NORETURN_CALL_HAS_SUCCESSOR",
                             {
                                 "function": f_name,
                                 "blockID": bid,
                                 "pc": hex(last_pc),
                                 "callee": hex(tgt),
-                                "importedSymbol": imp_sym,
+                                "calleeSymbol": imported_symbols_by_addr.get(tgt) or fn_name_by_start.get(tgt),
+                                "out": sorted(out_targets),
+                                "isExit": is_exit,
                             },
                         )
+                    else:
+                        noreturn_exit_calls_checked += 1
+                elif not out_targets and is_exit:
+                    # Noreturn call at end of block: verify target is an approved imported noreturn
+                    # symbol (from otool -Iv) OR an internal function whose all reachable paths never return!
+                    noreturn_exit_calls_checked += 1
+                    imp_sym = imported_symbols_by_addr.get(tgt)
+                    record_violation(
+                        "I1",
+                        "UNVERIFIED_NORETURN_BL_EXIT",
+                        {
+                            "function": f_name,
+                            "blockID": bid,
+                            "pc": hex(last_pc),
+                            "callee": hex(tgt),
+                            "importedSymbol": imp_sym,
+                        },
+                    )
                 else:
                     # Returning direct call: must fall through contiguously to `last_pc + 4`
                     if adj_next_id is None or out_targets != {adj_next_id} or is_exit:
@@ -2467,6 +2511,9 @@ def check_invariants_on_loaded(
         "loop_count": total_loops,
         "inline_jt_count": total_inline_jts,
         "noreturn_exit_calls_verified": noreturn_exit_calls_checked,
+        "noreturn_direct_calls_checked": noreturn_direct_calls_checked,
+        "noreturn_completeness_violations": sum(noreturn_completeness_by_kind.values()),
+        "noreturn_completeness_by_kind": noreturn_completeness_by_kind,
         "violations_by_invariant": violations_by_inv,
         "diff_count": total_violations,
         "examples": examples[:MAX_EXAMPLES_PER_CHECK],
@@ -2663,6 +2710,7 @@ def evaluate_known_c_suite(machgraph_bin: str, isolated_home: str) -> Dict[str, 
             if sub_res["status"] != "pass":
                 for ex in sub_res.get("examples", []):
                     examples.append({"subcheck": sub_chk, **ex})
+        kc_inv_res = full_eval["checks"]["invariants"]
 
         # Full-file CFG lookup map
         full_proc = run_subprocess_bytes([machgraph_bin, "cfg", bin_path, "--json"], timeout=60.0, env=env)
@@ -2769,6 +2817,10 @@ def evaluate_known_c_suite(machgraph_bin: str, isolated_home: str) -> Dict[str, 
         "matched_cases": matched_cases,
         "total_cases": len(KNOWN_C_EXPECTED),
         "diff_count": diff_count,
+        "invariants_violations_by_invariant": kc_inv_res.get("violations_by_invariant", {}),
+        "invariants_noreturn_direct_calls_checked": kc_inv_res.get("noreturn_direct_calls_checked", 0),
+        "invariants_noreturn_completeness_violations": kc_inv_res.get("noreturn_completeness_violations", 0),
+        "invariants_noreturn_completeness_by_kind": kc_inv_res.get("noreturn_completeness_by_kind", {}),
         "cases": case_rows,
         "examples": examples[:MAX_EXAMPLES_PER_CHECK],
         "seconds": round(time.perf_counter() - t0, 3),
@@ -3288,6 +3340,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                             "total_loops": 0,
                             "total_inline_jts": 0,
                             "noreturn_exit_calls_verified": 0,
+                            "noreturn_direct_calls_checked": 0,
+                            "noreturn_completeness_violations": 0,
+                            "noreturn_completeness_by_kind": {
+                                "NORETURN_CALL_NOT_BLOCK_END": 0,
+                                "NORETURN_CALL_HAS_SUCCESSOR": 0,
+                            },
                             "violations_by_invariant": {"I1": 0, "I2": 0, "I3": 0, "I4": 0},
                         }
                         if chk == "invariants"
@@ -3361,6 +3419,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         csum["total_loops"] += int(cres.get("loop_count", 0))
                         csum["total_inline_jts"] += int(cres.get("inline_jt_count", 0))
                         csum["noreturn_exit_calls_verified"] += int(cres.get("noreturn_exit_calls_verified", 0))
+                        csum["noreturn_direct_calls_checked"] += int(cres.get("noreturn_direct_calls_checked", 0))
+                        csum["noreturn_completeness_violations"] += int(
+                            cres.get("noreturn_completeness_violations", 0)
+                        )
+                        for nk, nv in cres.get("noreturn_completeness_by_kind", {}).items():
+                            csum["noreturn_completeness_by_kind"][nk] = (
+                                csum["noreturn_completeness_by_kind"].get(nk, 0) + int(nv)
+                            )
                         for inv_k, inv_v in cres.get("violations_by_invariant", {}).items():
                             csum["violations_by_invariant"][inv_k] += int(inv_v)
                         if cres["status"] == "pass":
@@ -3455,6 +3521,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     f"  totals: functions={csum['total_functions']} blocks={csum['total_blocks']} "
                     f"edges={csum['total_edges']} loops={csum['total_loops']} "
                     f"inline_jts={csum['total_inline_jts']} noreturn_exits={csum['noreturn_exit_calls_verified']} "
+                    f"noreturn_direct_calls={csum['noreturn_direct_calls_checked']} "
+                    f"noreturn_completeness_violations={json.dumps(csum['noreturn_completeness_by_kind'])} "
                     f"violations={json.dumps(csum['violations_by_invariant'])}"
                 )
             for ex in csum.get("examples", [])[:MAX_EXAMPLES_PER_CHECK]:
@@ -3464,7 +3532,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             tag = "PASS" if chk_ok else "FAIL"
             emit(
                 f"[{tag}] Check 'known-c': matched={csum['matched_cases']}/{csum['total_cases']} "
-                f"total_diffs={csum['diff_count']} elapsed={csum['seconds']:.2f}s"
+                f"total_diffs={csum['diff_count']} "
+                f"invariants_noreturn_direct_calls={csum.get('invariants_noreturn_direct_calls_checked', 0)} "
+                f"invariants_noreturn_completeness_violations={json.dumps(csum.get('invariants_noreturn_completeness_by_kind', {}))} "
+                f"elapsed={csum['seconds']:.2f}s"
             )
             for ex in csum.get("examples", [])[:MAX_EXAMPLES_PER_CHECK]:
                 emit(f"  example: {json.dumps(ex, ensure_ascii=False)}")

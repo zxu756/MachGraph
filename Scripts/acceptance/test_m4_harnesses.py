@@ -704,6 +704,152 @@ class TestCFGInvariantsI1ToI4(unittest.TestCase):
         self.assertEqual(res2["status"], "fail")
         self.assertTrue(any(e["kind"] == "INTERIOR_TERMINATOR" for e in res2["examples"]))
 
+    def test_i1_noreturn_bl_in_block_interior_fails(self) -> None:
+        # `bl ___stack_chk_fail` in the middle of block 0 (followed by `ret` at 0x100000404) -> must FAIL I1!
+        words = [_encode_bl(0x100000400, 0x100000408), INSN_RET, INSN_BRAA_X16_X17]
+        view = m4_acc.parse_macho_arm64_slice(_build_synthetic_macho64(words, [0x100000400]))
+        assert view is not None
+        imports = {0x100000408: "___stack_chk_fail"}
+
+        interior_noreturn_fn = _attach_valid_dom_and_loops(
+            {
+                "address": 0x100000400,
+                "endAddress": 0x100000408,
+                "name": "_mid_block_noreturn",
+                "section": "__TEXT,__text",
+                "isStub": False,
+                "blocks": [_make_cfg_block(0, [0x100000400, 0x100000404], [], [], is_entry=True, is_exit=True)],
+                "edges": [],
+                "jumpTables": [],
+                "inlineJumpTableRanges": [],
+            }
+        )
+        res = m4_acc.check_invariants_on_loaded(
+            view, {"inlineJumpTableRanges": [], "functions": [interior_noreturn_fn]}, imports
+        )
+        self.assertEqual(res["status"], "fail")
+        self.assertGreater(res["violations_by_invariant"]["I1"], 0)
+        self.assertGreater(res["diff_count"], 0)
+        ex = next((e for e in res["examples"] if e["kind"] == "NORETURN_CALL_NOT_BLOCK_END"), None)
+        self.assertIsNotNone(ex)
+        assert ex is not None
+        self.assertEqual(ex["function"], "_mid_block_noreturn")
+        self.assertEqual(ex["blockID"], 0)
+        self.assertEqual(ex["pc"], "0x100000400")
+        self.assertEqual(ex["callee"], "0x100000408")
+
+    def test_i1_noreturn_bl_at_block_end_with_fallthrough_or_non_exit_fails(self) -> None:
+        # 1) `bl ___stack_chk_fail` at end of block 0, but block 0 has fallthrough edge 0 -> 1 -> must FAIL I1!
+        words = [_encode_bl(0x100000400, 0x100000408), INSN_RET, INSN_BRAA_X16_X17]
+        view = m4_acc.parse_macho_arm64_slice(_build_synthetic_macho64(words, [0x100000400]))
+        assert view is not None
+        imports = {0x100000408: "___stack_chk_fail"}
+
+        fallthrough_noreturn_fn = _attach_valid_dom_and_loops(
+            {
+                "address": 0x100000400,
+                "endAddress": 0x100000408,
+                "name": "_fallthrough_noreturn",
+                "section": "__TEXT,__text",
+                "isStub": False,
+                "blocks": [
+                    _make_cfg_block(0, [0x100000400], [], [1], is_entry=True, is_exit=False),
+                    _make_cfg_block(1, [0x100000404], [0], [], is_exit=True),
+                ],
+                "edges": [{"sourceBlockID": 0, "targetBlockID": 1, "kind": "fallthroughEdge"}],
+                "jumpTables": [],
+                "inlineJumpTableRanges": [],
+            }
+        )
+        res_ft = m4_acc.check_invariants_on_loaded(
+            view, {"inlineJumpTableRanges": [], "functions": [fallthrough_noreturn_fn]}, imports
+        )
+        self.assertEqual(res_ft["status"], "fail")
+        self.assertGreater(res_ft["violations_by_invariant"]["I1"], 0)
+        self.assertGreater(res_ft["diff_count"], 0)
+        ex_ft = next((e for e in res_ft["examples"] if e["kind"] == "NORETURN_CALL_HAS_SUCCESSOR"), None)
+        self.assertIsNotNone(ex_ft)
+        assert ex_ft is not None
+        self.assertEqual(ex_ft["function"], "_fallthrough_noreturn")
+        self.assertEqual(ex_ft["blockID"], 0)
+        self.assertEqual(ex_ft["pc"], "0x100000400")
+        self.assertEqual(ex_ft["callee"], "0x100000408")
+
+        # 2) `bl ___stack_chk_fail` at end of block 0, no successor edges, but `isExit=False` -> must FAIL I1!
+        non_exit_noreturn_fn = _attach_valid_dom_and_loops(
+            {
+                "address": 0x100000400,
+                "endAddress": 0x100000408,
+                "name": "_non_exit_noreturn",
+                "section": "__TEXT,__text",
+                "isStub": False,
+                "blocks": [
+                    _make_cfg_block(0, [0x100000400], [], [], is_entry=True, is_exit=False),
+                    _make_cfg_block(1, [0x100000404], [], [], is_exit=True),
+                ],
+                "edges": [],
+                "jumpTables": [],
+                "inlineJumpTableRanges": [],
+            }
+        )
+        res_ne = m4_acc.check_invariants_on_loaded(
+            view, {"inlineJumpTableRanges": [], "functions": [non_exit_noreturn_fn]}, imports
+        )
+        self.assertEqual(res_ne["status"], "fail")
+        self.assertTrue(any(e["kind"] == "NORETURN_CALL_HAS_SUCCESSOR" for e in res_ne["examples"]))
+
+    def test_i1_noreturn_bl_valid_exit_and_normal_bl_fallthrough_pass(self) -> None:
+        # 1) `bl ___stack_chk_fail` at end of block 0, zero successors, marked `isExit=True` -> PASS
+        words_nr = [_encode_bl(0x100000400, 0x100000408), INSN_RET, INSN_BRAA_X16_X17]
+        view_nr = m4_acc.parse_macho_arm64_slice(_build_synthetic_macho64(words_nr, [0x100000400]))
+        assert view_nr is not None
+        imports_nr = {0x100000408: "___stack_chk_fail"}
+        valid_nr_fn = _attach_valid_dom_and_loops(
+            {
+                "address": 0x100000400,
+                "endAddress": 0x100000408,
+                "name": "_valid_noreturn_exit",
+                "section": "__TEXT,__text",
+                "isStub": False,
+                "blocks": [
+                    _make_cfg_block(0, [0x100000400], [], [], is_entry=True, is_exit=True),
+                    _make_cfg_block(1, [0x100000404], [], [], is_exit=True),
+                ],
+                "edges": [],
+                "jumpTables": [],
+                "inlineJumpTableRanges": [],
+            }
+        )
+        res_nr_ok = m4_acc.check_invariants_on_loaded(
+            view_nr, {"inlineJumpTableRanges": [], "functions": [valid_nr_fn]}, imports_nr
+        )
+        self.assertEqual(res_nr_ok["status"], "pass")
+        self.assertEqual(res_nr_ok["diff_count"], 0)
+
+        # 2) `bl _printf` (normal returning function) at end of block 0 with contiguous fallthrough 0 -> 1 -> PASS
+        imports_norm = {0x100000408: "_printf"}
+        valid_norm_ft_fn = _attach_valid_dom_and_loops(
+            {
+                "address": 0x100000400,
+                "endAddress": 0x100000408,
+                "name": "_valid_printf_fallthrough",
+                "section": "__TEXT,__text",
+                "isStub": False,
+                "blocks": [
+                    _make_cfg_block(0, [0x100000400], [], [1], is_entry=True, is_exit=False),
+                    _make_cfg_block(1, [0x100000404], [0], [], is_exit=True),
+                ],
+                "edges": [{"sourceBlockID": 0, "targetBlockID": 1, "kind": "fallthroughEdge"}],
+                "jumpTables": [],
+                "inlineJumpTableRanges": [],
+            }
+        )
+        res_norm_ok = m4_acc.check_invariants_on_loaded(
+            view_nr, {"inlineJumpTableRanges": [], "functions": [valid_norm_ft_fn]}, imports_norm
+        )
+        self.assertEqual(res_norm_ok["status"], "pass")
+        self.assertEqual(res_norm_ok["diff_count"], 0)
+
     def test_i2_i3_and_i4_catch_branch_target_overlap_and_idom_errors(self) -> None:
         # Branch `b.eq 0x100000408` lands in the MIDDLE of B1 (`0x100000404..0x10000040c`) -> FAIL I2!
         words = [_encode_b_cond(0x100000400, 0x100000408), INSN_NOP, INSN_RET]
