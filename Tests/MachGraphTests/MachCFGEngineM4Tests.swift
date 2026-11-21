@@ -843,4 +843,80 @@ struct MachCFGEngineM4Tests {
         let lcStarts = try #require(jsonObj["lcFunctionStarts"] as? [UInt64])
         #expect(lcStarts == [fn1VA, fn2VA])
     }
+
+    // MARK: - 9. trimARM64FunctionEnd Preserves Live Conditional-Fallthrough & Switch-Target brk #1
+
+    @Test("trimARM64FunctionEnd preserves live brk #1 after conditional branch and brk #1 targeted by switch jump table")
+    func trailingBrkAfterConditionalBranchAndSwitchTargetIsNotTrimmed() throws {
+        // Function 1 @ 0x100001000..0x10000100c:
+        //   0x100001000: nop
+        //   0x100001004: cbnz w0, 0x100001000   (loops on non-zero; falls through on zero!)
+        //   0x100001008: brk #0x1               (live Swift assertion trap on fallthrough — MUST NOT be trimmed!)
+        // Function 2 @ 0x10000100c..0x100001034 (followed by 2-entry inline jump table @ 0x100001034..0x10000103c):
+        //   0x10000100c: cmp x16, #1
+        //   0x100001010: csel x16, x16, xzr, ls
+        //   0x100001014: adrp x17, 0x100001000
+        //   0x100001018: add  x17, x17, #0x34   (table base = 0x100001034)
+        //   0x10000101c: ldrsw x16, [x17, x16, lsl #2]
+        //   0x100001020: adr  x17, .            (anchor = 0x100001020)
+        //   0x100001024: add  x16, x17, x16
+        //   0x100001028: br   x16
+        //   0x10000102c: ret                    (case 0: 0x100001020 + 0x0c)
+        //   0x100001030: brk #0x1               (case 1: 0x100001020 + 0x10 — live switch target, MUST NOT be trimmed!)
+        //   0x100001034: .long 0x0000000c       (inline jump table entry 0)
+        //   0x100001038: .long 0x00000010       (inline jump table entry 1)
+        let fn1VA: UInt64 = 0x1_0000_1000
+        let fn2VA: UInt64 = 0x1_0000_100C
+        let jtVA: UInt64  = 0x1_0000_1034
+
+        let textWords: [UInt32] = [
+            // Function 1
+            Self.insnNOP,
+            Self.encCBNZ_W(rt: 0, from: fn1VA + 0x04, to: fn1VA),
+            Self.insnBRK1,
+            // Function 2
+            Self.encCMP_XImm(rn: 16, imm12: 1),
+            Self.insnCSEL_X16_X16_XZR_LS,
+            Self.encADRP(rd: 17, from: fn2VA + 0x08, targetPage: jtVA),
+            Self.encADD_XImm(rd: 17, rn: 17, imm12: UInt16(jtVA & 0xFFF)),
+            Self.insnLDRSW_X16_X17_X16_LSL2,
+            Self.insnADR_X17_SELF,
+            Self.insnADD_X16_X17_X16,
+            Self.insnBR_X16,
+            Self.insnRET,
+            Self.insnBRK1,
+            // Inline jump table @ 0x100001034 (anchor = 0x100001020)
+            0x0000_000C,
+            0x0000_0010
+        ]
+
+        let pureInsnFlags = MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions
+        let data = Self.buildSyntheticMachO(
+            textSections: [
+                .init(segment: "__TEXT", section: "__text", vmAddress: fn1VA, fileOffset: 0x1000, words: textWords, flags: pureInsnFlags)
+            ],
+            lcFunctionStarts: [fn1VA, fn2VA, jtVA],
+            symbols: [
+                .init(name: "_cond_brk_fn", nSect: 1, vmAddress: fn1VA, isExternal: true),
+                .init(name: "_switch_brk_fn", nSect: 1, vmAddress: fn2VA, isExternal: true)
+            ]
+        )
+
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "TrimBrkGuard.arm64e")
+        let coordinator = BinaryAnalysisCoordinator(
+            options: BinaryAnalysisOptions(computeSugiyamaLayouts: false, computePostDominatorTrees: false)
+        )
+        let snapshot = try coordinator.analyzeCFGOnly(image, data: data, selector: nil)
+        #expect(snapshot.functions.count == 2)
+
+        let f1 = try #require(snapshot.functions.first { $0.address == VirtualAddress(fn1VA) })
+        #expect(f1.endAddress == VirtualAddress(fn2VA))
+        #expect(f1.blocks.count == 2)
+        #expect(f1.blocks.contains { $0.startAddress == VirtualAddress(fn1VA + 0x08) && $0.isExit })
+
+        let f2 = try #require(snapshot.functions.first { $0.address == VirtualAddress(fn2VA) })
+        #expect(f2.endAddress == VirtualAddress(jtVA))
+        #expect(f2.blocks.contains { $0.startAddress == VirtualAddress(0x1_0000_1030) && $0.isExit })
+        #expect(f2.edges.count == 2)
+    }
 }

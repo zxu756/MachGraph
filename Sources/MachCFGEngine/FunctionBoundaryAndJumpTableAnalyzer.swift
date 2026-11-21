@@ -473,7 +473,8 @@ public struct FunctionDiscoveryEngine: Sendable {
 
         func buildBoundaries(
             activeSeeds: [VirtualAddress: Set<FunctionDiscoverySource>],
-            excludedInlineRanges: [AddressRange]
+            excludedInlineRanges: [AddressRange],
+            jumpTablesByFunction: [VirtualAddress: [SwitchJumpTableDescriptor]] = [:]
         ) -> [DiscoveredFunctionBoundary] {
             var built: [DiscoveredFunctionBoundary] = []
             for decodedSec in decodedSections {
@@ -491,6 +492,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                         : secRange.end
                     guard rawEnd > startAddr else { continue }
 
+                    let jtTargets = (jumpTablesByFunction[startAddr] ?? []).flatMap { $0.jumpTable.targetAddresses }
                     let trimmedEnd: VirtualAddress
                     if image.architecture.isARM64Family && sec.kind != .stubs &&
                        (configuration.trimTrailingZeroPadding || !excludedInlineRanges.isEmpty) {
@@ -499,6 +501,7 @@ public struct FunctionDiscoveryEngine: Sendable {
                             rawEndAddress: rawEnd,
                             sectionInstructions: decodedSec.instructions,
                             inlineDataRanges: excludedInlineRanges,
+                            extraReferencedAddresses: jtTargets,
                             trimPadding: configuration.trimTrailingZeroPadding
                         )
                     } else {
@@ -603,7 +606,13 @@ public struct FunctionDiscoveryEngine: Sendable {
         }
 
         var currentPass = collectJumpTables(for: boundaries, excludedAlignedRanges: [])
-        if !currentPass.inlineRanges.isEmpty {
+        let hasTrimmedSwitchTarget: Bool = boundaries.contains { b in
+            guard let descs = currentPass.byFunction[b.startAddress] else { return false }
+            return descs.contains { d in
+                d.jumpTable.targetAddresses.contains { $0 >= b.endAddress }
+            }
+        }
+        if !currentPass.inlineRanges.isEmpty || hasTrimmedSwitchTarget {
             // Up to 2 refinement rounds in case stripping a mid-function inline jump table merges a split function tail
             for _ in 0..<2 {
                 let alignedExclusions = Self.alignedInlineExclusionRanges(for: currentPass.inlineRanges)
@@ -615,7 +624,8 @@ public struct FunctionDiscoveryEngine: Sendable {
                 }
                 let refinedBoundaries = buildBoundaries(
                     activeSeeds: cleanedSeeds,
-                    excludedInlineRanges: alignedExclusions
+                    excludedInlineRanges: alignedExclusions,
+                    jumpTablesByFunction: currentPass.byFunction
                 )
                 let refinedPass = collectJumpTables(
                     for: refinedBoundaries,
@@ -1886,6 +1896,7 @@ public struct FunctionDiscoveryEngine: Sendable {
         rawEndAddress: VirtualAddress,
         sectionInstructions: [A64DecodedInstruction],
         inlineDataRanges: [AddressRange] = [],
+        extraReferencedAddresses: [VirtualAddress] = [],
         trimPadding: Bool = true
     ) -> VirtualAddress {
         let slice = sliceInstructions(in: sectionInstructions, from: startAddress, to: rawEndAddress)
@@ -1895,8 +1906,13 @@ public struct FunctionDiscoveryEngine: Sendable {
             !inlineDataRanges.isEmpty && Self.isAddressExcluded(addr, inSortedRanges: inlineDataRanges)
         }
 
-        // Collect internal branch targets from real (non-inline-data) instructions so we never trim a live landing block
+        // Collect internal branch & jump-table targets so we never trim a live landing block
         var maxReferencedAddress = startAddress
+        for extraTarget in extraReferencedAddresses {
+            if extraTarget >= startAddress && extraTarget < rawEndAddress && extraTarget > maxReferencedAddress {
+                maxReferencedAddress = extraTarget
+            }
+        }
         for insn in slice where !isInlineData(insn.address) {
             switch insn.flow {
             case .unconditionalJump(let tgt), .conditionalBranch(let tgt, _):
@@ -1920,8 +1936,18 @@ public struct FunctionDiscoveryEngine: Sendable {
                 break
             }
             let prev = slice[lastKeepIdx - 1]
-            let prevIsBarrierOrData = prev.flow.terminatesBasicBlock || isInlineData(prev.address)
-            let isZeroOrTrapPadding = (candidate.rawWord == 0x0000_0000) || (candidate.rawWord == 0xD420_0020 && prevIsBarrierOrData)
+            let prevIsNonFallthroughBarrierOrData: Bool = {
+                if isInlineData(prev.address) { return true }
+                switch prev.flow {
+                case .returnControl, .unconditionalJump, .indirectJump:
+                    return true
+                case .trapOrSupervisor:
+                    return prev.mnemonic == .brk || prev.mnemonic == .hlt || prev.mnemonicText == "udf"
+                default:
+                    return false
+                }
+            }()
+            let isZeroOrTrapPadding = (candidate.rawWord == 0x0000_0000) || (candidate.rawWord == 0xD420_0020 && prevIsNonFallthroughBarrierOrData)
             let isNopAfterReturn: Bool = {
                 guard candidate.mnemonic == .nop else { return false }
                 if isInlineData(prev.address) { return true }
