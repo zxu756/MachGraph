@@ -89,8 +89,8 @@ run_mutation() {
         exit 1
     fi
 
-    # 1. Apply patch forward in temporary copy
-    if ! /usr/bin/patch -p1 --forward --batch --silent -d "$TMP_REPO" < "$patch_path"; then
+    # 1. Apply patch forward in temporary copy (git apply handles line offsets without leaving .orig backups)
+    if ! git -C "$TMP_REPO" apply "$patch_path"; then
         echo "[FAIL] Mutation $id: patch failed to apply cleanly: Scripts/acceptance/mutations/$patch_file" >&2
         exit 1
     fi
@@ -99,7 +99,7 @@ run_mutation() {
     if ! HOME="$TMP_HOME" CFFIXED_USER_HOME="$TMP_HOME" \
         swift build --package-path "$TMP_REPO" -c release --product MachGraph >/dev/null 2>&1; then
         echo "[FAIL] Mutation $id: mutated source failed to compile ($patch_file)" >&2
-        /usr/bin/patch -p1 --reverse --batch --silent -d "$TMP_REPO" < "$patch_path" || true
+        git -C "$TMP_REPO" apply -R "$patch_path" || true
         exit 1
     fi
 
@@ -126,7 +126,7 @@ run_mutation() {
     if [[ "$rc" -eq 0 ]]; then
         echo "[FAIL] Mutation $id ($patch_file): differential check unexpectedly PASSED (exit 0)!" >&2
         echo "  Command: $display_cmd" >&2
-        /usr/bin/patch -p1 --reverse --batch --silent -d "$TMP_REPO" < "$patch_path" || true
+        git -C "$TMP_REPO" apply -R "$patch_path" || true
         exit 1
     fi
 
@@ -228,12 +228,12 @@ PY
 )"; then
         echo "[FAIL] Mutation $id ($patch_file): failed with exit $rc, but output did not match expected discrepancy!" >&2
         cat "$out_txt" >&2
-        /usr/bin/patch -p1 --reverse --batch --silent -d "$TMP_REPO" < "$patch_path" || true
+        git -C "$TMP_REPO" apply -R "$patch_path" || true
         exit 1
     fi
 
     # 5. Reverse patch and verify temporary Sources/ matches clean REPO_ROOT/Sources/ byte-for-byte
-    if ! /usr/bin/patch -p1 --reverse --batch --silent -d "$TMP_REPO" < "$patch_path"; then
+    if ! git -C "$TMP_REPO" apply -R "$patch_path"; then
         echo "[FAIL] Mutation $id: failed to reverse patch $patch_file" >&2
         exit 1
     fi
