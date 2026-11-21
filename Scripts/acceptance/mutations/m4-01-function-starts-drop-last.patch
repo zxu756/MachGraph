@@ -1,0 +1,13 @@
+# M4 Mutation 1 (function-starts): drop last LC_FUNCTION_STARTS entry in FunctionDiscoveryEngine.discoverFunctionsWithJumpTables
+--- a/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
++++ b/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
+@@ -553,6 +553,9 @@
+             return built
+         }
+ 
++        if let droppedStart = image.lcFunctionStarts.last {
++            seedsByAddress.removeValue(forKey: normalizeInstructionAddress(droppedStart, architecture: image.architecture))
++        }
+         var boundaries = buildBoundaries(activeSeeds: seedsByAddress, excludedInlineRanges: [])
+         guard image.architecture.isARM64Family, let data else {
+             return FunctionDiscoveryResult(boundaries: boundaries)

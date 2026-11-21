@@ -1,0 +1,12 @@
+# M4 Mutation 6a (cmp+csel jump-table bound): subtract 1 from csel clamp upperBoundInclusive in FunctionDiscoveryEngine.findSwitchBoundsGuard
+--- a/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
++++ b/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
+@@ -1383,7 +1383,7 @@
+                             info: BoundsGuardInfo(
+                                 indexRegister: rd,
+                                 indexBias: clamp.srcOrigin.bias,
+-                                upperBoundInclusive: clamp.upperBound,
++                                upperBoundInclusive: max(0, clamp.upperBound - 1),
+                                 defaultTargetAddress: nil,
+                                 guardBranchAddress: insn.address
+                             )

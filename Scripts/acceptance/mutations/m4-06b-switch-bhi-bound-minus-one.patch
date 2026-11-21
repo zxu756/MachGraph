@@ -1,0 +1,12 @@
+# M4 Mutation 6b (switch bounds guard): subtract 1 from b.hi/b.gt upperBoundInclusive in FunctionDiscoveryEngine.findSwitchBoundsGuard
+--- a/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
++++ b/Sources/MachCFGEngine/FunctionBoundaryAndJumpTableAnalyzer.swift
+@@ -1275,7 +1275,7 @@
+                             info: BoundsGuardInfo(
+                                 indexRegister: cmp.register,
+                                 indexBias: cmp.origin.bias,
+-                                upperBoundInclusive: cmp.imm,
++                                upperBoundInclusive: max(0, cmp.imm - 1),
+                                 defaultTargetAddress: branchTarget,
+                                 guardBranchAddress: insn.address
+                             )

@@ -1,0 +1,13 @@
+# M4 Mutation 2b (invariants I1): stop splitting basic blocks after conditional branch `b.cond`/`cbz`/`tbz` in CFGBuilderEngine.partitionBasicBlocks
+--- a/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
++++ b/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
+@@ -684,9 +684,6 @@
+                 if let tgtIdx = addressToIndex[target] {
+                     leaderIndices.insert(tgtIdx)
+                 }
+-                if idx + 1 < instructions.count {
+-                    leaderIndices.insert(idx + 1)
+-                }
+ 
+             case .indirectJump:
+                 if let jt = jumpTableByDispatch[insn.address] {

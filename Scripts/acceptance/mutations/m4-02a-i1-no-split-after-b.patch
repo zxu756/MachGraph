@@ -1,0 +1,13 @@
+# M4 Mutation 2a (invariants I1): stop splitting basic blocks after unconditional branch `b` in CFGBuilderEngine.partitionBasicBlocks
+--- a/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
++++ b/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
+@@ -676,9 +676,6 @@
+                 if let tgtIdx = addressToIndex[target] {
+                     leaderIndices.insert(tgtIdx)
+                 }
+-                if idx + 1 < instructions.count {
+-                    leaderIndices.insert(idx + 1)
+-                }
+ 
+             case .conditionalBranch(let target, _):
+                 if let tgtIdx = addressToIndex[target] {

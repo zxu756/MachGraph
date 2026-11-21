@@ -1,0 +1,15 @@
+# M4 Mutation 3 (invariants I2/I4): stop marking conditional branch targets as block leaders in CFGBuilderEngine.partitionBasicBlocks
+--- a/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
++++ b/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
+@@ -680,10 +680,7 @@
+                     leaderIndices.insert(idx + 1)
+                 }
+ 
+-            case .conditionalBranch(let target, _):
+-                if let tgtIdx = addressToIndex[target] {
+-                    leaderIndices.insert(tgtIdx)
+-                }
++            case .conditionalBranch(_, _):
+                 if idx + 1 < instructions.count {
+                     leaderIndices.insert(idx + 1)
+                 }

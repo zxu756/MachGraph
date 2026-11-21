@@ -1,0 +1,14 @@
+# M4 Mutation 4 (dominator tree): omit Step 4 explicit idom resolution in LengauerTarjanDominatorAndLoopAnalyzer.runLengauerTarjanCore
+--- a/Sources/MachCFGEngine/LengauerTarjanDominatorAndLoopAnalyzer.swift
++++ b/Sources/MachCFGEngine/LengauerTarjanDominatorAndLoopAnalyzer.swift
+@@ -1106,9 +1106,7 @@
+ 
+         // Step 4: Explicit Immediate Dominator Resolution (`2...n`)
+         for w in 2...n {
+-            if idom[w] != semi[w] {
+-                idom[w] = idom[idom[w]]
+-            }
++            // Mutated: omit `if idom[w] != semi[w] { idom[w] = idom[idom[w]] }`
+             let wVertex = vertexAtDFN[w]
+             let domDFN = idom[w]
+             result.updateValue(domDFN > 0 ? vertexAtDFN[domDFN] : nil, forKey: wVertex)

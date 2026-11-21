@@ -1,0 +1,18 @@
+# M4 Mutation 5 (natural loops): hardcode loop nestingDepth to 1 in LengauerTarjanDominatorAndLoopAnalyzer.recoverNaturalLoops
+--- a/Sources/MachCFGEngine/LengauerTarjanDominatorAndLoopAnalyzer.swift
++++ b/Sources/MachCFGEngine/LengauerTarjanDominatorAndLoopAnalyzer.swift
+@@ -585,12 +585,13 @@
+                     enclosingCount += 1
+                 }
+             }
++            _ = enclosingCount
+             return NaturalLoop(
+                 headerBlockID: candidate.headerID,
+                 latchBlockIDs: candidate.latchIDs,
+                 bodyBlockIDs: candidate.bodyIDs,
+                 exitBlockIDs: candidate.exitIDs,
+-                nestingDepth: enclosingCount + 1
++                nestingDepth: 1
+             )
+         }
+ 
