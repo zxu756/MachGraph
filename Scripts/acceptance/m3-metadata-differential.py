@@ -2,11 +2,11 @@
 """Differential Mach-O metadata & demangling check for MachGraph M3.
 
 Usage:
-  Scripts/acceptance/m3-metadata-differential.py <quick|standard|full|file...>
+  Scripts/acceptance/m3-metadata-differential.py [<quick|standard|objc|full|file...>]
       [--only <subcheck,...>] [--machgraph <path>] [--json-out <path>]
       [--record] [--workers <n>] [--verbose]
 
-Subchecks implemented in Stage 1 (later M3 stages register additional checks in AVAILABLE_CHECKS):
+Implemented subchecks:
   - symbols : `machgraph symbols <file> --json` (`realSymbols` multiset of `(address, name)`)
               vs `xcrun nm --no-dyldinfo -arch <slice> <file>` (all defined symbols with an address,
               excluding `U`/`u` undefined imports and `<redacted function N>` placeholders).
@@ -17,6 +17,10 @@ Subchecks implemented in Stage 1 (later M3 stages register additional checks in 
   - entitlements : `machgraph codesign <file> --json` (`entitlements` native JSON dictionary)
                    vs `/usr/bin/codesign -a <slice> -d --entitlements :- <file>` parsed via
                    `plistlib.loads` (empty stdout or unsigned -> `{}`, strict deep type equality).
+  - objc    : `machgraph objc <file> --json` (`classes`, `±[Class sel]`, `±[Class(Cat) sel]`,
+              `protocols` sets) vs `xcrun otool -arch <slice> -ov <file>` (+ `otool -l`
+              `__objc_selrefs` base VA for relative selector resolution). Defaults to
+              `Calculator`, `assetutil`, `screencapture`, and `log` when `--only objc` omits targets.
 
 Slice selection follows `arm64e` -> `arm64` via `lipo -archs <file>`, matching MachGraph's preferred slice.
 At most 6 child processes are spawned concurrently (`MAX_CONCURRENT_SUBPROCESSES = 6`).
@@ -43,13 +47,19 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Counter as CounterType, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Counter as CounterType, Dict, List, Optional, Sequence, Set, Tuple
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 
 QUICK_FILES: Tuple[str, ...] = ("/bin/ls",)
 STANDARD_FILES: Tuple[str, ...] = ("/bin/ls", "/usr/bin/ssh", "/usr/bin/vim")
+OBJC_DEFAULT_FILES: Tuple[str, ...] = (
+    "/System/Applications/Calculator.app/Contents/MacOS/Calculator",
+    "/usr/bin/assetutil",
+    "/usr/sbin/screencapture",
+    "/usr/bin/log",
+)
 FULL_SCAN_ROOTS: Tuple[str, ...] = ("/bin", "/usr/bin", "/usr/sbin", "/usr/libexec")
 
 MACHO_MAGICS = {
@@ -78,7 +88,7 @@ PER_FILE_TIMEOUT_SECONDS = 60.0
 PER_MIB_TIMEOUT_SECONDS = 5.0
 MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
 
-AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements", "demangle", "xrefs")
+AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements", "demangle", "xrefs", "objc")
 
 NM_REFERENCE_TEMPLATE = "xcrun nm --no-dyldinfo -arch <slice> <file>"
 OTOOL_L_REFERENCE_TEMPLATE = "xcrun otool -arch <slice> -L <file>"
@@ -97,6 +107,9 @@ MACHO_STRING_SECTION_NAMES = frozenset(
     {"__cstring", "__ustring", "__oslogstring", "__objc_methname", "__cfstring"}
 )
 _OBJDUMP_BL_RE = re.compile(r"^\s*([0-9a-fA-F]+):\tbl\t#?(0x[0-9a-fA-F]+|[0-9a-fA-F]+)\b")
+OTOOL_OV_REFERENCE_TEMPLATE = (
+    "xcrun otool -arch <slice> -ov <file> (+ xcrun otool -arch <slice> -l <file> for __objc_selrefs base)"
+)
 
 _NM_LINE_RE = re.compile(r"^([0-9a-fA-F]{8,16}|\s{8,16}) ([A-Za-z?-]) (.*)$")
 _REDACTED_FN_RE = re.compile(r"^<redacted function \d+>$")
@@ -317,6 +330,8 @@ def resolve_targets(raw_targets: Sequence[str]) -> Tuple[str, List[str]]:
             return ("quick", list(QUICK_FILES))
         if tier == "standard":
             return ("standard", list(STANDARD_FILES))
+        if tier == "objc":
+            return ("objc", list(OBJC_DEFAULT_FILES))
         if tier == "full":
             return ("full", discover_full_candidates())
     return ("custom", [os.path.abspath(p) if not os.path.isabs(p) else p for p in raw_targets])
@@ -1323,11 +1338,339 @@ def check_xrefs_for_binary(
     }
 
 
+def parse_otool_objc(
+    path: str, arch: str, timeout_sec: float
+) -> Tuple[Optional[Dict[str, Set[str]]], Optional[str], bool, bool]:
+    """Extract ObjC classes, ±[Class sel], ±[Class(Cat) sel], and protocols via `otool -l` + `otool -ov`."""
+    cmd_l = ["xcrun", "otool", "-arch", arch, "-l", path]
+    try:
+        proc_l = run_subprocess_bytes(cmd_l, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        return (None, f"otool -l timed out after {timeout_sec:.0f}s", True, False)
+
+    out_l, non_utf8_l_out = decode_utf8_safe(proc_l.stdout)
+    err_l, non_utf8_l_err = decode_utf8_safe(proc_l.stderr)
+    had_non_utf8 = non_utf8_l_out or non_utf8_l_err
+    if proc_l.returncode != 0:
+        return (None, format_exit_reason("otool -l", proc_l.returncode, err_l), False, had_non_utf8)
+
+    sec_addrs: Dict[str, int] = {}
+    for blk in out_l.split("Section\n")[1:]:
+        sn = re.search(r"\bsectname\s+(\S+)", blk)
+        gn = re.search(r"\bsegname\s+(\S+)", blk)
+        ad = re.search(r"\baddr\s+(0x[0-9a-fA-F]+|\d+)", blk)
+        if sn and gn and ad:
+            sec_addrs[f"{gn.group(1)[:16]},{sn.group(1)[:16]}"] = int(ad.group(1), 0)
+
+    cmd_ov = ["xcrun", "otool", "-arch", arch, "-ov", path]
+    try:
+        proc_ov = run_subprocess_bytes(cmd_ov, timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        return (None, f"otool -ov timed out after {timeout_sec:.0f}s", True, had_non_utf8)
+
+    out_ov, non_utf8_ov_out = decode_utf8_safe(proc_ov.stdout)
+    err_ov, non_utf8_ov_err = decode_utf8_safe(proc_ov.stderr)
+    had_non_utf8 = had_non_utf8 or non_utf8_ov_out or non_utf8_ov_err
+    if proc_ov.returncode != 0:
+        return (None, format_exit_reason("otool -ov", proc_ov.returncode, err_ov), False, had_non_utf8)
+
+    blocks = re.split(r"^Contents of \(([^)]+)\) section\s*$", out_ov, flags=re.MULTILINE)
+
+    # Pass 1: build slot_va -> selector_name from `(__DATA*,__objc_selrefs)`
+    slot_to_sel: Dict[int, str] = {}
+    for i in range(1, len(blocks), 2):
+        sname, body = blocks[i], blocks[i + 1]
+        if sname.endswith("__objc_selrefs"):
+            base_va = sec_addrs.get(sname)
+            idx = 0
+            for ln in body.splitlines():
+                m = re.match(r"^\s*(?:([0-9a-fA-F]{8,16})\s+)?0x[0-9a-fA-F]+(?:\s+(.*))?$", ln)
+                if not m:
+                    continue
+                sel_txt = (m.group(2) or "").strip()
+                if sel_txt:
+                    if base_va is not None:
+                        slot_to_sel[base_va + idx * 8] = sel_txt
+                    if m.group(1):
+                        slot_to_sel[int(m.group(1), 16)] = sel_txt
+                idx += 1
+
+    def resolve_sel(raw_rhs: str) -> str:
+        raw_rhs = raw_rhs.strip()
+        m_ptr = re.match(r"^\(0x([0-9a-fA-F]+)\)(?:\s+(.*))?$", raw_rhs)
+        if m_ptr:
+            va = int(m_ptr.group(1), 16)
+            rest = (m_ptr.group(2) or "").strip()
+            return rest if rest else slot_to_sel.get(va, raw_rhs)
+        return raw_rhs
+
+    def extract_selectors_from_block(text_part: str, header_kw: str, indent_spaces: int) -> List[str]:
+        pat = rf"^ {{{indent_spaces}}}{header_kw}\s+0x[0-9a-fA-F]+(.*)$"
+        m_hdr = re.search(pat, text_part, flags=re.MULTILINE)
+        if not m_hdr or "__mh_execute_header" in m_hdr.group(1):
+            return []
+        after = text_part[m_hdr.end() :]
+        stop_m = re.search(rf"^ {{0,{indent_spaces}}}\S", after, flags=re.MULTILINE)
+        chunk = after[: stop_m.start()] if stop_m else after
+        selectors: List[str] = []
+        cur_sel: Optional[str] = None
+        for ln in chunk.splitlines():
+            ms = re.match(rf"^ {{{indent_spaces + 4}}}name\s+0x[0-9a-fA-F]+\s+(.+)$", ln)
+            if ms:
+                cur_sel = resolve_sel(ms.group(1))
+                continue
+            mi = re.match(rf"^ {{{indent_spaces + 4}}}imp\s+0x[0-9a-fA-F]+", ln)
+            if mi and cur_sel is not None:
+                selectors.append(cur_sel)
+                cur_sel = None
+        return selectors
+
+    classes: Set[str] = set()
+    methods: Set[str] = set()
+    category_methods: Set[str] = set()
+    protocols: Set[str] = set()
+    class_va_to_name: Dict[int, str] = {}
+
+    # Pass 2: classes and ±[Class sel] methods
+    for i in range(1, len(blocks), 2):
+        sname, body = blocks[i], blocks[i + 1]
+        if sname.endswith("__objc_classlist") or sname.endswith("__objc_nlclslist"):
+            entries = re.split(r"^(?=[0-9a-fA-F]{8,16}\s+0x[0-9a-fA-F]+)", body, flags=re.MULTILINE)
+            for ent in entries:
+                if not ent.strip():
+                    continue
+                m_cva = re.match(r"^[0-9a-fA-F]{8,16}\s+(0x[0-9a-fA-F]+)", ent)
+                parts = ent.split("Meta Class\n", 1)
+                cls_part = parts[0]
+                meta_part = parts[1] if len(parts) > 1 else ""
+                mn = re.search(r"^ {8}name\s+0x[0-9a-fA-F]+\s+(\S+)", cls_part, flags=re.MULTILINE)
+                if not mn:
+                    continue
+                cname = mn.group(1)
+                classes.add(cname)
+                if m_cva:
+                    class_va_to_name[int(m_cva.group(1), 16)] = cname
+                for sel in extract_selectors_from_block(cls_part, "baseMethods", 8):
+                    methods.add(f"-[{cname} {sel}]")
+                for sel in extract_selectors_from_block(meta_part, "baseMethods", 8):
+                    methods.add(f"+[{cname} {sel}]")
+
+    # Pass 3: categories (±[Host(Cat) sel]) and protocols
+    for i in range(1, len(blocks), 2):
+        sname, body = blocks[i], blocks[i + 1]
+        if sname.endswith("__objc_catlist") or sname.endswith("__objc_nlcatlist"):
+            entries = re.split(r"^(?=[0-9a-fA-F]{8,16}\s+0x[0-9a-fA-F]+)", body, flags=re.MULTILINE)
+            for ent in entries:
+                if not ent.strip():
+                    continue
+                mc = re.search(r"^ {4}name\s+0x[0-9a-fA-F]+\s+(\S+)", ent, flags=re.MULTILINE)
+                mhost = re.search(r"^ {4}cls\s+(0x[0-9a-fA-F]+)(?:[ \t]+(\S+))?", ent, flags=re.MULTILINE)
+                if not mc:
+                    continue
+                cat_name = mc.group(1)
+                raw_host = (mhost.group(2) if mhost and mhost.group(2) else "").strip()
+                for pfx in ("_OBJC_CLASS_$_", "OBJC_CLASS_$_"):
+                    if raw_host.startswith(pfx):
+                        raw_host = raw_host[len(pfx) :]
+                        break
+                if not raw_host and mhost:
+                    raw_host = class_va_to_name.get(int(mhost.group(1), 16), "")
+                host_cls = raw_host or "UnknownClass"
+                for sel in extract_selectors_from_block(ent, "instanceMethods", 4):
+                    category_methods.add(f"-[{host_cls}({cat_name}) {sel}]")
+                for sel in extract_selectors_from_block(ent, "classMethods", 4):
+                    category_methods.add(f"+[{host_cls}({cat_name}) {sel}]")
+
+        elif sname.endswith("__objc_protolist"):
+            entries = re.split(r"^(?=[0-9a-fA-F]{8,16}\s+0x[0-9a-fA-F]+)", body, flags=re.MULTILINE)
+            for ent in entries:
+                if not ent.strip():
+                    continue
+                mp = re.search(r"^ {4}name\s+0x[0-9a-fA-F]+\s+(\S+)", ent, flags=re.MULTILINE)
+                if mp:
+                    protocols.add(mp.group(1))
+
+    return (
+        {
+            "classes": classes,
+            "methods": methods,
+            "category_methods": category_methods,
+            "protocols": protocols,
+        },
+        None,
+        False,
+        had_non_utf8,
+    )
+
+
+def check_objc_for_binary(
+    path: str,
+    arch: str,
+    machgraph_bin: str,
+    env: Dict[str, str],
+    timeout_sec: float,
+) -> Dict[str, Any]:
+    ref_sets, ref_err, ref_to, ref_non_utf8 = parse_otool_objc(path, arch, max(120.0, timeout_sec))
+    if ref_err is not None or ref_sets is None:
+        return {
+            "status": "failure",
+            "error": ref_err or "otool -ov failed",
+            "timed_out": ref_to,
+            "non_utf8": ref_non_utf8,
+        }
+
+    mg_out, mg_err, mg_to, mg_non_utf8 = run_machgraph_command(
+        machgraph_bin, ["objc", path, "--json"], env, timeout_sec
+    )
+    had_non_utf8 = ref_non_utf8 or mg_non_utf8
+    if mg_err is not None or mg_out is None:
+        return {
+            "status": "failure",
+            "error": mg_err or "machgraph objc failed",
+            "timed_out": mg_to,
+            "non_utf8": had_non_utf8,
+        }
+
+    try:
+        mg_json = json.loads(mg_out)
+    except json.JSONDecodeError as exc:
+        return {
+            "status": "failure",
+            "error": f"machgraph objc invalid JSON: {exc}",
+            "timed_out": False,
+            "non_utf8": had_non_utf8,
+        }
+
+    raw_classes = mg_json.get("classes")
+    raw_categories = mg_json.get("categories")
+    raw_protocols = mg_json.get("protocols")
+    if not isinstance(raw_classes, list) or not isinstance(raw_categories, list) or not isinstance(raw_protocols, list):
+        return {
+            "status": "failure",
+            "error": "machgraph objc --json missing 'classes', 'categories', or 'protocols' list",
+            "timed_out": False,
+            "non_utf8": had_non_utf8,
+        }
+
+    mg_classes: Set[str] = set()
+    mg_methods: Set[str] = set()
+    mg_cat_methods: Set[str] = set()
+    mg_protocols: Set[str] = set()
+    structural_diffs: List[Dict[str, Any]] = []
+
+    if mg_json.get("classCount") != len(raw_classes):
+        structural_diffs.append(
+            {"kind": "classCount_mismatch", "classCount": mg_json.get("classCount"), "len_classes": len(raw_classes)}
+        )
+    if mg_json.get("categoryCount") != len(raw_categories):
+        structural_diffs.append(
+            {
+                "kind": "categoryCount_mismatch",
+                "categoryCount": mg_json.get("categoryCount"),
+                "len_categories": len(raw_categories),
+            }
+        )
+    if mg_json.get("protocolCount") != len(raw_protocols):
+        structural_diffs.append(
+            {
+                "kind": "protocolCount_mismatch",
+                "protocolCount": mg_json.get("protocolCount"),
+                "len_protocols": len(raw_protocols),
+            }
+        )
+
+    for cls_entry in raw_classes:
+        if not isinstance(cls_entry, dict) or "name" not in cls_entry:
+            structural_diffs.append({"kind": "malformed_class_entry", "entry": sanitize_text(str(cls_entry))[:120]})
+            continue
+        cname = str(cls_entry["name"])
+        mg_classes.add(cname)
+        for m in cls_entry.get("instanceMethods") or []:
+            if isinstance(m, dict) and "selector" in m:
+                mg_methods.add(f"-[{cname} {m['selector']}]")
+                if m.get("isClassMethod") is not False:
+                    structural_diffs.append({"kind": "class_method_in_instanceMethods", "class": cname, "method": m.get("selector")})
+        for m in cls_entry.get("classMethods") or []:
+            if isinstance(m, dict) and "selector" in m:
+                mg_methods.add(f"+[{cname} {m['selector']}]")
+                if m.get("isClassMethod") is not True:
+                    structural_diffs.append({"kind": "instance_method_in_classMethods", "class": cname, "method": m.get("selector")})
+
+    for cat_entry in raw_categories:
+        if not isinstance(cat_entry, dict) or "name" not in cat_entry or "className" not in cat_entry:
+            structural_diffs.append({"kind": "malformed_category_entry", "entry": sanitize_text(str(cat_entry))[:120]})
+            continue
+        cat_name = str(cat_entry["name"])
+        host_cls = str(cat_entry["className"])
+        for m in cat_entry.get("instanceMethods") or []:
+            if isinstance(m, dict) and "selector" in m:
+                mg_cat_methods.add(f"-[{host_cls}({cat_name}) {m['selector']}]")
+                if m.get("isClassMethod") is not False:
+                    structural_diffs.append({"kind": "class_method_in_category_instanceMethods", "category": f"{host_cls}({cat_name})", "method": m.get("selector")})
+        for m in cat_entry.get("classMethods") or []:
+            if isinstance(m, dict) and "selector" in m:
+                mg_cat_methods.add(f"+[{host_cls}({cat_name}) {m['selector']}]")
+                if m.get("isClassMethod") is not True:
+                    structural_diffs.append({"kind": "instance_method_in_category_classMethods", "category": f"{host_cls}({cat_name})", "method": m.get("selector")})
+
+    for proto_entry in raw_protocols:
+        if not isinstance(proto_entry, dict) or "name" not in proto_entry:
+            structural_diffs.append({"kind": "malformed_protocol_entry", "entry": sanitize_text(str(proto_entry))[:120]})
+            continue
+        mg_protocols.add(str(proto_entry["name"]))
+
+    comparisons = [
+        ("class", ref_sets["classes"], mg_classes),
+        ("method", ref_sets["methods"], mg_methods),
+        ("category_method", ref_sets["category_methods"], mg_cat_methods),
+        ("protocol", ref_sets["protocols"], mg_protocols),
+    ]
+
+    diff_total = len(structural_diffs)
+    examples: List[Dict[str, Any]] = list(structural_diffs[:MAX_EXAMPLES_PER_CHECK])
+
+    for kind_label, ref_s, mg_s in comparisons:
+        missing = sorted(ref_s - mg_s)
+        extra = sorted(mg_s - ref_s)
+        diff_total += len(missing) + len(extra)
+        for item in missing:
+            if len(examples) >= MAX_EXAMPLES_PER_CHECK:
+                break
+            examples.append(
+                {
+                    "kind": f"missing_{kind_label}_in_machgraph",
+                    "item": sanitize_text(item),
+                }
+            )
+        for item in extra:
+            if len(examples) >= MAX_EXAMPLES_PER_CHECK:
+                break
+            examples.append(
+                {
+                    "kind": f"extra_{kind_label}_in_machgraph",
+                    "item": sanitize_text(item),
+                }
+            )
+
+    ref_total = sum(len(ref_s) for _, ref_s, _ in comparisons)
+    mg_total = sum(len(mg_s) for _, _, mg_s in comparisons)
+
+    return {
+        "status": "pass" if diff_total == 0 else "mismatch",
+        "ref_count": ref_total,
+        "mg_count": mg_total,
+        "diff_count": diff_total,
+        "examples": examples,
+        "non_utf8": had_non_utf8,
+    }
+
+
 CHECK_HANDLERS: Dict[str, Callable[[str, str, str, Dict[str, str], float], Dict[str, Any]]] = {
     "symbols": check_symbols_for_binary,
     "dylibs": check_dylibs_for_binary,
     "entitlements": check_entitlements_for_binary,
     "xrefs": check_xrefs_for_binary,
+    "objc": check_objc_for_binary,
 }
 
 
@@ -1773,7 +2116,11 @@ def evaluate_one_binary(
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("targets", nargs="+", help="'quick', 'standard', 'full', or one or more binary paths")
+    parser.add_argument(
+        "targets",
+        nargs="*",
+        help="'quick', 'standard', 'objc', 'full', or one or more binary paths (optional when --only objc)",
+    )
     parser.add_argument(
         "--only",
         default=None,
@@ -1801,6 +2148,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"[FAIL] {exc}", file=sys.stderr)
         return 2
 
+    if not args.targets:
+        if selected_checks == ["objc"]:
+            raw_targets: Sequence[str] = ["objc"]
+        else:
+            print(
+                "[FAIL] positional 'targets' required unless '--only objc' is specified",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        raw_targets = args.targets
+
     if args.record and not is_worktree_clean():
         print(
             "[FAIL] --record refused: git worktree has uncommitted changes "
@@ -1816,7 +2175,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 1
 
-    corpus_name, candidates = resolve_targets(args.targets)
+    corpus_name, candidates = resolve_targets(raw_targets)
     if not candidates:
         print(f"[FAIL] No candidate binaries found for '{corpus_name}'", file=sys.stderr)
         return 1
@@ -2120,6 +2479,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "demangle_swift": SWIFT_DEMANGLE_REFERENCE_TEMPLATE,
                 "demangle_cpp": CPPFILT_REFERENCE_TEMPLATE,
                 "xrefs": LLVM_OBJDUMP_XREFS_REFERENCE_TEMPLATE,
+                "objc": OTOOL_OV_REFERENCE_TEMPLATE,
             },
             "summary": {
                 "candidate_macho_files": len(candidates),

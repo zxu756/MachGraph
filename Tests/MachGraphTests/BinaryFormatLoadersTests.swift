@@ -1264,4 +1264,420 @@ struct BinaryFormatLoadersTests {
         #expect(nested["daemon"] as? [String] == ["com.apple.bird"])
         #expect((nested["empty"] as? [String: Any])?.isEmpty == true)
     }
+
+    // MARK: - M3 Stage 3 (D-M3-4): ObjC Leading Underscore, Categories, Protocols, Class vs Instance Methods
+
+    internal static func buildSyntheticObjCMetadataFixture() -> Data {
+        // Layout (3 pages = 0xC000 bytes):
+        // __TEXT       vm=0x100000000..0x100004000 file=0x0000..0x4000
+        //   __text           vm=0x100001000 off=0x1000 size=0x20 (4 RET stubs)
+        //   __objc_methname  vm=0x100002000 off=0x2000
+        //   __objc_classname vm=0x100002200 off=0x2200
+        //   __objc_methtype  vm=0x100002400 off=0x2400
+        // __DATA_CONST vm=0x100004000..0x100008000 file=0x4000..0x8000
+        //   __objc_classlist vm=0x100004000 off=0x4000 size=16 (2 class pointers)
+        //   __objc_catlist   vm=0x100004020 off=0x4020 size=8  (1 category pointer)
+        //   __objc_protolist vm=0x100004040 off=0x4040 size=24 (3 protocol pointers, 2 pointing to same protocol_t)
+        //   __objc_const     vm=0x100004100 off=0x4100 size=0x500
+        // __DATA       vm=0x100008000..0x10000C000 file=0x8000..0xC000
+        //   __objc_data      vm=0x100008000 off=0x8000 size=160 (2 classes + 2 metaclasses, 40 bytes each)
+        //   __objc_selrefs   vm=0x100008100 off=0x8100 size=64  (8 selector reference slots)
+        //   __objc_ivar      vm=0x100008200 off=0x8200 size=8
+        let imageBase: UInt64 = 0x1_0000_0000
+        var buf = [UInt8](repeating: 0, count: 0xC000)
+
+        func putU32(_ fileOff: Int, _ v: UInt32) {
+            for b in 0..<4 { buf[fileOff + b] = UInt8(truncatingIfNeeded: v >> (b * 8)) }
+        }
+        func putU64(_ fileOff: Int, _ v: UInt64) {
+            for b in 0..<8 { buf[fileOff + b] = UInt8(truncatingIfNeeded: v >> (b * 8)) }
+        }
+        func putRel32(_ fieldVA: UInt64, target targetVA: UInt64) {
+            let fileOff = Int(fieldVA - imageBase)
+            let delta = Int64(bitPattern: targetVA) - Int64(bitPattern: fieldVA)
+            putU32(fileOff, UInt32(bitPattern: Int32(truncatingIfNeeded: delta)))
+        }
+        func putCStr(_ cursor: inout Int, _ s: String) -> UInt64 {
+            let startVA = imageBase + UInt64(cursor)
+            for byte in s.utf8 {
+                buf[cursor] = byte
+                cursor += 1
+            }
+            buf[cursor] = 0
+            cursor += 1
+            return startVA
+        }
+
+        // 4 RET instructions at 0x100001000, +4, +8, +12
+        let fnInstVA: UInt64    = 0x1_0000_1000
+        let fnClassVA: UInt64   = 0x1_0000_1004
+        let fnCatInstVA: UInt64 = 0x1_0000_1008
+        let fnCatClsVA: UInt64  = 0x1_0000_100C
+        for i in 0..<4 {
+            putU32(0x1000 + i * 4, 0xD65F_03C0)
+        }
+
+        // __objc_methname strings
+        var methCur = 0x2000
+        let selAppLaunchVA   = putCStr(&methCur, "applicationWillFinishLaunching:")
+        let selSharedInstVA  = putCStr(&methCur, "sharedAppDelegate")
+        let selAffineScaleVA = putCStr(&methCur, "affineScale")
+        let selIdentityVA    = putCStr(&methCur, "identityTransform")
+        let selProtoReqInst  = putCStr(&methCur, "renderDisplay:")
+        let selProtoReqCls   = putCStr(&methCur, "defaultDisplayMode")
+        let selProtoOptInst  = putCStr(&methCur, "didRefreshDisplay")
+        let selProtoOptCls   = putCStr(&methCur, "supportsHDRDisplay")
+        let methSize = UInt64(methCur - 0x2000)
+
+        // __objc_selrefs slots at 0x100008100 (slot 0..7 -> selector C-string VAs)
+        let selRefsBaseVA: UInt64 = 0x1_0000_8100
+        let selVAs = [
+            selAppLaunchVA, selSharedInstVA, selAffineScaleVA, selIdentityVA,
+            selProtoReqInst, selProtoReqCls, selProtoOptInst, selProtoOptCls
+        ]
+        for (idx, sva) in selVAs.enumerated() {
+            putU64(0x8100 + idx * 8, sva)
+        }
+        func selSlot(_ idx: Int) -> UInt64 { selRefsBaseVA + UInt64(idx * 8) }
+
+        // __objc_classname strings (including leading-underscore Swift & private ObjC names)
+        var clsCur = 0x2200
+        let nameBaseClsVA   = putCStr(&clsCur, "_CUIThemeBaseRendition")
+        let nameAppDelClsVA = putCStr(&clsCur, "_TtC10Calculator11AppDelegate")
+        let nameCatVA       = putCStr(&clsCur, "CGAffineTransform")
+        let nameProtoSwift  = putCStr(&clsCur, "_TtP10Calculator15DisplayProtocol_")
+        let nameProtoAppDel = putCStr(&clsCur, "NSApplicationDelegate")
+        let ivarWindowVA    = putCStr(&clsCur, "_mainWindow")
+        let clsSize = UInt64(clsCur - 0x2200)
+
+        // __objc_methtype strings
+        var typeCur = 0x2400
+        let typeVoidObjVA = putCStr(&typeCur, "v24@0:8@16")
+        let typeIdClsVA   = putCStr(&typeCur, "@16@0:8")
+        let typeIvarObjVA = putCStr(&typeCur, "@\"NSWindow\"")
+        let typeSize = UInt64(typeCur - 0x2400)
+
+        // Helper to write a 1-entry relative small method_list_t (indirect via __objc_selrefs, entsize=12 | 0x80000000)
+        func writeRelSmallMethodList(at listVA: UInt64, selRefSlotVA: UInt64, typesVA: UInt64, impVA: UInt64?) {
+            let off = Int(listVA - imageBase)
+            putU32(off, 0x8000_000C) // smallMethodListFlag | 12 (indirect via __objc_selrefs)
+            putU32(off + 4, 1)
+            putRel32(listVA + 8, target: selRefSlotVA)
+            putRel32(listVA + 12, target: typesVA)
+            if let impVA {
+                putRel32(listVA + 16, target: impVA)
+            } else {
+                putU32(off + 16, 0) // protocol method declaration: imp == 0
+            }
+        }
+
+        // Allocate structures inside __DATA_CONST,__objc_const (base 0x100004100):
+        let clsInstListVA: UInt64      = 0x1_0000_4100 // 20 bytes
+        let clsMetaListVA: UInt64      = 0x1_0000_4120 // 20 bytes
+        let catInstListVA: UInt64      = 0x1_0000_4140 // 20 bytes
+        let catMetaListVA: UInt64      = 0x1_0000_4160 // 20 bytes
+        let protoReqInstListVA: UInt64 = 0x1_0000_4180 // 20 bytes
+        let protoReqClsListVA: UInt64  = 0x1_0000_41A0 // 20 bytes
+        let protoOptInstListVA: UInt64 = 0x1_0000_41C0 // 20 bytes
+        let protoOptClsListVA: UInt64  = 0x1_0000_41E0 // 20 bytes
+
+        writeRelSmallMethodList(at: clsInstListVA, selRefSlotVA: selSlot(0), typesVA: typeVoidObjVA, impVA: fnInstVA)
+        writeRelSmallMethodList(at: clsMetaListVA, selRefSlotVA: selSlot(1), typesVA: typeIdClsVA, impVA: fnClassVA)
+        writeRelSmallMethodList(at: catInstListVA, selRefSlotVA: selSlot(2), typesVA: typeIdClsVA, impVA: fnCatInstVA)
+        writeRelSmallMethodList(at: catMetaListVA, selRefSlotVA: selSlot(3), typesVA: typeIdClsVA, impVA: fnCatClsVA)
+        writeRelSmallMethodList(at: protoReqInstListVA, selRefSlotVA: selSlot(4), typesVA: typeVoidObjVA, impVA: nil)
+        writeRelSmallMethodList(at: protoReqClsListVA, selRefSlotVA: selSlot(5), typesVA: typeIdClsVA, impVA: nil)
+        writeRelSmallMethodList(at: protoOptInstListVA, selRefSlotVA: selSlot(6), typesVA: typeVoidObjVA, impVA: nil)
+        writeRelSmallMethodList(at: protoOptClsListVA, selRefSlotVA: selSlot(7), typesVA: typeIdClsVA, impVA: nil)
+
+        // protocol_t #1: NSApplicationDelegate at 0x100004220 (72 bytes; unused method lists set to imageBase to guard __mh_execute_header)
+        let protoAppDelVA: UInt64 = 0x1_0000_4220
+        putU64(Int(protoAppDelVA - imageBase) + 0x00, imageBase)
+        putU64(Int(protoAppDelVA - imageBase) + 0x08, nameProtoAppDel)
+        putU64(Int(protoAppDelVA - imageBase) + 0x10, imageBase) // null-rebased to __mh_execute_header
+        putU64(Int(protoAppDelVA - imageBase) + 0x18, imageBase)
+        putU64(Int(protoAppDelVA - imageBase) + 0x20, imageBase)
+        putU64(Int(protoAppDelVA - imageBase) + 0x28, imageBase)
+        putU64(Int(protoAppDelVA - imageBase) + 0x30, imageBase)
+
+        // protocol_list_t for DisplayProtocol adopting NSApplicationDelegate at 0x100004280
+        let protoInheritedListVA: UInt64 = 0x1_0000_4280
+        putU64(Int(protoInheritedListVA - imageBase) + 0x00, 1)
+        putU64(Int(protoInheritedListVA - imageBase) + 0x08, protoAppDelVA)
+
+        // protocol_t #2: _TtP10Calculator15DisplayProtocol_ at 0x1000042A0
+        let protoDisplayVA: UInt64 = 0x1_0000_42A0
+        putU64(Int(protoDisplayVA - imageBase) + 0x00, imageBase)
+        putU64(Int(protoDisplayVA - imageBase) + 0x08, nameProtoSwift)
+        putU64(Int(protoDisplayVA - imageBase) + 0x10, protoInheritedListVA)
+        putU64(Int(protoDisplayVA - imageBase) + 0x18, protoReqInstListVA)
+        putU64(Int(protoDisplayVA - imageBase) + 0x20, protoReqClsListVA)
+        putU64(Int(protoDisplayVA - imageBase) + 0x28, protoOptInstListVA)
+        putU64(Int(protoDisplayVA - imageBase) + 0x30, protoOptClsListVA)
+
+        // protocol_list_t for _TtC10Calculator11AppDelegate adopting both protocols at 0x100004300
+        let clsAdoptedProtosVA: UInt64 = 0x1_0000_4300
+        putU64(Int(clsAdoptedProtosVA - imageBase) + 0x00, 2)
+        putU64(Int(clsAdoptedProtosVA - imageBase) + 0x08, protoAppDelVA)
+        putU64(Int(clsAdoptedProtosVA - imageBase) + 0x10, protoDisplayVA)
+
+        // ivar_list_t at 0x100004320 (1 ivar: _mainWindow at offset 16)
+        let ivarOffsetSlotVA: UInt64 = 0x1_0000_8200
+        putU32(Int(ivarOffsetSlotVA - imageBase), 16)
+        let ivarListVA: UInt64 = 0x1_0000_4320
+        putU32(Int(ivarListVA - imageBase) + 0x00, 32)
+        putU32(Int(ivarListVA - imageBase) + 0x04, 1)
+        putU64(Int(ivarListVA - imageBase) + 0x08, ivarOffsetSlotVA)
+        putU64(Int(ivarListVA - imageBase) + 0x10, ivarWindowVA)
+        putU64(Int(ivarListVA - imageBase) + 0x18, typeIvarObjVA)
+        putU32(Int(ivarListVA - imageBase) + 0x20, 3)
+        putU32(Int(ivarListVA - imageBase) + 0x24, 8)
+
+        // Base class _CUIThemeBaseRendition RO (0x100004360) & meta RO (0x1000043B0)
+        let baseROVA: UInt64     = 0x1_0000_4360
+        let baseMetaROVA: UInt64 = 0x1_0000_43B0
+        putU32(Int(baseROVA - imageBase) + 0x08, 8)
+        putU64(Int(baseROVA - imageBase) + 0x18, nameBaseClsVA)
+        putU32(Int(baseMetaROVA - imageBase) + 0x00, 1)
+        putU64(Int(baseMetaROVA - imageBase) + 0x18, nameBaseClsVA)
+
+        // Subclass _TtC10Calculator11AppDelegate RO (0x100004400) & meta RO (0x100004450)
+        let appROVA: UInt64     = 0x1_0000_4400
+        let appMetaROVA: UInt64 = 0x1_0000_4450
+        putU32(Int(appROVA - imageBase) + 0x08, 24)
+        putU64(Int(appROVA - imageBase) + 0x18, nameAppDelClsVA)
+        putU64(Int(appROVA - imageBase) + 0x20, clsInstListVA)
+        putU64(Int(appROVA - imageBase) + 0x28, clsAdoptedProtosVA)
+        putU64(Int(appROVA - imageBase) + 0x30, ivarListVA)
+        putU32(Int(appMetaROVA - imageBase) + 0x00, 1)
+        putU64(Int(appMetaROVA - imageBase) + 0x18, nameAppDelClsVA)
+        putU64(Int(appMetaROVA - imageBase) + 0x20, clsMetaListVA)
+
+        // objc_class_t instances in __DATA,__objc_data (0x100008000):
+        let baseClsVA: UInt64     = 0x1_0000_8000
+        let baseMetaClsVA: UInt64 = 0x1_0000_8028
+        let appClsVA: UInt64      = 0x1_0000_8050
+        let appMetaClsVA: UInt64  = 0x1_0000_8078
+
+        putU64(Int(baseClsVA - imageBase) + 0x00, baseMetaClsVA)
+        putU64(Int(baseClsVA - imageBase) + 0x20, baseROVA)
+        putU64(Int(baseMetaClsVA - imageBase) + 0x20, baseMetaROVA)
+
+        putU64(Int(appClsVA - imageBase) + 0x00, appMetaClsVA)
+        putU64(Int(appClsVA - imageBase) + 0x08, baseClsVA) // internal superclass with leading `_`!
+        putU64(Int(appClsVA - imageBase) + 0x20, appROVA)
+        putU64(Int(appMetaClsVA - imageBase) + 0x20, appMetaROVA)
+
+        // category_t at 0x1000044A0 on _CUIThemeBaseRendition
+        let catVA: UInt64 = 0x1_0000_44A0
+        putU64(Int(catVA - imageBase) + 0x00, nameCatVA)
+        putU64(Int(catVA - imageBase) + 0x08, baseClsVA)
+        putU64(Int(catVA - imageBase) + 0x10, catInstListVA)
+        putU64(Int(catVA - imageBase) + 0x18, catMetaListVA)
+        putU64(Int(catVA - imageBase) + 0x20, protoInheritedListVA)
+
+        // Populate __objc_classlist (0x4000), __objc_catlist (0x4020), __objc_protolist (0x4040)
+        putU64(0x4000, baseClsVA)
+        putU64(0x4008, appClsVA)
+        putU64(0x4020, catVA)
+        // Duplicate slot in __objc_protolist (like swiftc + clang in Calculator.app) -> must deduplicate by protocol_t VA
+        putU64(0x4040, protoDisplayVA)
+        putU64(0x4048, protoDisplayVA)
+        putU64(0x4050, protoAppDelVA)
+
+        // Build Mach-O 64 load commands
+        var lc = BinaryBufferWriter(capacity: 1536, endianness: .little)
+        var ncmds: UInt32 = 0
+
+        func writeSeg(
+            name: String, vmaddr: UInt64, vmsize: UInt64, fileoff: UInt64, filesize: UInt64, prot: UInt32,
+            secs: [(sect: String, addr: UInt64, size: UInt64, off: UInt32, align: UInt32, flags: UInt32)]
+        ) {
+            lc.appendUInt32(MachOConstants.lcSegment64)
+            lc.appendUInt32(UInt32(72 + secs.count * 80))
+            lc.appendFixedASCII(name, length: 16)
+            lc.appendUInt64(vmaddr)
+            lc.appendUInt64(vmsize)
+            lc.appendUInt64(fileoff)
+            lc.appendUInt64(filesize)
+            lc.appendUInt32(prot)
+            lc.appendUInt32(prot)
+            lc.appendUInt32(UInt32(secs.count))
+            lc.appendUInt32(0)
+            for s in secs {
+                lc.appendFixedASCII(s.sect, length: 16)
+                lc.appendFixedASCII(name, length: 16)
+                lc.appendUInt64(s.addr)
+                lc.appendUInt64(s.size)
+                lc.appendUInt32(s.off)
+                lc.appendUInt32(s.align)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(s.flags)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+                lc.appendUInt32(0)
+            }
+            ncmds += 1
+        }
+
+        writeSeg(
+            name: "__TEXT", vmaddr: imageBase, vmsize: 0x4000, fileoff: 0, filesize: 0x4000, prot: 5,
+            secs: [
+                ("__text", 0x1_0000_1000, 0x20, 0x1000, 2, MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions),
+                ("__objc_methname", 0x1_0000_2000, methSize, 0x2000, 0, MachOConstants.sCStringLiterals),
+                ("__objc_classname", 0x1_0000_2200, clsSize, 0x2200, 0, MachOConstants.sCStringLiterals),
+                ("__objc_methtype", 0x1_0000_2400, typeSize, 0x2400, 0, MachOConstants.sCStringLiterals)
+            ]
+        )
+        writeSeg(
+            name: "__DATA_CONST", vmaddr: 0x1_0000_4000, vmsize: 0x4000, fileoff: 0x4000, filesize: 0x4000, prot: 3,
+            secs: [
+                ("__objc_classlist", 0x1_0000_4000, 16, 0x4000, 3, 0),
+                ("__objc_catlist", 0x1_0000_4020, 8, 0x4020, 3, 0),
+                ("__objc_protolist", 0x1_0000_4040, 24, 0x4040, 3, 0),
+                ("__objc_const", 0x1_0000_4100, 0x500, 0x4100, 3, 0)
+            ]
+        )
+        writeSeg(
+            name: "__DATA", vmaddr: 0x1_0000_8000, vmsize: 0x4000, fileoff: 0x8000, filesize: 0x4000, prot: 3,
+            secs: [
+                ("__objc_data", 0x1_0000_8000, 160, 0x8000, 3, 0),
+                ("__objc_selrefs", 0x1_0000_8100, 64, 0x8100, 3, 0),
+                ("__objc_ivar", 0x1_0000_8200, 8, 0x8200, 2, 0)
+            ]
+        )
+
+        var hdr = BinaryBufferWriter(capacity: 32 + lc.count, endianness: .little)
+        hdr.appendUInt32(MachOConstants.mhMagic64)
+        hdr.appendUInt32(UInt32(bitPattern: MachOConstants.cpuTypeARM64))
+        hdr.appendUInt32(0)
+        hdr.appendUInt32(MachOConstants.mhExecute)
+        hdr.appendUInt32(ncmds)
+        hdr.appendUInt32(UInt32(lc.count))
+        hdr.appendUInt32(MachOConstants.mhTwoLevel | MachOConstants.mhPIE)
+        hdr.appendUInt32(0)
+        hdr.appendBytes(lc.bytes)
+
+        for (i, b) in hdr.bytes.enumerated() {
+            buf[i] = b
+        }
+        return Data(buf)
+    }
+
+    @Test("M3 D-M3-4: ObjC class_ro_t.name and superclass preserve raw leading underscores without Swift demangling")
+    func m3ObjCPreservesLeadingUnderscoreInClassAndSuperclassNames() throws {
+        let data = Self.buildSyntheticObjCMetadataFixture()
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "ObjCUnderscore.arm64")
+
+        let classNames = Set(image.objcClasses.map(\.name))
+        #expect(classNames == ["_CUIThemeBaseRendition", "_TtC10Calculator11AppDelegate"])
+
+        let appDel = try #require(image.objcClasses.first { $0.name == "_TtC10Calculator11AppDelegate" })
+        #expect(appDel.superclassName == "_CUIThemeBaseRendition")
+
+        let calcPath = "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
+        if FileManager.default.isReadableFile(atPath: calcPath) {
+            let calc = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: calcPath))
+            let calcNames = Set(calc.objcClasses.map(\.name))
+            #expect(calcNames.count == 33)
+            #expect(calcNames.contains("_TtC10Calculator11AppDelegate"))
+            #expect(!calcNames.contains("TtC10Calculator11AppDelegate"))
+        }
+
+        let assetPath = "/usr/bin/assetutil"
+        if FileManager.default.isReadableFile(atPath: assetPath) {
+            let asset = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: assetPath))
+            let assetNames = Set(asset.objcClasses.map(\.name))
+            #expect(assetNames.contains("_CUIThemeNamedColorGradientRendition"))
+            #expect(!assetNames.contains("CUIThemeNamedColorGradientRendition"))
+        }
+    }
+
+    @Test("M3 D-M3-4: ObjC categories from __objc_catlist parse host className, instanceMethods, and classMethods")
+    func m3ObjCParsesStructuredCategoriesFromObjCCatlist() throws {
+        let data = Self.buildSyntheticObjCMetadataFixture()
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "ObjCCategories.arm64")
+
+        #expect(image.objcCategories.count == 1)
+        let cat = try #require(image.objcCategories.first)
+        #expect(cat.name == "CGAffineTransform")
+        #expect(cat.className == "_CUIThemeBaseRendition")
+        #expect(cat.adoptedProtocols == ["NSApplicationDelegate"])
+        #expect(cat.instanceMethods.map(\.selector) == ["affineScale"])
+        #expect(cat.classMethods.map(\.selector) == ["identityTransform"])
+
+        let assetPath = "/usr/bin/assetutil"
+        if FileManager.default.isReadableFile(atPath: assetPath) {
+            let asset = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: assetPath))
+            #expect(asset.objcCategories.count == 4)
+            let cgCat = try #require(asset.objcCategories.first { $0.name == "CGAffineTransform" })
+            #expect(cgCat.className == "NSValue")
+            #expect(cgCat.instanceMethods.count == 2)
+            #expect(cgCat.classMethods.count == 2)
+        }
+    }
+
+    @Test("M3 D-M3-4: ObjC protocols from __objc_protolist deduplicate slots and parse required/optional method declarations")
+    func m3ObjCParsesStructuredProtocolsFromObjCProtolistAndAdoptedProtocols() throws {
+        let data = Self.buildSyntheticObjCMetadataFixture()
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "ObjCProtocols.arm64")
+
+        let appDel = try #require(image.objcClasses.first { $0.name == "_TtC10Calculator11AppDelegate" })
+        #expect(appDel.adoptedProtocols == ["NSApplicationDelegate", "_TtP10Calculator15DisplayProtocol_"])
+
+        // 3 slots in __objc_protolist pointing to 2 distinct protocol_t addresses -> 2 protocols
+        #expect(image.objcProtocols.count == 2)
+        let protoNames = Set(image.objcProtocols.map(\.name))
+        #expect(protoNames == ["_TtP10Calculator15DisplayProtocol_", "NSApplicationDelegate"])
+
+        let displayProto = try #require(image.objcProtocols.first { $0.name == "_TtP10Calculator15DisplayProtocol_" })
+        #expect(displayProto.adoptedProtocols == ["NSApplicationDelegate"])
+        #expect(displayProto.instanceMethods.map(\.selector) == ["renderDisplay:"])
+        #expect(displayProto.classMethods.map(\.selector) == ["defaultDisplayMode"])
+        #expect(displayProto.optionalInstanceMethods.map(\.selector) == ["didRefreshDisplay"])
+        #expect(displayProto.optionalClassMethods.map(\.selector) == ["supportsHDRDisplay"])
+
+        let nsAppProto = try #require(image.objcProtocols.first { $0.name == "NSApplicationDelegate" })
+        #expect(nsAppProto.instanceMethods.isEmpty)
+        #expect(nsAppProto.classMethods.isEmpty)
+
+        let calcPath = "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
+        if FileManager.default.isReadableFile(atPath: calcPath) {
+            let calc = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: calcPath))
+            #expect(calc.objcProtocols.count == 7)
+            #expect(calc.objcProtocols.map(\.name).contains("NSApplicationDelegate"))
+        }
+    }
+
+    @Test("M3 D-M3-4: ObjC class methods (+[...]) and instance methods (-[...]) remain strictly separated")
+    func m3ObjCSeparatesClassAndInstanceMethodsOnClassesAndCategories() throws {
+        let data = Self.buildSyntheticObjCMetadataFixture()
+        let image = try UniversalBinaryDispatcher.load(data: data, fileName: "ObjCMethodSplit.arm64")
+
+        let appDel = try #require(image.objcClasses.first { $0.name == "_TtC10Calculator11AppDelegate" })
+        let instSels = appDel.methods.filter { !$0.isClassMethod }.map(\.selector)
+        let clsSels = appDel.methods.filter { $0.isClassMethod }.map(\.selector)
+        #expect(instSels == ["applicationWillFinishLaunching:"])
+        #expect(clsSels == ["sharedAppDelegate"])
+
+        let cat = try #require(image.objcCategories.first)
+        #expect(cat.instanceMethods.allSatisfy { !$0.isClassMethod })
+        #expect(cat.classMethods.allSatisfy { $0.isClassMethod })
+
+        let inferredNames = Set(image.symbols.filter { $0.provenance == .objcMetadata }.map(\.name))
+        #expect(inferredNames.contains("-[_TtC10Calculator11AppDelegate applicationWillFinishLaunching:]"))
+        #expect(inferredNames.contains("+[_TtC10Calculator11AppDelegate sharedAppDelegate]"))
+        #expect(inferredNames.contains("-[_CUIThemeBaseRendition(CGAffineTransform) affineScale]"))
+        #expect(inferredNames.contains("+[_CUIThemeBaseRendition(CGAffineTransform) identityTransform]"))
+
+        // Multi-kilobyte CoreML ObjC selectors (e.g. /usr/libexec/ospredictiond) must never be truncated at 512 bytes.
+        let ospredPath = "/usr/libexec/ospredictiond"
+        if FileManager.default.isReadableFile(atPath: ospredPath) {
+            let ospred = try UniversalBinaryDispatcher.load(fileURL: URL(fileURLWithPath: ospredPath))
+            let longSelectors = ospred.objcClasses.flatMap(\.methods).map(\.selector).filter { $0.utf8.count > 512 }
+            #expect(!longSelectors.isEmpty)
+            #expect(longSelectors.allSatisfy { $0.hasSuffix(":") })
+        }
+    }
 }
