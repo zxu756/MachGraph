@@ -1,0 +1,475 @@
+{
+  "schema": "machgraph.m4.acceptance/1",
+  "date": "2026-11-21",
+  "generated_at_utc": "2026-11-21T15:14:23Z",
+  "mode": "standard",
+  "selected_checks": [
+    "function-starts",
+    "invariants",
+    "known-c",
+    "perf"
+  ],
+  "verdict": "PASS",
+  "environment": {
+    "macos_product_name": "macOS",
+    "macos_version": "27.0.1",
+    "macos_build": "26A434",
+    "machine": "arm64",
+    "clang_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "llvm_objdump_version": "Apple LLVM version 21.0.0",
+    "machgraph_commit": "50f1fcfc91c56fd5bcef93db40bdc051763986b2",
+    "worktree_clean": true,
+    "machgraph_binary": ".build/release/MachGraph"
+  },
+  "summary": {
+    "candidate_macho_files": 3,
+    "compared_files": 3,
+    "skipped_no_arm64_slice": 0,
+    "crashes_or_failures": 0,
+    "mismatched_files": 0,
+    "non_utf8_output_files": 0,
+    "max_concurrent_subprocesses": 6,
+    "elapsed_seconds": 17.41
+  },
+  "checks": {
+    "function-starts": {
+      "compared_files": 3,
+      "matched_files": 3,
+      "mismatched_files": 0,
+      "total_ref_items": 7770,
+      "total_mg_items": 7770,
+      "total_diffs": 0,
+      "total_text_functions": 7671,
+      "total_inline_jts": 99,
+      "total_objc_stubs": 29,
+      "examples": []
+    },
+    "invariants": {
+      "compared_files": 3,
+      "matched_files": 3,
+      "mismatched_files": 0,
+      "total_ref_items": 8408,
+      "total_mg_items": 8408,
+      "total_diffs": 0,
+      "total_functions": 8408,
+      "total_blocks": 150147,
+      "total_edges": 220315,
+      "total_loops": 6193,
+      "total_inline_jts": 99,
+      "noreturn_exit_calls_verified": 1080,
+      "noreturn_direct_calls_checked": 1080,
+      "noreturn_completeness_violations": 0,
+      "noreturn_completeness_by_kind": {
+        "NORETURN_CALL_NOT_BLOCK_END": 0,
+        "NORETURN_CALL_HAS_SUCCESSOR": 0
+      },
+      "violations_by_invariant": {
+        "I1": 0,
+        "I2": 0,
+        "I3": 0,
+        "I4": 0
+      },
+      "examples": []
+    },
+    "known-c": {
+      "status": "pass",
+      "ref_count": 8,
+      "mg_count": 8,
+      "matched_cases": 8,
+      "total_cases": 8,
+      "diff_count": 0,
+      "invariants_violations_by_invariant": {
+        "I1": 0,
+        "I2": 0,
+        "I3": 0,
+        "I4": 0
+      },
+      "invariants_noreturn_direct_calls_checked": 0,
+      "invariants_noreturn_completeness_violations": 0,
+      "invariants_noreturn_completeness_by_kind": {
+        "NORETURN_CALL_NOT_BLOCK_END": 0,
+        "NORETURN_CALL_HAS_SUCCESSOR": 0
+      },
+      "cases": [
+        {
+          "symbol": "_fn_seq",
+          "description": "sequential arithmetic (15 insns, single block)",
+          "status": "PASS",
+          "expected": {
+            "blocks": 1,
+            "edges": 0,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 1,
+            "edges": 0,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_if_else",
+          "description": "if/else diamond with -O0 fallthrough trampoline",
+          "status": "PASS",
+          "expected": {
+            "blocks": 5,
+            "edges": 5,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 5,
+            "edges": 5,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_while",
+          "description": "single while (i < n) loop",
+          "status": "PASS",
+          "expected": {
+            "blocks": 5,
+            "edges": 5,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 5,
+            "edges": 5,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_for",
+          "description": "single for (i = 0; i < n; i++) loop with separate latch",
+          "status": "PASS",
+          "expected": {
+            "blocks": 6,
+            "edges": 6,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 6,
+            "edges": 6,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_nested_loop",
+          "description": "nested 2-level for loops (depths 1 and 2)",
+          "status": "PASS",
+          "expected": {
+            "blocks": 11,
+            "edges": 12,
+            "loops": 2,
+            "loop_nesting_depths": [
+              1,
+              2
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 11,
+            "edges": 12,
+            "loops": 2,
+            "loop_nesting_depths": [
+              1,
+              2
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_switch5_dense",
+          "description": "5-case dense switch (-O0 lowers to comparison chain, 0 jump tables)",
+          "status": "PASS",
+          "expected": {
+            "blocks": 17,
+            "edges": 21,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 17,
+            "edges": 21,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        },
+        {
+          "symbol": "_fn_switch10_jumptable",
+          "description": "10-case dense switch (-O0 emits 10-entry 32-bit inline jump table)",
+          "status": "PASS",
+          "expected": {
+            "blocks": 14,
+            "edges": 23,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 1,
+            "jump_table_targets": 10
+          },
+          "actual": {
+            "blocks": 14,
+            "edges": 23,
+            "loops": 0,
+            "loop_nesting_depths": [],
+            "jump_table_count": 1,
+            "jump_table_targets": 10
+          }
+        },
+        {
+          "symbol": "_fn_loop_break_continue",
+          "description": "for loop with both continue (to latch) and break (to exit)",
+          "status": "PASS",
+          "expected": {
+            "blocks": 12,
+            "edges": 14,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          },
+          "actual": {
+            "blocks": 12,
+            "edges": 14,
+            "loops": 1,
+            "loop_nesting_depths": [
+              1
+            ],
+            "jump_table_count": 0,
+            "jump_table_targets": 0
+          }
+        }
+      ],
+      "examples": [],
+      "seconds": 0.435
+    },
+    "perf": {
+      "status": "pass",
+      "ref_count": 3,
+      "mg_count": 3,
+      "diff_count": 0,
+      "uptime_before": "4:14  up 11 days, 18:44, 2 users, load averages: 5.56 5.25 4.65",
+      "uptime_after": "4:14  up 11 days, 18:44, 2 users, load averages: 5.65 5.28 4.66",
+      "benchmarks": {
+        "ssh_full": {
+          "label": "cfg /usr/bin/ssh --json (full-file)",
+          "status": "PASS",
+          "runs_seconds": [
+            0.3434,
+            0.3372,
+            0.335
+          ],
+          "median_seconds": 0.3372,
+          "function_count": 1494,
+          "block_count": 18941,
+          "json_bytes": 12042121,
+          "warn_budget_seconds": 5.0,
+          "hang_timeout_seconds": 30.0
+        },
+        "vim_full": {
+          "label": "cfg /usr/bin/vim --json (full-file)",
+          "status": "PASS",
+          "runs_seconds": [
+            1.9153,
+            1.7909,
+            1.9073
+          ],
+          "median_seconds": 1.9073,
+          "function_count": 6781,
+          "block_count": 130335,
+          "json_bytes": 80234750,
+          "warn_budget_seconds": null,
+          "hang_timeout_seconds": 90.0
+        },
+        "ssh_single_symbol": {
+          "label": "cfg /usr/bin/ssh --symbol _entry --json (single-function)",
+          "status": "PASS",
+          "runs_seconds": [
+            0.2079,
+            0.2066,
+            0.2063
+          ],
+          "median_seconds": 0.2066,
+          "function_count": 1,
+          "block_count": 729,
+          "json_bytes": 475758,
+          "warn_budget_seconds": null,
+          "hang_timeout_seconds": 30.0
+        }
+      },
+      "warnings": [],
+      "examples": [],
+      "seconds": 9.758
+    }
+  },
+  "failures": [],
+  "files": [
+    {
+      "file": "/bin/ls",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.11,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 50,
+          "mg_count": 50,
+          "text_fn_count": 49,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 133,
+          "mg_count": 133,
+          "function_count": 133,
+          "block_count": 871,
+          "edge_count": 1110,
+          "loop_count": 38,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 32,
+          "noreturn_direct_calls_checked": 32,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/ssh",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.256,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1097,
+          "mg_count": 1097,
+          "text_fn_count": 1094,
+          "inline_jt_count": 3,
+          "objc_stub_count": 10,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1494,
+          "mg_count": 1494,
+          "function_count": 1494,
+          "block_count": 18941,
+          "edge_count": 26513,
+          "loop_count": 955,
+          "inline_jt_count": 3,
+          "noreturn_exit_calls_verified": 466,
+          "noreturn_direct_calls_checked": 466,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/vim",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 7.18,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 6623,
+          "mg_count": 6623,
+          "text_fn_count": 6528,
+          "inline_jt_count": 95,
+          "objc_stub_count": 19,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 6781,
+          "mg_count": 6781,
+          "function_count": 6781,
+          "block_count": 130335,
+          "edge_count": 192692,
+          "loop_count": 5200,
+          "inline_jt_count": 95,
+          "noreturn_exit_calls_verified": 582,
+          "noreturn_direct_calls_checked": 582,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    }
+  ]
+}

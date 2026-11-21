@@ -1,0 +1,77 @@
+{
+  "schema": "machgraph.m4.ghidra_differential/1",
+  "date": "2026-11-21",
+  "generated_at_utc": "2026-11-21T15:14:09Z",
+  "target": "/bin/ls",
+  "arch": "arm64e",
+  "ghidra_language": "AARCH64:LE:64:AppleSilicon",
+  "ghidra_compiler_spec": "default",
+  "ghidra_elapsed_seconds": 9.47,
+  "verdict": "PASS",
+  "machgraph_error_count": 0,
+  "explained_tool_diff_count": 4,
+  "total_difference_records": 4,
+  "counts": {
+    "machgraph_functions": 133,
+    "ghidra_real_functions": 134,
+    "ghidra_external_pseudo_functions": 0,
+    "common_function_starts": 133,
+    "only_machgraph_starts": 0,
+    "only_ghidra_starts": 1,
+    "common_end_address_equal": 132,
+    "common_block_count_equal": 133,
+    "common_block_starts_equal": 132,
+    "common_exact_start_end_and_blocks_equal": 131
+  },
+  "differences_by_category": {
+    "TOOL_DIFF_GHIDRA_PAC_PROLOGUE_SPLIT": 1,
+    "TOOL_DIFF_GHIDRA_PAC_PROLOGUE_TRUNCATION": 1,
+    "TOOL_DIFF_GHIDRA_SWITCH_DISPATCH_ISOLATION": 1,
+    "TOOL_DIFF_MACHGRAPH_NORETURN_WRAPPER_SPLIT": 1
+  },
+  "differences": [
+    {
+      "dimension": "function_start",
+      "address": "0x1000038e8",
+      "category": "TOOL_DIFF_GHIDRA_PAC_PROLOGUE_SPLIT",
+      "attribution": "ghidra_heuristic_quirk",
+      "reason": "LC_FUNCTION_STARTS contains 0x1000038e4 (word 0xd503237f PAC/BTI prologue) and NOT 0x1000038e8 (word 0xa9bf7bfd frame setup); Ghidra's prologue analyzer falsely split after PAC into a second function FUN_1000038e8 at 0x1000038e8..0x100003900, whereas MachGraph accurately kept sub_1000038e4 as 0x1000038e4..0x100003900."
+    },
+    {
+      "dimension": "basic_blocks",
+      "address": "0x100000960",
+      "function": "_entry",
+      "machgraph_blocks": 154,
+      "ghidra_blocks": 154,
+      "ghidra_extra_starts": [
+        "0x100000b30"
+      ],
+      "category": "TOOL_DIFF_GHIDRA_SWITCH_DISPATCH_ISOLATION",
+      "attribution": "ghidra_switch_block_attachment",
+      "reason": "On _entry (0x100000960), Ghidra isolated switch dispatch `br xN` at ['0x100000b30'] into a 1-instruction CodeBlock with zero incoming branch/jump-table edges; MachGraph keeps the block unsplit per the standard basic-block leader definition."
+    },
+    {
+      "dimension": "basic_blocks",
+      "address": "0x100000960",
+      "function": "_entry",
+      "machgraph_blocks": 154,
+      "ghidra_blocks": 154,
+      "machgraph_noreturn_splits": [
+        {
+          "blockStart": "0x100000fe4",
+          "noreturnCallee": "0x1000042ec"
+        }
+      ],
+      "category": "TOOL_DIFF_MACHGRAPH_NORETURN_WRAPPER_SPLIT",
+      "attribution": "ghidra_missing_internal_noreturn",
+      "reason": "On _entry (0x100000960), MachGraph split after proven non-returning call(s) ['0x100000fe0->callee 0x1000042ec'], whereas Ghidra did not propagate `noreturn` to that internal wrapper."
+    },
+    {
+      "dimension": "function_end",
+      "address": "0x1000038e4",
+      "category": "TOOL_DIFF_GHIDRA_PAC_PROLOGUE_TRUNCATION",
+      "attribution": "ghidra_heuristic_quirk",
+      "reason": "Paired consequence of Ghidra's false PAC split at 0x1000038e8: Ghidra truncated FUN_1000038e4 to 4 bytes (0x1000038e4..0x1000038e8), whereas MachGraph preserved the full function 0x1000038e4..0x100003900."
+    }
+  ]
+}

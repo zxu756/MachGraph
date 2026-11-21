@@ -1,0 +1,1853 @@
+{
+  "schema": "machgraph.m4.acceptance/1",
+  "date": "2026-11-21",
+  "generated_at_utc": "2026-11-21T15:13:47Z",
+  "mode": "full",
+  "selected_checks": [
+    "function-starts",
+    "invariants"
+  ],
+  "verdict": "PASS",
+  "environment": {
+    "macos_product_name": "macOS",
+    "macos_version": "27.0.1",
+    "macos_build": "26A434",
+    "machine": "arm64",
+    "clang_version": "Apple clang version 21.0.0 (clang-2100.4.1.1)",
+    "llvm_objdump_version": "Apple LLVM version 21.0.0",
+    "machgraph_commit": "50f1fcfc91c56fd5bcef93db40bdc051763986b2",
+    "worktree_clean": true,
+    "machgraph_binary": ".build/release/MachGraph"
+  },
+  "sampling": {
+    "method": "fixed_seed_uniform_without_replacement(seed=20261121, sample_size=40, pinned_standard=3,roots=['/bin', '/usr/bin', '/usr/sbin', '/usr/libexec'])",
+    "scan_roots": [
+      "/bin",
+      "/usr/bin",
+      "/usr/sbin",
+      "/usr/libexec"
+    ],
+    "total_discovered_macho_files": 1281,
+    "arm64_executable_pool_count": 1278,
+    "pre_filtered_non_arm64_count": 3,
+    "seed": 20261121,
+    "requested_sample_size": 40,
+    "selected_count": 40,
+    "selected_files": [
+      "/bin/csh",
+      "/bin/dd",
+      "/bin/ls",
+      "/usr/bin/agentxtrap",
+      "/usr/bin/dsexport",
+      "/usr/bin/expand",
+      "/usr/bin/false",
+      "/usr/bin/fm",
+      "/usr/bin/heap",
+      "/usr/bin/leaks",
+      "/usr/bin/ocspcheck",
+      "/usr/bin/pl",
+      "/usr/bin/ppdi",
+      "/usr/bin/readlink",
+      "/usr/bin/say",
+      "/usr/bin/shazam",
+      "/usr/bin/ssh",
+      "/usr/bin/timesyncanalyse",
+      "/usr/bin/uucp",
+      "/usr/bin/vim",
+      "/usr/bin/xmlcatalog",
+      "/usr/libexec/apache2/mod_authn_core.so",
+      "/usr/libexec/apache2/mod_substitute.so",
+      "/usr/libexec/attach_automation_image",
+      "/usr/libexec/biomesyncd",
+      "/usr/libexec/cameraispdarwinsimd",
+      "/usr/libexec/chkpasswd",
+      "/usr/libexec/clocksyncd",
+      "/usr/libexec/cups/apple/ipp",
+      "/usr/libexec/cups/backend/socket",
+      "/usr/libexec/cups/filter/cgbannertopdf",
+      "/usr/libexec/findmydeviced",
+      "/usr/libexec/ippusbd",
+      "/usr/libexec/mount_url",
+      "/usr/libexec/relatived",
+      "/usr/libexec/uarppersonalizationd",
+      "/usr/libexec/warmd_agent",
+      "/usr/sbin/repairHomePermissions",
+      "/usr/sbin/setkey",
+      "/usr/sbin/sysctl"
+    ]
+  },
+  "summary": {
+    "candidate_macho_files": 40,
+    "compared_files": 40,
+    "skipped_no_arm64_slice": 3,
+    "crashes_or_failures": 0,
+    "mismatched_files": 0,
+    "non_utf8_output_files": 0,
+    "max_concurrent_subprocesses": 6,
+    "elapsed_seconds": 12.24
+  },
+  "checks": {
+    "function-starts": {
+      "compared_files": 40,
+      "matched_files": 40,
+      "mismatched_files": 0,
+      "total_ref_items": 21945,
+      "total_mg_items": 21945,
+      "total_diffs": 0,
+      "total_text_functions": 21816,
+      "total_inline_jts": 129,
+      "total_objc_stubs": 5251,
+      "examples": []
+    },
+    "invariants": {
+      "compared_files": 40,
+      "matched_files": 40,
+      "mismatched_files": 0,
+      "total_ref_items": 31981,
+      "total_mg_items": 31981,
+      "total_diffs": 0,
+      "total_functions": 31981,
+      "total_blocks": 258906,
+      "total_edges": 339379,
+      "total_loops": 9274,
+      "total_inline_jts": 129,
+      "noreturn_exit_calls_verified": 4035,
+      "noreturn_direct_calls_checked": 4035,
+      "noreturn_completeness_violations": 0,
+      "noreturn_completeness_by_kind": {
+        "NORETURN_CALL_NOT_BLOCK_END": 0,
+        "NORETURN_CALL_HAS_SUCCESSOR": 0
+      },
+      "violations_by_invariant": {
+        "I1": 0,
+        "I2": 0,
+        "I3": 0,
+        "I4": 0
+      },
+      "examples": []
+    }
+  },
+  "failures": [],
+  "files": [
+    {
+      "file": "/bin/csh",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.483,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 838,
+          "mg_count": 838,
+          "text_fn_count": 828,
+          "inline_jt_count": 10,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 976,
+          "mg_count": 976,
+          "function_count": 976,
+          "block_count": 15346,
+          "edge_count": 21072,
+          "loop_count": 898,
+          "inline_jt_count": 10,
+          "noreturn_exit_calls_verified": 1070,
+          "noreturn_direct_calls_checked": 1070,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/bin/dd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.143,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 89,
+          "mg_count": 89,
+          "text_fn_count": 89,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 139,
+          "mg_count": 139,
+          "function_count": 139,
+          "block_count": 670,
+          "edge_count": 750,
+          "loop_count": 31,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 86,
+          "noreturn_direct_calls_checked": 86,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/bin/ls",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.16,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 50,
+          "mg_count": 50,
+          "text_fn_count": 49,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 133,
+          "mg_count": 133,
+          "function_count": 133,
+          "block_count": 871,
+          "edge_count": 1110,
+          "loop_count": 38,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 32,
+          "noreturn_direct_calls_checked": 32,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/agentxtrap",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.093,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 20,
+          "mg_count": 20,
+          "text_fn_count": 20,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 71,
+          "mg_count": 71,
+          "function_count": 71,
+          "block_count": 238,
+          "edge_count": 234,
+          "loop_count": 4,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 10,
+          "noreturn_direct_calls_checked": 10,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/dsexport",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.101,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 11,
+          "mg_count": 11,
+          "text_fn_count": 11,
+          "inline_jt_count": 0,
+          "objc_stub_count": 59,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 93,
+          "mg_count": 93,
+          "function_count": 93,
+          "block_count": 232,
+          "edge_count": 202,
+          "loop_count": 10,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 6,
+          "noreturn_direct_calls_checked": 6,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/expand",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.105,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 6,
+          "mg_count": 6,
+          "text_fn_count": 6,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 20,
+          "mg_count": 20,
+          "function_count": 20,
+          "block_count": 94,
+          "edge_count": 108,
+          "loop_count": 10,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 10,
+          "noreturn_direct_calls_checked": 10,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/false",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.11,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1,
+          "mg_count": 1,
+          "text_fn_count": 1,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1,
+          "mg_count": 1,
+          "function_count": 1,
+          "block_count": 1,
+          "edge_count": 0,
+          "loop_count": 0,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 0,
+          "noreturn_direct_calls_checked": 0,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/fm",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 4.267,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1912,
+          "mg_count": 1912,
+          "text_fn_count": 1908,
+          "inline_jt_count": 4,
+          "objc_stub_count": 24,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 2686,
+          "mg_count": 2686,
+          "function_count": 2686,
+          "block_count": 18783,
+          "edge_count": 21553,
+          "loop_count": 448,
+          "inline_jt_count": 4,
+          "noreturn_exit_calls_verified": 95,
+          "noreturn_direct_calls_checked": 95,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/heap",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.283,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 175,
+          "mg_count": 175,
+          "text_fn_count": 175,
+          "inline_jt_count": 0,
+          "objc_stub_count": 202,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 509,
+          "mg_count": 509,
+          "function_count": 509,
+          "block_count": 1582,
+          "edge_count": 1551,
+          "loop_count": 18,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 46,
+          "noreturn_direct_calls_checked": 46,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/leaks",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.525,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 415,
+          "mg_count": 415,
+          "text_fn_count": 415,
+          "inline_jt_count": 0,
+          "objc_stub_count": 427,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1030,
+          "mg_count": 1030,
+          "function_count": 1030,
+          "block_count": 2973,
+          "edge_count": 2778,
+          "loop_count": 40,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 100,
+          "noreturn_direct_calls_checked": 100,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/ocspcheck",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.136,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 24,
+          "mg_count": 24,
+          "text_fn_count": 24,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 120,
+          "mg_count": 120,
+          "function_count": 120,
+          "block_count": 583,
+          "edge_count": 681,
+          "loop_count": 20,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 14,
+          "noreturn_direct_calls_checked": 14,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/pl",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.099,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 2,
+          "mg_count": 2,
+          "text_fn_count": 2,
+          "inline_jt_count": 0,
+          "objc_stub_count": 20,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 31,
+          "mg_count": 31,
+          "function_count": 31,
+          "block_count": 66,
+          "edge_count": 47,
+          "loop_count": 1,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 7,
+          "noreturn_direct_calls_checked": 7,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/ppdi",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.557,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 184,
+          "mg_count": 184,
+          "text_fn_count": 183,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 248,
+          "mg_count": 248,
+          "function_count": 248,
+          "block_count": 2786,
+          "edge_count": 3669,
+          "loop_count": 120,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 104,
+          "noreturn_direct_calls_checked": 104,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/readlink",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.274,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 8,
+          "mg_count": 8,
+          "text_fn_count": 6,
+          "inline_jt_count": 2,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 36,
+          "mg_count": 36,
+          "function_count": 36,
+          "block_count": 293,
+          "edge_count": 398,
+          "loop_count": 13,
+          "inline_jt_count": 2,
+          "noreturn_exit_calls_verified": 9,
+          "noreturn_direct_calls_checked": 9,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/say",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.66,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 71,
+          "mg_count": 71,
+          "text_fn_count": 70,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 227,
+          "mg_count": 227,
+          "function_count": 227,
+          "block_count": 1028,
+          "edge_count": 1157,
+          "loop_count": 44,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 38,
+          "noreturn_direct_calls_checked": 38,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/shazam",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 2.553,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 952,
+          "mg_count": 952,
+          "text_fn_count": 951,
+          "inline_jt_count": 1,
+          "objc_stub_count": 56,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1311,
+          "mg_count": 1311,
+          "function_count": 1311,
+          "block_count": 6624,
+          "edge_count": 7036,
+          "loop_count": 175,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 26,
+          "noreturn_direct_calls_checked": 26,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/ssh",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 3.564,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1097,
+          "mg_count": 1097,
+          "text_fn_count": 1094,
+          "inline_jt_count": 3,
+          "objc_stub_count": 10,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1494,
+          "mg_count": 1494,
+          "function_count": 1494,
+          "block_count": 18941,
+          "edge_count": 26513,
+          "loop_count": 955,
+          "inline_jt_count": 3,
+          "noreturn_exit_calls_verified": 466,
+          "noreturn_direct_calls_checked": 466,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/timesyncanalyse",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.049,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 554,
+          "mg_count": 554,
+          "text_fn_count": 554,
+          "inline_jt_count": 0,
+          "objc_stub_count": 245,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 835,
+          "mg_count": 835,
+          "function_count": 835,
+          "block_count": 2799,
+          "edge_count": 2511,
+          "loop_count": 69,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 132,
+          "noreturn_direct_calls_checked": 132,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/uucp",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.705,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 189,
+          "mg_count": 189,
+          "text_fn_count": 188,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 289,
+          "mg_count": 289,
+          "function_count": 289,
+          "block_count": 2806,
+          "edge_count": 3776,
+          "loop_count": 116,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 66,
+          "noreturn_direct_calls_checked": 66,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/vim",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 10.715,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 6623,
+          "mg_count": 6623,
+          "text_fn_count": 6528,
+          "inline_jt_count": 95,
+          "objc_stub_count": 19,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 6781,
+          "mg_count": 6781,
+          "function_count": 6781,
+          "block_count": 130335,
+          "edge_count": 192692,
+          "loop_count": 5200,
+          "inline_jt_count": 95,
+          "noreturn_exit_calls_verified": 582,
+          "noreturn_direct_calls_checked": 582,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/bin/xmlcatalog",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.5,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 3,
+          "mg_count": 3,
+          "text_fn_count": 3,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 41,
+          "mg_count": 41,
+          "function_count": 41,
+          "block_count": 304,
+          "edge_count": 410,
+          "loop_count": 13,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 1,
+          "noreturn_direct_calls_checked": 1,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/apache2/mod_authn_core.so",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.549,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 13,
+          "mg_count": 13,
+          "text_fn_count": 13,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 37,
+          "mg_count": 37,
+          "function_count": 37,
+          "block_count": 144,
+          "edge_count": 135,
+          "loop_count": 0,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 0,
+          "noreturn_direct_calls_checked": 0,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/apache2/mod_substitute.so",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.08,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 7,
+          "mg_count": 7,
+          "text_fn_count": 7,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 43,
+          "mg_count": 43,
+          "function_count": 43,
+          "block_count": 1032,
+          "edge_count": 1237,
+          "loop_count": 10,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 1,
+          "noreturn_direct_calls_checked": 1,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/attach_automation_image",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.875,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 10,
+          "mg_count": 10,
+          "text_fn_count": 10,
+          "inline_jt_count": 0,
+          "objc_stub_count": 22,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 65,
+          "mg_count": 65,
+          "function_count": 65,
+          "block_count": 162,
+          "edge_count": 129,
+          "loop_count": 7,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 14,
+          "noreturn_direct_calls_checked": 14,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/biomesyncd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 2.493,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1682,
+          "mg_count": 1682,
+          "text_fn_count": 1680,
+          "inline_jt_count": 2,
+          "objc_stub_count": 1100,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 2964,
+          "mg_count": 2964,
+          "function_count": 2964,
+          "block_count": 9404,
+          "edge_count": 8854,
+          "loop_count": 216,
+          "inline_jt_count": 2,
+          "noreturn_exit_calls_verified": 233,
+          "noreturn_direct_calls_checked": 233,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/cameraispdarwinsimd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.4,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 295,
+          "mg_count": 295,
+          "text_fn_count": 294,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 506,
+          "mg_count": 506,
+          "function_count": 506,
+          "block_count": 3201,
+          "edge_count": 4012,
+          "loop_count": 192,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 124,
+          "noreturn_direct_calls_checked": 124,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/chkpasswd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.628,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 21,
+          "mg_count": 21,
+          "text_fn_count": 21,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 69,
+          "mg_count": 69,
+          "function_count": 69,
+          "block_count": 249,
+          "edge_count": 267,
+          "loop_count": 15,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 22,
+          "noreturn_direct_calls_checked": 22,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/clocksyncd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 1.578,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1569,
+          "mg_count": 1569,
+          "text_fn_count": 1569,
+          "inline_jt_count": 0,
+          "objc_stub_count": 722,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 2481,
+          "mg_count": 2481,
+          "function_count": 2481,
+          "block_count": 8893,
+          "edge_count": 8799,
+          "loop_count": 181,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 250,
+          "noreturn_direct_calls_checked": 250,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/cups/apple/ipp",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.517,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 29,
+          "mg_count": 29,
+          "text_fn_count": 29,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 213,
+          "mg_count": 213,
+          "function_count": 213,
+          "block_count": 1783,
+          "edge_count": 2460,
+          "loop_count": 65,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 17,
+          "noreturn_direct_calls_checked": 17,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/cups/backend/socket",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.321,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 11,
+          "mg_count": 11,
+          "text_fn_count": 11,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 79,
+          "mg_count": 79,
+          "function_count": 79,
+          "block_count": 688,
+          "edge_count": 964,
+          "loop_count": 29,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 10,
+          "noreturn_direct_calls_checked": 10,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/cups/filter/cgbannertopdf",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.656,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 22,
+          "mg_count": 22,
+          "text_fn_count": 22,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 114,
+          "mg_count": 114,
+          "function_count": 114,
+          "block_count": 623,
+          "edge_count": 774,
+          "loop_count": 15,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 13,
+          "noreturn_direct_calls_checked": 13,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/findmydeviced",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 2.243,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 4017,
+          "mg_count": 4017,
+          "text_fn_count": 4015,
+          "inline_jt_count": 2,
+          "objc_stub_count": 1796,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 6241,
+          "mg_count": 6241,
+          "function_count": 6241,
+          "block_count": 17472,
+          "edge_count": 15173,
+          "loop_count": 114,
+          "inline_jt_count": 2,
+          "noreturn_exit_calls_verified": 230,
+          "noreturn_direct_calls_checked": 230,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/ippusbd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.91,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 95,
+          "mg_count": 95,
+          "text_fn_count": 95,
+          "inline_jt_count": 0,
+          "objc_stub_count": 37,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 226,
+          "mg_count": 226,
+          "function_count": 226,
+          "block_count": 919,
+          "edge_count": 1047,
+          "loop_count": 36,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 13,
+          "noreturn_direct_calls_checked": 13,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/mount_url",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.346,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 3,
+          "mg_count": 3,
+          "text_fn_count": 3,
+          "inline_jt_count": 0,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 21,
+          "mg_count": 21,
+          "function_count": 21,
+          "block_count": 58,
+          "edge_count": 52,
+          "loop_count": 1,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 7,
+          "noreturn_direct_calls_checked": 7,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/relatived",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.551,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 624,
+          "mg_count": 624,
+          "text_fn_count": 624,
+          "inline_jt_count": 0,
+          "objc_stub_count": 389,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 1159,
+          "mg_count": 1159,
+          "function_count": 1159,
+          "block_count": 3608,
+          "edge_count": 3310,
+          "loop_count": 74,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 103,
+          "noreturn_direct_calls_checked": 103,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/uarppersonalizationd",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.281,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 144,
+          "mg_count": 144,
+          "text_fn_count": 144,
+          "inline_jt_count": 0,
+          "objc_stub_count": 87,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 293,
+          "mg_count": 293,
+          "function_count": 293,
+          "block_count": 789,
+          "edge_count": 693,
+          "loop_count": 9,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 10,
+          "noreturn_direct_calls_checked": 10,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/libexec/warmd_agent",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.185,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 27,
+          "mg_count": 27,
+          "text_fn_count": 27,
+          "inline_jt_count": 0,
+          "objc_stub_count": 28,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 120,
+          "mg_count": 120,
+          "function_count": 120,
+          "block_count": 297,
+          "edge_count": 253,
+          "loop_count": 11,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 7,
+          "noreturn_direct_calls_checked": 7,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/sbin/repairHomePermissions",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.179,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 1,
+          "mg_count": 1,
+          "text_fn_count": 1,
+          "inline_jt_count": 0,
+          "objc_stub_count": 8,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 19,
+          "mg_count": 19,
+          "function_count": 19,
+          "block_count": 24,
+          "edge_count": 5,
+          "loop_count": 0,
+          "inline_jt_count": 0,
+          "noreturn_exit_calls_verified": 1,
+          "noreturn_direct_calls_checked": 1,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/sbin/setkey",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.516,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 135,
+          "mg_count": 135,
+          "text_fn_count": 131,
+          "inline_jt_count": 4,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 203,
+          "mg_count": 203,
+          "function_count": 203,
+          "block_count": 1738,
+          "edge_count": 2335,
+          "loop_count": 59,
+          "inline_jt_count": 4,
+          "noreturn_exit_calls_verified": 61,
+          "noreturn_direct_calls_checked": 61,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    },
+    {
+      "file": "/usr/sbin/sysctl",
+      "arch": "arm64e",
+      "status": "PASS",
+      "seconds": 0.229,
+      "checks": {
+        "function-starts": {
+          "status": "pass",
+          "ref_count": 16,
+          "mg_count": 16,
+          "text_fn_count": 15,
+          "inline_jt_count": 1,
+          "objc_stub_count": 0,
+          "diff_count": 0,
+          "examples": []
+        },
+        "invariants": {
+          "status": "pass",
+          "ref_count": 57,
+          "mg_count": 57,
+          "function_count": 57,
+          "block_count": 467,
+          "edge_count": 632,
+          "loop_count": 17,
+          "inline_jt_count": 1,
+          "noreturn_exit_calls_verified": 19,
+          "noreturn_direct_calls_checked": 19,
+          "noreturn_completeness_violations": 0,
+          "noreturn_completeness_by_kind": {
+            "NORETURN_CALL_NOT_BLOCK_END": 0,
+            "NORETURN_CALL_HAS_SUCCESSOR": 0
+          },
+          "violations_by_invariant": {
+            "I1": 0,
+            "I2": 0,
+            "I3": 0,
+            "I4": 0
+          },
+          "diff_count": 0,
+          "examples": []
+        }
+      }
+    }
+  ]
+}

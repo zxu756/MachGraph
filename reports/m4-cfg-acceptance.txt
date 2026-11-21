@@ -1,0 +1,34 @@
+=== MachGraph M4 CFG Acceptance (standard) ===
+Date (UTC):   2026-11-21T15:14:23Z
+System:       macOS 27.0.1 (26A434) arm64
+Ref clang:    Apple clang version 21.0.0 (clang-2100.4.1.1)
+Ref objdump:  Apple LLVM version 21.0.0
+Checks:       function-starts, invariants, known-c, perf (max_concurrent_subprocesses=6)
+MachGraph:    .build/release/MachGraph @ 50f1fcfc91c5 (worktree_clean=True)
+
+[PASS] /bin/ls (arm64e): function-starts=OK(49+1=50) invariants=OK(fns=133,blks=871,edges=1110) (0.11s)
+[PASS] /usr/bin/ssh (arm64e): function-starts=OK(1094+3=1097) invariants=OK(fns=1494,blks=18941,edges=26513) (1.26s)
+[PASS] /usr/bin/vim (arm64e): function-starts=OK(6528+95=6623) invariants=OK(fns=6781,blks=130335,edges=192692) (7.18s)
+
+[PASS] known-c _fn_seq: blocks=1 edges=0 loops=0(depths=[]) jumpTables=0(targets=0)
+[PASS] known-c _fn_if_else: blocks=5 edges=5 loops=0(depths=[]) jumpTables=0(targets=0)
+[PASS] known-c _fn_while: blocks=5 edges=5 loops=1(depths=[1]) jumpTables=0(targets=0)
+[PASS] known-c _fn_for: blocks=6 edges=6 loops=1(depths=[1]) jumpTables=0(targets=0)
+[PASS] known-c _fn_nested_loop: blocks=11 edges=12 loops=2(depths=[1, 2]) jumpTables=0(targets=0)
+[PASS] known-c _fn_switch5_dense: blocks=17 edges=21 loops=0(depths=[]) jumpTables=0(targets=0)
+[PASS] known-c _fn_switch10_jumptable: blocks=14 edges=23 loops=0(depths=[]) jumpTables=1(targets=10)
+[PASS] known-c _fn_loop_break_continue: blocks=12 edges=14 loops=1(depths=[1]) jumpTables=0(targets=0)
+
+Perf uptime (before): 4:14  up 11 days, 18:44, 2 users, load averages: 5.56 5.25 4.65
+[PASS] perf cfg /usr/bin/ssh --json (full-file): median=0.3372s runs=[0.3434, 0.3372, 0.335] (functions=1494, blocks=18941)
+[PASS] perf cfg /usr/bin/vim --json (full-file): median=1.9073s runs=[1.9153, 1.7909, 1.9073] (functions=6781, blocks=130335)
+[PASS] perf cfg /usr/bin/ssh --symbol _entry --json (single-function): median=0.2066s runs=[0.2079, 0.2066, 0.2063] (functions=1, blocks=729)
+Perf uptime (after):  4:14  up 11 days, 18:44, 2 users, load averages: 5.65 5.28 4.66
+
+[PASS] Check 'function-starts': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=7770 mg_items=7770
+  totals: text_functions=7671 inline_jump_tables=99 objc_stubs=29
+[PASS] Check 'invariants': matched=3/3 mismatched_files=0 total_diffs=0 ref_items=8408 mg_items=8408
+  totals: functions=8408 blocks=150147 edges=220315 loops=6193 inline_jts=99 noreturn_exits=1080 noreturn_direct_calls=1080 noreturn_completeness_violations={"NORETURN_CALL_NOT_BLOCK_END": 0, "NORETURN_CALL_HAS_SUCCESSOR": 0} violations={"I1": 0, "I2": 0, "I3": 0, "I4": 0}
+[PASS] Check 'known-c': matched=8/8 total_diffs=0 invariants_noreturn_direct_calls=0 invariants_noreturn_completeness_violations={"NORETURN_CALL_NOT_BLOCK_END": 0, "NORETURN_CALL_HAS_SUCCESSOR": 0} elapsed=0.43s
+[PASS] Check 'perf': ssh_full_median=0.3372s vim_full_median=1.9073s ssh_symbol_median=0.2066s warnings=0 failures=0 elapsed=9.76s
+[PASS] Summary (standard): candidates=3 compared=3 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=17.41s
