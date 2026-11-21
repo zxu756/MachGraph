@@ -488,6 +488,61 @@ public struct ObjCClassMetadata: Sendable, Codable, Hashable, Identifiable {
     }
 }
 
+public struct ObjCCategoryMetadata: Sendable, Codable, Hashable, Identifiable {
+    public var id: String { "\(className)(\(name))@\(address.compactHexString)" }
+    public let name: String
+    public let className: String
+    public let address: VirtualAddress
+    public let instanceMethods: [ObjCMethodMetadata]
+    public let classMethods: [ObjCMethodMetadata]
+    public let adoptedProtocols: [String]
+
+    public init(
+        name: String,
+        className: String,
+        address: VirtualAddress = .zero,
+        instanceMethods: [ObjCMethodMetadata] = [],
+        classMethods: [ObjCMethodMetadata] = [],
+        adoptedProtocols: [String] = []
+    ) {
+        self.name = name
+        self.className = className
+        self.address = address
+        self.instanceMethods = instanceMethods
+        self.classMethods = classMethods
+        self.adoptedProtocols = adoptedProtocols
+    }
+}
+
+public struct ObjCProtocolMetadata: Sendable, Codable, Hashable, Identifiable {
+    public var id: String { "\(name)@\(address.compactHexString)" }
+    public let name: String
+    public let address: VirtualAddress
+    public let adoptedProtocols: [String]
+    public let instanceMethods: [ObjCMethodMetadata]
+    public let classMethods: [ObjCMethodMetadata]
+    public let optionalInstanceMethods: [ObjCMethodMetadata]
+    public let optionalClassMethods: [ObjCMethodMetadata]
+
+    public init(
+        name: String,
+        address: VirtualAddress = .zero,
+        adoptedProtocols: [String] = [],
+        instanceMethods: [ObjCMethodMetadata] = [],
+        classMethods: [ObjCMethodMetadata] = [],
+        optionalInstanceMethods: [ObjCMethodMetadata] = [],
+        optionalClassMethods: [ObjCMethodMetadata] = []
+    ) {
+        self.name = name
+        self.address = address
+        self.adoptedProtocols = adoptedProtocols
+        self.instanceMethods = instanceMethods
+        self.classMethods = classMethods
+        self.optionalInstanceMethods = optionalInstanceMethods
+        self.optionalClassMethods = optionalClassMethods
+    }
+}
+
 public enum SwiftTypeDescriptorKind: String, Sendable, Codable, Hashable {
     case structType = "Struct"
     case classType = "Class"
@@ -552,6 +607,8 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
     public let chainedFixups: [ChainedFixupRecord]
     public let codeSignature: CodeSignatureSummary
     public let objcClasses: [ObjCClassMetadata]
+    public let objcCategories: [ObjCCategoryMetadata]
+    public let objcProtocols: [ObjCProtocolMetadata]
     public let swiftTypes: [SwiftTypeDescriptor]
     public let overallEntropy: Double
 
@@ -584,6 +641,8 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         chainedFixups: [ChainedFixupRecord] = [],
         codeSignature: CodeSignatureSummary = .unsigned,
         objcClasses: [ObjCClassMetadata] = [],
+        objcCategories: [ObjCCategoryMetadata] = [],
+        objcProtocols: [ObjCProtocolMetadata] = [],
         swiftTypes: [SwiftTypeDescriptor] = [],
         overallEntropy: Double = 0.0
     ) {
@@ -615,6 +674,8 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         self.chainedFixups = chainedFixups
         self.codeSignature = codeSignature
         self.objcClasses = objcClasses
+        self.objcCategories = objcCategories
+        self.objcProtocols = objcProtocols
         self.swiftTypes = swiftTypes
         self.overallEntropy = overallEntropy
     }

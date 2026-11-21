@@ -176,7 +176,7 @@ public enum ObjCAndSwiftMetadataParser {
     private static let smallMethodListFlag: UInt32       = 0x8000_0000
     private static let directSelectorMethodFlag: UInt32  = 0x4000_0000
 
-    /// Walks Objective-C 2.0 `__objc_classlist`, `__objc_nlclslist`, and `__objc_catlist` sections.
+    /// Walks Objective-C 2.0 `__objc_classlist`, `__objc_nlclslist`, `__objc_catlist`, `__objc_nlcatlist`, and `__objc_protolist` sections.
     public static func parseObjCMetadata(
         sliceData: Data,
         sliceFileOffset: FileOffset,
@@ -184,7 +184,12 @@ public enum ObjCAndSwiftMetadataParser {
         segments: [BinarySegment],
         sections: [BinarySection],
         chainedFixups: [ChainedFixupRecord]
-    ) -> (classes: [ObjCClassMetadata], methodSymbols: [BinarySymbol]) {
+    ) -> (
+        classes: [ObjCClassMetadata],
+        categories: [ObjCCategoryMetadata],
+        protocols: [ObjCProtocolMetadata],
+        methodSymbols: [BinarySymbol]
+    ) {
         let _ = sliceFileOffset
         let classListSections = sections.filter {
             $0.sectionName == "__objc_classlist" || $0.sectionName == "__objc_nlclslist"
@@ -192,9 +197,12 @@ public enum ObjCAndSwiftMetadataParser {
         let categoryListSections = sections.filter {
             $0.sectionName == "__objc_catlist" || $0.sectionName == "__objc_nlcatlist"
         }
+        let protocolListSections = sections.filter {
+            $0.sectionName == "__objc_protolist"
+        }
 
-        guard !classListSections.isEmpty || !categoryListSections.isEmpty else {
-            return ([], [])
+        guard !classListSections.isEmpty || !categoryListSections.isEmpty || !protocolListSections.isEmpty else {
+            return ([], [], [], [])
         }
 
         let memory = BinaryMappedMemoryReader(
@@ -206,14 +214,18 @@ public enum ObjCAndSwiftMetadataParser {
         )
 
         var parsedClasses: [ObjCClassMetadata] = []
+        var parsedCategories: [ObjCCategoryMetadata] = []
+        var parsedProtocols: [ObjCProtocolMetadata] = []
         var methodSymbols: [BinarySymbol] = []
         var visitedClassAddresses = Set<VirtualAddress>()
+        var visitedCategoryAddresses = Set<VirtualAddress>()
+        var visitedProtocolAddresses = Set<VirtualAddress>()
 
         for clsSection in classListSections {
             let ptrCount = Int(clsSection.size / 8)
             for i in 0..<min(ptrCount, 16_384) {
                 let slotVA = clsSection.vmAddress.adding(UInt64(i * 8))
-                guard case .internalAddress(let classVA) = memory.resolvePointer(at: slotVA) else {
+                guard let classVA = nonHeaderInternalAddress(memory.resolvePointer(at: slotVA), memory: memory) else {
                     continue
                 }
                 guard visitedClassAddresses.insert(classVA).inserted else {
@@ -242,20 +254,54 @@ public enum ObjCAndSwiftMetadataParser {
             }
         }
 
-        // Also harvest category methods from __objc_catlist -> -[ClassName(CategoryName) selector]
+        // Harvest structured categories and category method symbols from __objc_catlist / __objc_nlcatlist
         for catSection in categoryListSections {
             let ptrCount = Int(catSection.size / 8)
             for i in 0..<min(ptrCount, 8192) {
                 let slotVA = catSection.vmAddress.adding(UInt64(i * 8))
-                guard case .internalAddress(let catVA) = memory.resolvePointer(at: slotVA) else {
+                guard let catVA = nonHeaderInternalAddress(memory.resolvePointer(at: slotVA), memory: memory) else {
                     continue
                 }
-                let catMethods = parseObjCCategorySymbols(at: catVA, memory: memory, sections: sections)
-                methodSymbols.append(contentsOf: catMethods)
+                guard visitedCategoryAddresses.insert(catVA).inserted else {
+                    continue
+                }
+                if let (catMeta, catMethods) = parseObjCCategory(at: catVA, memory: memory, sections: sections) {
+                    parsedCategories.append(catMeta)
+                    methodSymbols.append(contentsOf: catMethods)
+                }
             }
         }
 
-        return (parsedClasses, methodSymbols)
+        // Harvest structured protocols from __objc_protolist (deduplicated by protocol_t VA)
+        for protoSection in protocolListSections {
+            let ptrCount = Int(protoSection.size / 8)
+            for i in 0..<min(ptrCount, 8192) {
+                let slotVA = protoSection.vmAddress.adding(UInt64(i * 8))
+                guard let protoVA = nonHeaderInternalAddress(memory.resolvePointer(at: slotVA), memory: memory) else {
+                    continue
+                }
+                guard visitedProtocolAddresses.insert(protoVA).inserted else {
+                    continue
+                }
+                if let protoMeta = parseObjCProtocol(at: protoVA, memory: memory) {
+                    parsedProtocols.append(protoMeta)
+                }
+            }
+        }
+
+        return (parsedClasses, parsedCategories, parsedProtocols, methodSymbols)
+    }
+
+    private static func nonHeaderInternalAddress(
+        _ resolved: BinaryMappedMemoryReader.ResolvedPointer,
+        memory: BinaryMappedMemoryReader
+    ) -> VirtualAddress? {
+        guard case .internalAddress(let va) = resolved,
+              va != .zero,
+              va != memory.imageBase else {
+            return nil
+        }
+        return va
     }
 
     private static func parseObjCClass(
@@ -280,7 +326,9 @@ public enum ObjCAndSwiftMetadataParser {
             return nil
         }
 
-        guard memory.isValidMappedAddress(roVA),
+        guard roVA != .zero,
+              roVA != memory.imageBase,
+              memory.isValidMappedAddress(roVA),
               let roFlags = memory.readUInt32(at: roVA),
               let instanceSize = memory.readUInt32(at: roVA + 0x08) else {
             return nil
@@ -296,26 +344,27 @@ public enum ObjCAndSwiftMetadataParser {
         // +0x20 baseMethodList (8)
         // +0x28 baseProtocols (8)
         // +0x30 ivars (8)
-        guard case .internalAddress(let nameVA) = memory.resolvePointer(at: roVA + 0x18),
-              let rawClassName = memory.readCString(at: nameVA, maxBytes: 512),
-              !rawClassName.isEmpty else {
+        guard let nameVA = nonHeaderInternalAddress(memory.resolvePointer(at: roVA + 0x18), memory: memory),
+              let className = memory.readCString(at: nameVA, maxBytes: 16_384),
+              !className.isEmpty else {
             return nil
         }
-        let className = MachOSymbolDemangler.demangle(rawClassName)
 
         let superclassName = resolveSuperclassName(superResolved, memory: memory)
 
         var methods: [ObjCMethodMetadata] = []
-        if case .internalAddress(let methodListVA) = memory.resolvePointer(at: roVA + 0x20) {
+        if let methodListVA = nonHeaderInternalAddress(memory.resolvePointer(at: roVA + 0x20), memory: memory) {
             let instanceMethods = parseObjCMethodList(at: methodListVA, isClassMethod: false, memory: memory)
             methods.append(contentsOf: instanceMethods)
         }
 
         // Walk metaclass for +[ClassName method] class methods
-        if case .internalAddress(let metaClassVA) = isaResolved, metaClassVA != classVA {
+        if let metaClassVA = nonHeaderInternalAddress(isaResolved, memory: memory), metaClassVA != classVA {
             if case .internalAddress(let rawMetaRO) = memory.resolvePointer(at: metaClassVA + 0x20) {
                 let metaROVA = VirtualAddress(rawMetaRO.rawValue & fastDataMask64)
-                if case .internalAddress(let classMethodListVA) = memory.resolvePointer(at: metaROVA + 0x20) {
+                if metaROVA != .zero,
+                   metaROVA != memory.imageBase,
+                   let classMethodListVA = nonHeaderInternalAddress(memory.resolvePointer(at: metaROVA + 0x20), memory: memory) {
                     let classMethods = parseObjCMethodList(at: classMethodListVA, isClassMethod: true, memory: memory)
                     methods.append(contentsOf: classMethods)
                 }
@@ -323,12 +372,12 @@ public enum ObjCAndSwiftMetadataParser {
         }
 
         var protocols: [String] = []
-        if case .internalAddress(let protoListVA) = memory.resolvePointer(at: roVA + 0x28) {
+        if let protoListVA = nonHeaderInternalAddress(memory.resolvePointer(at: roVA + 0x28), memory: memory) {
             protocols = parseObjCProtocolList(at: protoListVA, memory: memory)
         }
 
         var ivars: [ObjCIvarMetadata] = []
-        if case .internalAddress(let ivarListVA) = memory.resolvePointer(at: roVA + 0x30) {
+        if let ivarListVA = nonHeaderInternalAddress(memory.resolvePointer(at: roVA + 0x30), memory: memory) {
             ivars = parseObjCIvarList(at: ivarListVA, memory: memory)
         }
 
@@ -358,17 +407,21 @@ public enum ObjCAndSwiftMetadataParser {
             if let range = symName.range(of: "OBJC_CLASS_$_") {
                 return String(symName[range.upperBound...])
             }
-            return MachOSymbolDemangler.demangle(symName)
+            return symName
         case .internalAddress(let superClassVA):
-            guard case .internalAddress(let rawSuperRO) = memory.resolvePointer(at: superClassVA + 0x20) else {
+            guard superClassVA != .zero,
+                  superClassVA != memory.imageBase,
+                  case .internalAddress(let rawSuperRO) = memory.resolvePointer(at: superClassVA + 0x20) else {
                 return nil
             }
             let superROVA = VirtualAddress(rawSuperRO.rawValue & fastDataMask64)
-            guard case .internalAddress(let superNameVA) = memory.resolvePointer(at: superROVA + 0x18),
-                  let name = memory.readCString(at: superNameVA, maxBytes: 512) else {
+            guard superROVA != .zero,
+                  superROVA != memory.imageBase,
+                  let superNameVA = nonHeaderInternalAddress(memory.resolvePointer(at: superROVA + 0x18), memory: memory),
+                  let name = memory.readCString(at: superNameVA, maxBytes: 16_384) else {
                 return nil
             }
-            return MachOSymbolDemangler.demangle(name)
+            return name
         }
     }
 
@@ -377,7 +430,9 @@ public enum ObjCAndSwiftMetadataParser {
         isClassMethod: Bool,
         memory: BinaryMappedMemoryReader
     ) -> [ObjCMethodMetadata] {
-        guard let entsizeAndFlags = memory.readUInt32(at: listVA),
+        guard listVA != .zero,
+              listVA != memory.imageBase,
+              let entsizeAndFlags = memory.readUInt32(at: listVA),
               let rawCount = memory.readUInt32(at: listVA + 4),
               rawCount > 0 else {
             return []
@@ -404,15 +459,15 @@ public enum ObjCAndSwiftMetadataParser {
                 let nameTargetVA = entryVA.adding(Int64(nameRel))
                 let selector: String?
                 if isDirectSelector {
-                    selector = memory.readCString(at: nameTargetVA, maxBytes: 512)
+                    selector = memory.readCString(at: nameTargetVA, maxBytes: 16_384)
                 } else if let targetSec = memory.section(containing: nameTargetVA),
                           targetSec.sectionName == "__objc_methname" || targetSec.kind == .cstring {
-                    selector = memory.readCString(at: nameTargetVA, maxBytes: 512)
+                    selector = memory.readCString(at: nameTargetVA, maxBytes: 16_384)
                 } else if case .internalAddress(let selStrVA) = memory.resolvePointer(at: nameTargetVA),
-                          let derefSel = memory.readCString(at: selStrVA, maxBytes: 512) {
+                          let derefSel = memory.readCString(at: selStrVA, maxBytes: 16_384) {
                     selector = derefSel
                 } else {
-                    selector = memory.readCString(at: nameTargetVA, maxBytes: 512)
+                    selector = memory.readCString(at: nameTargetVA, maxBytes: 16_384)
                 }
 
                 guard let cleanSelector = selector, !cleanSelector.isEmpty else {
@@ -422,7 +477,7 @@ public enum ObjCAndSwiftMetadataParser {
                 let typeEncoding: String
                 if typesRel != 0 {
                     let typesVA = (entryVA + 4).adding(Int64(typesRel))
-                    typeEncoding = memory.readCString(at: typesVA, maxBytes: 256) ?? ""
+                    typeEncoding = memory.readCString(at: typesVA, maxBytes: 16_384) ?? ""
                 } else {
                     typeEncoding = ""
                 }
@@ -446,21 +501,31 @@ public enum ObjCAndSwiftMetadataParser {
 
             for idx in 0..<count {
                 let entryVA = listVA.adding(UInt64(8 + idx * stride))
-                guard case .internalAddress(let selVA) = memory.resolvePointer(at: entryVA),
-                      let selector = memory.readCString(at: selVA, maxBytes: 512),
-                      !selector.isEmpty else {
+                guard let selVA = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA), memory: memory) else {
+                    continue
+                }
+                let rawSelector: String?
+                if let targetSec = memory.section(containing: selVA),
+                   targetSec.sectionName == "__objc_selrefs",
+                   let derefVA = nonHeaderInternalAddress(memory.resolvePointer(at: selVA), memory: memory),
+                   let derefStr = memory.readCString(at: derefVA, maxBytes: 16_384) {
+                    rawSelector = derefStr
+                } else {
+                    rawSelector = memory.readCString(at: selVA, maxBytes: 16_384)
+                }
+                guard let selector = rawSelector, !selector.isEmpty else {
                     continue
                 }
 
                 let typeEncoding: String
-                if case .internalAddress(let typesVA) = memory.resolvePointer(at: entryVA + 8) {
-                    typeEncoding = memory.readCString(at: typesVA, maxBytes: 256) ?? ""
+                if let typesVA = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA + 8), memory: memory) {
+                    typeEncoding = memory.readCString(at: typesVA, maxBytes: 16_384) ?? ""
                 } else {
                     typeEncoding = ""
                 }
 
                 let impVA: VirtualAddress
-                if case .internalAddress(let resolvedImp) = memory.resolvePointer(at: entryVA + 16) {
+                if let resolvedImp = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA + 16), memory: memory) {
                     impVA = resolvedImp
                 } else {
                     impVA = .zero
@@ -503,22 +568,22 @@ public enum ObjCAndSwiftMetadataParser {
             // +0x10 const char *type
             // +0x18 uint32_t alignment_raw
             // +0x1C uint32_t size
-            guard case .internalAddress(let nameVA) = memory.resolvePointer(at: entryVA + 0x08),
-                  let ivarName = memory.readCString(at: nameVA, maxBytes: 256),
+            guard let nameVA = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA + 0x08), memory: memory),
+                  let ivarName = memory.readCString(at: nameVA, maxBytes: 16_384),
                   !ivarName.isEmpty else {
                 continue
             }
 
             let ivarOffset: UInt32
-            if case .internalAddress(let offsetPtrVA) = memory.resolvePointer(at: entryVA) {
+            if let offsetPtrVA = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA), memory: memory) {
                 ivarOffset = memory.readUInt32(at: offsetPtrVA) ?? 0
             } else {
                 ivarOffset = 0
             }
 
             let typeEnc: String
-            if case .internalAddress(let typeVA) = memory.resolvePointer(at: entryVA + 0x10) {
-                typeEnc = memory.readCString(at: typeVA, maxBytes: 256) ?? ""
+            if let typeVA = nonHeaderInternalAddress(memory.resolvePointer(at: entryVA + 0x10), memory: memory) {
+                typeEnc = memory.readCString(at: typeVA, maxBytes: 16_384) ?? ""
             } else {
                 typeEnc = ""
             }
@@ -541,7 +606,10 @@ public enum ObjCAndSwiftMetadataParser {
         at listVA: VirtualAddress,
         memory: BinaryMappedMemoryReader
     ) -> [String] {
-        guard let rawCount = memory.readUInt64(at: listVA), rawCount > 0 else {
+        guard listVA != .zero,
+              listVA != memory.imageBase,
+              let rawCount = memory.readUInt64(at: listVA),
+              rawCount > 0 else {
             return []
         }
         let count = Int(min(rawCount, 256))
@@ -551,9 +619,9 @@ public enum ObjCAndSwiftMetadataParser {
         for idx in 0..<count {
             let slotVA = listVA.adding(UInt64(8 + idx * 8))
             // protocol_t: +0x00 isa, +0x08 mangledName
-            if case .internalAddress(let protoVA) = memory.resolvePointer(at: slotVA),
-               case .internalAddress(let nameVA) = memory.resolvePointer(at: protoVA + 0x08),
-               let protoName = memory.readCString(at: nameVA, maxBytes: 256),
+            if let protoVA = nonHeaderInternalAddress(memory.resolvePointer(at: slotVA), memory: memory),
+               let nameVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x08), memory: memory),
+               let protoName = memory.readCString(at: nameVA, maxBytes: 16_384),
                !protoName.isEmpty,
                !names.contains(protoName) {
                 names.append(protoName)
@@ -563,28 +631,32 @@ public enum ObjCAndSwiftMetadataParser {
         return names
     }
 
-    private static func parseObjCCategorySymbols(
+    private static func parseObjCCategory(
         at categoryVA: VirtualAddress,
         memory: BinaryMappedMemoryReader,
         sections: [BinarySection]
-    ) -> [BinarySymbol] {
+    ) -> (ObjCCategoryMetadata, [BinarySymbol])? {
         // category_t (64-bit):
         // +0x00 const char *name
         // +0x08 classref_t cls
         // +0x10 method_list_t *instanceMethods
         // +0x18 method_list_t *classMethods
-        guard case .internalAddress(let catNameVA) = memory.resolvePointer(at: categoryVA),
-              let catName = memory.readCString(at: catNameVA, maxBytes: 256),
+        // +0x20 protocol_list_t *protocols
+        guard let catNameVA = nonHeaderInternalAddress(memory.resolvePointer(at: categoryVA), memory: memory),
+              let catName = memory.readCString(at: catNameVA, maxBytes: 16_384),
               !catName.isEmpty else {
-            return []
+            return nil
         }
 
         let hostClassName = resolveSuperclassName(memory.resolvePointer(at: categoryVA + 0x08), memory: memory) ?? "UnknownClass"
+        var instanceMethods: [ObjCMethodMetadata] = []
+        var classMethods: [ObjCMethodMetadata] = []
+        var adoptedProtocols: [String] = []
         var symbols: [BinarySymbol] = []
 
-        if case .internalAddress(let instMethodsVA) = memory.resolvePointer(at: categoryVA + 0x10) {
-            let list = parseObjCMethodList(at: instMethodsVA, isClassMethod: false, memory: memory)
-            for m in list where m.implementationAddress != .zero {
+        if let instMethodsVA = nonHeaderInternalAddress(memory.resolvePointer(at: categoryVA + 0x10), memory: memory) {
+            instanceMethods = parseObjCMethodList(at: instMethodsVA, isClassMethod: false, memory: memory)
+            for m in instanceMethods where m.implementationAddress != .zero {
                 let symName = "-[\(hostClassName)(\(catName)) \(m.selector)]"
                 let secIdx = sections.firstIndex { $0.addressRange.contains(m.implementationAddress) }
                 symbols.append(
@@ -602,9 +674,9 @@ public enum ObjCAndSwiftMetadataParser {
             }
         }
 
-        if case .internalAddress(let clsMethodsVA) = memory.resolvePointer(at: categoryVA + 0x18) {
-            let list = parseObjCMethodList(at: clsMethodsVA, isClassMethod: true, memory: memory)
-            for m in list where m.implementationAddress != .zero {
+        if let clsMethodsVA = nonHeaderInternalAddress(memory.resolvePointer(at: categoryVA + 0x18), memory: memory) {
+            classMethods = parseObjCMethodList(at: clsMethodsVA, isClassMethod: true, memory: memory)
+            for m in classMethods where m.implementationAddress != .zero {
                 let symName = "+[\(hostClassName)(\(catName)) \(m.selector)]"
                 let secIdx = sections.firstIndex { $0.addressRange.contains(m.implementationAddress) }
                 symbols.append(
@@ -622,7 +694,73 @@ public enum ObjCAndSwiftMetadataParser {
             }
         }
 
-        return symbols
+        if let protoListVA = nonHeaderInternalAddress(memory.resolvePointer(at: categoryVA + 0x20), memory: memory) {
+            adoptedProtocols = parseObjCProtocolList(at: protoListVA, memory: memory)
+        }
+
+        let metadata = ObjCCategoryMetadata(
+            name: catName,
+            className: hostClassName,
+            address: categoryVA,
+            instanceMethods: instanceMethods,
+            classMethods: classMethods,
+            adoptedProtocols: adoptedProtocols
+        )
+        return (metadata, symbols)
+    }
+
+    private static func parseObjCProtocol(
+        at protoVA: VirtualAddress,
+        memory: BinaryMappedMemoryReader
+    ) -> ObjCProtocolMetadata? {
+        // protocol_t (64-bit):
+        // +0x00 id isa
+        // +0x08 const char *mangledName
+        // +0x10 protocol_list_t *protocols
+        // +0x18 method_list_t *instanceMethods
+        // +0x20 method_list_t *classMethods
+        // +0x28 method_list_t *optionalInstanceMethods
+        // +0x30 method_list_t *optionalClassMethods
+        guard let nameVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x08), memory: memory),
+              let protoName = memory.readCString(at: nameVA, maxBytes: 16_384),
+              !protoName.isEmpty else {
+            return nil
+        }
+
+        var adoptedProtocols: [String] = []
+        if let protoListVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x10), memory: memory) {
+            adoptedProtocols = parseObjCProtocolList(at: protoListVA, memory: memory)
+        }
+
+        var instanceMethods: [ObjCMethodMetadata] = []
+        if let instVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x18), memory: memory) {
+            instanceMethods = parseObjCMethodList(at: instVA, isClassMethod: false, memory: memory)
+        }
+
+        var classMethods: [ObjCMethodMetadata] = []
+        if let clsVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x20), memory: memory) {
+            classMethods = parseObjCMethodList(at: clsVA, isClassMethod: true, memory: memory)
+        }
+
+        var optionalInstanceMethods: [ObjCMethodMetadata] = []
+        if let optInstVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x28), memory: memory) {
+            optionalInstanceMethods = parseObjCMethodList(at: optInstVA, isClassMethod: false, memory: memory)
+        }
+
+        var optionalClassMethods: [ObjCMethodMetadata] = []
+        if let optClsVA = nonHeaderInternalAddress(memory.resolvePointer(at: protoVA + 0x30), memory: memory) {
+            optionalClassMethods = parseObjCMethodList(at: optClsVA, isClassMethod: true, memory: memory)
+        }
+
+        return ObjCProtocolMetadata(
+            name: protoName,
+            address: protoVA,
+            adoptedProtocols: adoptedProtocols,
+            instanceMethods: instanceMethods,
+            classMethods: classMethods,
+            optionalInstanceMethods: optionalInstanceMethods,
+            optionalClassMethods: optionalClassMethods
+        )
     }
 
     // MARK: - Swift 5 Runtime Type & Field Descriptor Extractor

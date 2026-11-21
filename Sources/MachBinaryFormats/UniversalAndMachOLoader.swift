@@ -1852,7 +1852,7 @@ public enum MachO64Loader {
         }
 
         // Parse ObjC 2.0 & Swift 5 Runtime Metadata
-        let (objcClasses, objcSymbols) = ObjCAndSwiftMetadataParser.parseObjCMetadata(
+        let (objcClasses, objcCategories, objcProtocols, objcSymbols) = ObjCAndSwiftMetadataParser.parseObjCMetadata(
             sliceData: sliceData,
             sliceFileOffset: sliceFileOffset,
             imageBase: imageBase,
@@ -1938,6 +1938,8 @@ public enum MachO64Loader {
             chainedFixups: chainedFixups,
             codeSignature: codeSignature,
             objcClasses: objcClasses,
+            objcCategories: objcCategories,
+            objcProtocols: objcProtocols,
             swiftTypes: swiftTypes,
             overallEntropy: overallEntropy
         )
