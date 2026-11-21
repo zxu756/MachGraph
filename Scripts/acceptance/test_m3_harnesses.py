@@ -410,5 +410,243 @@ class TestM3NonUTF8CrashesConcurrencyAndRecord(unittest.TestCase):
             self.assertEqual(m3_diff.resolve_targets(["standard"]), ("standard", ["/bin/ls", "/usr/bin/ssh", "/usr/bin/vim"]))
 
 
+class TestM3ObjCSubcheck(unittest.TestCase):
+    """Verify ObjC `otool -ov` + `otool -l` relative `__objc_selrefs` extraction and 4-set comparison."""
+
+    def _sample_otool_and_mg(self):
+        otool_l = (
+            b"Section\n"
+            b"  sectname __objc_selrefs\n"
+            b"   segname __DATA\n"
+            b"      addr 0x0000000100153540\n"
+            b"      size 0x0000000000000020\n"
+        )
+        otool_ov = (
+            b"Contents of (__DATA_CONST,__objc_classlist) section\n"
+            b"0000000100140000 0x100150000\n"
+            b"    isa        0x100150028\n"
+            b"    superclass 0x0 _OBJC_CLASS_$_NSObject\n"
+            b"    cache      0x0\n"
+            b"    vtable     0x0\n"
+            b"    data       0x100148000\n"
+            b"        flags          0x80\n"
+            b"        instanceStart  8\n"
+            b"        instanceSize   16\n"
+            b"        reserved       0x0\n"
+            b"        ivarLayout     0x0\n"
+            b"        name           0x100130000 _TtC10Calculator11AppDelegate\n"
+            b"        baseMethods    0x100103518\n"
+            b"            entsize 12 (relative)\n"
+            b"            count   1\n"
+            b"            name    0x50028 (0x100153540)\n"
+            b"            types   0x31ed2 (0x1001353f6) v24@0:8@16\n"
+            b"            imp     0xfff01c38 (0x100005160)\n"
+            b"        ivars          0x0\n"
+            b"        weakIvarLayout 0x0\n"
+            b"        baseProperties 0x0\n"
+            b"Meta Class\n"
+            b"    isa        0x0 _OBJC_METACLASS_$_NSObject\n"
+            b"    superclass 0x0 _OBJC_METACLASS_$_NSObject\n"
+            b"    cache      0x0\n"
+            b"    vtable     0x0\n"
+            b"    data       0x100148048\n"
+            b"        flags          0x81\n"
+            b"        instanceStart  40\n"
+            b"        instanceSize   40\n"
+            b"        reserved       0x0\n"
+            b"        ivarLayout     0x0\n"
+            b"        name           0x100130000 _TtC10Calculator11AppDelegate\n"
+            b"        baseMethods    0x100103530\n"
+            b"            entsize 12 (relative)\n"
+            b"            count   1\n"
+            b"            name    0x50018 (0x100153548)\n"
+            b"            types   0x31ee0 (0x100135410) @16@0:8\n"
+            b"            imp     0xfff01c50 (0x100005180)\n"
+            b"Contents of (__DATA_CONST,__objc_catlist) section\n"
+            b"0000000100140010 0x100151000\n"
+            b"    name      0x100130040 CGAffineTransform\n"
+            b"    cls       0x0 _OBJC_CLASS_$_NSValue\n"
+            b"    instanceMethods 0x100103600\n"
+            b"        entsize 12 (relative)\n"
+            b"        count   1\n"
+            b"        name    0x4ff50 (0x100153550)\n"
+            b"        types   0x31ef0 (0x100135420) {CGAffineTransform=dddddd}16@0:8\n"
+            b"        imp     0xfff01d00 (0x100005300)\n"
+            b"    classMethods 0x100103620\n"
+            b"        entsize 12 (relative)\n"
+            b"        count   1\n"
+            b"        name    0x4ff38 (0x100153558)\n"
+            b"        types   0x31f10 (0x100135440) @64@0:8{CGAffineTransform=dddddd}16\n"
+            b"        imp     0xfff01d20 (0x100005320)\n"
+            b"Contents of (__DATA_CONST,__objc_protolist) section\n"
+            b"0000000100140020 0x100152000\n"
+            b"    isa       0x100000000 __mh_execute_header\n"
+            b"    name      0x100130080 _TtP10Calculator15DisplayProtocol_\n"
+            b"    protocols 0x100152100\n"
+            b"        count    1\n"
+            b"        list[0]  0x100152060\n"
+            b"            isa       0x100000000 __mh_execute_header\n"
+            b"            name      0x1001300c0 NSApplicationDelegate\n"
+            b"            protocols 0x100000000 __mh_execute_header\n"
+            b"    instanceMethods 0x100000000 __mh_execute_header\n"
+            b"0000000100140028 0x100152000\n"
+            b"    isa       0x100000000 __mh_execute_header\n"
+            b"    name      0x100130080 _TtP10Calculator15DisplayProtocol_\n"
+            b"0000000100140030 0x100152060\n"
+            b"    isa       0x100000000 __mh_execute_header\n"
+            b"    name      0x1001300c0 NSApplicationDelegate\n"
+            b"Contents of (__DATA,__objc_selrefs) section\n"
+            b"0000000100153540  0x100133000 applicationWillFinishLaunching:\n"
+            b"0000000100153548  0x100133020 sharedAppDelegate\n"
+            b"0000000100153550  0x100133040 cgAffineTransformValue\n"
+            b"0000000100153558  0x100133060 valueWithCGAffineTransform:\n"
+        )
+        mg_objc = {
+            "fileName": "sample_objc",
+            "classCount": 1,
+            "instanceMethodCount": 1,
+            "classMethodCount": 1,
+            "methodCount": 2,
+            "categoryCount": 1,
+            "categoryMethodCount": 2,
+            "protocolCount": 2,
+            "classes": [
+                {
+                    "name": "_TtC10Calculator11AppDelegate",
+                    "superclass": "NSObject",
+                    "adoptedProtocols": [],
+                    "instanceMethods": [
+                        {
+                            "name": "-[_TtC10Calculator11AppDelegate applicationWillFinishLaunching:]",
+                            "selector": "applicationWillFinishLaunching:",
+                            "isClassMethod": False,
+                        }
+                    ],
+                    "classMethods": [
+                        {
+                            "name": "+[_TtC10Calculator11AppDelegate sharedAppDelegate]",
+                            "selector": "sharedAppDelegate",
+                            "isClassMethod": True,
+                        }
+                    ],
+                    "ivars": [],
+                }
+            ],
+            "categories": [
+                {
+                    "name": "CGAffineTransform",
+                    "className": "NSValue",
+                    "instanceMethods": [
+                        {
+                            "name": "-[NSValue(CGAffineTransform) cgAffineTransformValue]",
+                            "selector": "cgAffineTransformValue",
+                            "isClassMethod": False,
+                        }
+                    ],
+                    "classMethods": [
+                        {
+                            "name": "+[NSValue(CGAffineTransform) valueWithCGAffineTransform:]",
+                            "selector": "valueWithCGAffineTransform:",
+                            "isClassMethod": True,
+                        }
+                    ],
+                }
+            ],
+            "protocols": [
+                {"name": "_TtP10Calculator15DisplayProtocol_"},
+                {"name": "NSApplicationDelegate"},
+            ],
+        }
+        return otool_l, otool_ov, mg_objc
+
+    def test_objc_subcheck_resolves_relative_selrefs_and_matches_all_four_sets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "sample_objc")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "out.json")
+            otool_l, otool_ov, mg_objc = self._sample_otool_and_mg()
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:2] == ["xcrun", "otool"] and "-l" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=otool_l, stderr=b"")
+                if cmd[:2] == ["xcrun", "otool"] and "-ov" in cmd:
+                    return subprocess.CompletedProcess(cmd, 0, stdout=otool_ov, stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "objc":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(mg_objc).encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main([bin_path, "--only", "objc", "--machgraph", fake_mg, "--json-out", out_json])
+
+            self.assertEqual(rc, 0, buf.getvalue())
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "PASS")
+            self.assertEqual(report["checks"]["objc"]["total_diffs"], 0)
+            # 1 class + 2 class/inst methods + 2 category methods + 2 protocols = 7 items
+            self.assertEqual(report["checks"]["objc"]["total_ref_items"], 7)
+            self.assertEqual(report["checks"]["objc"]["total_mg_items"], 7)
+
+    def test_objc_subcheck_detects_stripped_underscore_method_kind_swap_category_and_protocol_diffs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "sample_objc")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            otool_l, otool_ov, base_mg = self._sample_otool_and_mg()
+
+            # 1. Stripped leading underscore on class name -> FAIL
+            mut_cls = json.loads(json.dumps(base_mg))
+            mut_cls["classes"][0]["name"] = "TtC10Calculator11AppDelegate"
+
+            # 2. Class method put into instanceMethods (`-` instead of `+`) -> FAIL
+            mut_kind = json.loads(json.dumps(base_mg))
+            mut_kind["classes"][0]["instanceMethods"].extend(mut_kind["classes"][0]["classMethods"])
+            mut_kind["classes"][0]["classMethods"] = []
+
+            # 3. Missing category method -> FAIL
+            mut_cat = json.loads(json.dumps(base_mg))
+            mut_cat["categories"][0]["instanceMethods"] = []
+
+            # 4. Missing protocol -> FAIL
+            mut_proto = json.loads(json.dumps(base_mg))
+            mut_proto["protocols"] = [{"name": "NSApplicationDelegate"}]
+
+            for label, mutated_payload in [
+                ("stripped_underscore", mut_cls),
+                ("method_kind_swap", mut_kind),
+                ("missing_category_method", mut_cat),
+                ("missing_protocol", mut_proto),
+            ]:
+                def fake_run(cmd, *args, _payload=mutated_payload, **kwargs):
+                    if cmd[0] == "lipo":
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                    if cmd[:2] == ["xcrun", "otool"] and "-l" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=otool_l, stderr=b"")
+                    if cmd[:2] == ["xcrun", "otool"] and "-ov" in cmd:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=otool_ov, stderr=b"")
+                    if cmd[0] == fake_mg and cmd[1] == "objc":
+                        return subprocess.CompletedProcess(
+                            cmd, 0, stdout=json.dumps(_payload).encode("utf-8"), stderr=b""
+                        )
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+                with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(
+                    io.StringIO()
+                ):
+                    rc = m3_diff.main([bin_path, "--only", "objc", "--machgraph", fake_mg])
+                self.assertEqual(rc, 1, f"Mutation '{label}' should have caused check_objc_for_binary to fail")
+
+    def test_objc_default_targets_include_calculator_assetutil_screencapture_and_log(self) -> None:
+        tier, paths = m3_diff.resolve_targets(["objc"])
+        self.assertEqual(tier, "objc")
+        self.assertIn("/System/Applications/Calculator.app/Contents/MacOS/Calculator", paths)
+        self.assertIn("/usr/bin/assetutil", paths)
+        self.assertIn("/usr/sbin/screencapture", paths)
+        self.assertIn("/usr/bin/log", paths)
+
+
 if __name__ == "__main__":
     unittest.main()
