@@ -1,12 +1,12 @@
 # M4 Mutation 7 (noreturn): remove __stack_chk_fail from KnownNoreturnSymbols.unprefixedNames
 --- a/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
 +++ b/Sources/MachCFGEngine/BasicBlockAndCFGBuilder.swift
-@@ -39,7 +39,7 @@
+@@ -16,7 +16,7 @@
          "longjmp", "_longjmp", "siglongjmp", "pthread_exit",
          // BSD / Darwin Libsystem & compiler-rt SSP
          "err", "errx", "errc", "verr", "verrx", "verrc",
--        "__stack_chk_fail", "__assert_rtn", "__assert_fail",
-+        "__assert_rtn", "__assert_fail",
-         "abort_report_np", "abort_with_reason", "abort_with_payload",
-         "exit_with_payload", "terminate_with_reason", "terminate_with_payload",
-         "_os_crash", "_os_crash_fmt", "_os_crash_msg", "dispatch_main",
+-        "__stack_chk_fail", "__assert_rtn", "abort_report_np", "_os_crash",
++        "__assert_rtn", "abort_report_np", "_os_crash",
+         // Dispatch & XPC event-loop noreturn entry points
+         "dispatch_main", "xpc_main",
+         // Itanium C++ ABI / libc++abi / libc++ / libunwind
