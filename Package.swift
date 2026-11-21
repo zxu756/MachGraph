@@ -23,7 +23,10 @@ let package = Package(
     targets: [
         .target(
             name: "MachGraphModels",
-            dependencies: []
+            dependencies: [],
+            linkerSettings: [
+                .linkedLibrary("c++abi")
+            ]
         ),
         .target(
             name: "MachBinaryFormats",

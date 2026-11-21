@@ -726,79 +726,115 @@ struct BinaryFormatLoadersTests {
 
     @Test("G31: MachOSymbolDemangler never traps on unparseable or prefix-truncated Swift/C++ symbols and returns raw mangled names")
     func g31MachOSymbolDemanglerUnparseableAndTruncatedSymbolsReturnRawName() {
-        // Exact crashing symbol from /usr/bin/log (`s` at end of body caused Index out of range).
+        let fallback = SymbolDemangler(useSystemRuntime: false)
+
+        // Exact symbol from /usr/bin/log (`s` at end of body previously caused Index out of range);
+        // unified in-process `swift_demangle` demangles the full symbol and never traps or strips `_` on any prefix cut.
         let logSymbol = "_$sSo9NSScannerC10FoundationE12currentIndexSS0D0Vvs"
-        #expect(MachOSymbolDemangler.demangle(logSymbol) == logSymbol)
+        #expect(
+            MachOSymbolDemangler.demangle(logSymbol)
+                == "(extension in Foundation):__C.NSScanner.currentIndex.setter : Swift.String.Index"
+        )
+        #expect(fallback.demangle(logSymbol) == logSymbol)
         for cut in 1..<logSymbol.count {
             let prefix = String(logSymbol.prefix(cut))
-            #expect(
-                MachOSymbolDemangler.demangle(prefix) == prefix,
-                "Prefix of length \(cut) (\(prefix)) must return raw symbol untouched"
-            )
-        }
-
-        // Additional crashing shapes from the 107 baseline binaries (trailing digits `_Ts5`, `_Tg5`, `.resume.0`,
-        // `0`-prefixed word substitutions, generic subscript setters `cis`, optional property setters `Sgvs`).
-        let unparseableAtEveryCut = [
-            "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyFyXl_Ts5",
-            "_$sSKsSQ7ElementRpzrlE9lastIndex2of0C0QzSgAB_tFSS8UTF8ViewV_Tg5",
-            "_$sSDyq_Sgxcis"
-        ]
-        for sym in unparseableAtEveryCut {
-            #expect(MachOSymbolDemangler.demangle(sym) == sym)
-            for cut in 1..<sym.count {
-                let prefix = String(sym.prefix(cut))
-                #expect(MachOSymbolDemangler.demangle(prefix) == prefix)
+            let got = MachOSymbolDemangler.demangle(prefix)
+            #expect(!got.isEmpty)
+            #expect(got != String(prefix.dropFirst()), "Must never strip leading underscore on \(prefix)")
+            if prefix != "_$sSo9NSScannerC" {
+                #expect(
+                    fallback.demangle(prefix) == prefix,
+                    "Fallback prefix of length \(cut) (\(prefix)) must return raw symbol untouched"
+                )
             }
         }
 
-        // Symbols whose prefix hits one valid complete nominal boundary (`...V` or `...C`) and is otherwise unparseable.
-        let mixedPrefixSymbols: [(symbol: String, validNominalPrefix: String, expectedNominal: String)] = [
+        // Additional complex shapes from the baseline binaries (`_Ts5`, `_Tg5`, generic subscript setters `cis`).
+        let complexSymbols: [(symbol: String, expected: String)] = [
+            (
+                "_$sSa034_makeUniqueAndReserveCapacityIfNotB0yyFyXl_Ts5",
+                "generic pre-specialization <Swift.AnyObject> of Swift.Array._makeUniqueAndReserveCapacityIfNotUnique() -> ()"
+            ),
+            (
+                "_$sSKsSQ7ElementRpzrlE9lastIndex2of0C0QzSgAB_tFSS8UTF8ViewV_Tg5",
+                "generic specialization <Swift.String.UTF8View> of (extension in Swift):Swift.BidirectionalCollection< where A.Element: Swift.Equatable>.lastIndex(of: A.Element) -> A.Index?"
+            ),
+            (
+                "_$sSDyq_Sgxcis",
+                "Swift.Dictionary.subscript.setter : (A) -> B?"
+            )
+        ]
+        for item in complexSymbols {
+            #expect(MachOSymbolDemangler.demangle(item.symbol) == item.expected)
+            #expect(fallback.demangle(item.symbol) == item.symbol)
+            for cut in 1..<item.symbol.count {
+                let prefix = String(item.symbol.prefix(cut))
+                let got = MachOSymbolDemangler.demangle(prefix)
+                #expect(!got.isEmpty)
+                #expect(got != String(prefix.dropFirst()))
+                if prefix != "_$sSa" && prefix != "_$sSD" {
+                    #expect(fallback.demangle(prefix) == prefix)
+                }
+            }
+        }
+
+        // Symbols with nominal boundary (`...V` or `...C`) and optional `.resume.0` suffix.
+        let mixedPrefixSymbols: [(symbol: String, expectedFull: String, validNominalPrefix: String, expectedNominal: String)] = [
             (
                 "_$s16FoundationModels17GenerationOptionsV11temperatureSdSgvs",
+                "FoundationModels.GenerationOptions.temperature.setter : Swift.Double?",
                 "_$s16FoundationModels17GenerationOptionsV",
                 "FoundationModels.GenerationOptions"
             ),
             (
                 "_$s15icloudmailagent11APNSManagerC8delegateAA0B8Delegate_pSgvM.resume.0",
+                "icloudmailagent.APNSManager.delegate.modify : icloudmailagent.APNSManagerDelegate? with unmangled suffix \".resume.0\"",
                 "_$s15icloudmailagent11APNSManagerC",
                 "icloudmailagent.APNSManager"
             )
         ]
         for item in mixedPrefixSymbols {
-            #expect(MachOSymbolDemangler.demangle(item.symbol) == item.symbol)
+            #expect(MachOSymbolDemangler.demangle(item.symbol) == item.expectedFull)
             for cut in 1..<item.symbol.count {
                 let prefix = String(item.symbol.prefix(cut))
-                let got = MachOSymbolDemangler.demangle(prefix)
+                let gotSys = MachOSymbolDemangler.demangle(prefix)
+                #expect(!gotSys.isEmpty)
+                #expect(gotSys != String(prefix.dropFirst()))
+                let gotFallback = fallback.demangle(prefix)
                 if prefix == item.validNominalPrefix {
-                    #expect(got == item.expectedNominal)
-                } else {
+                    #expect(gotSys == item.expectedNominal)
+                    #expect(gotFallback == item.expectedNominal)
+                } else if prefix == "_$s15icloudmailagent11APNSManagerC8delegateAA0B8Delegate_pSgvM" {
+                    #expect(gotSys == "icloudmailagent.APNSManager.delegate.modify : icloudmailagent.APNSManagerDelegate?")
+                } else if !prefix.contains(".resume") {
                     #expect(
-                        got == prefix,
-                        "Truncated prefix \(prefix) must return raw mangled name, got \(got)"
+                        gotFallback == prefix,
+                        "Truncated fallback prefix \(prefix) must return raw mangled name, got \(gotFallback)"
                     )
                 }
             }
         }
 
-        // Malformed / boundary Swift and Itanium C++ inputs must return raw input untouched.
+        // Malformed / boundary Swift and Itanium C++ inputs must return raw input untouched on both paths.
         let malformedInputs = [
             "", "_", "_$", "_$s", "$s", "_$S", "$S", "_T0", "__T0",
-            "_$ss", "_$s0", "_$s99", "_$s9MachGraph", "$ss6UInt64",
+            "_$s0", "_$s99", "_$s9MachGraph99Truncated",
             "_Z", "__Z", "_Z99", "_ZN3foo", "_ZN3fooI3bar", "_ZN3foo3barEP"
         ]
         for raw in malformedInputs {
             #expect(MachOSymbolDemangler.demangle(raw) == raw, "Expected raw return for \(raw.debugDescription)")
+            #expect(fallback.demangle(raw) == raw, "Expected fallback raw return for \(raw.debugDescription)")
         }
 
-        // Positive controls: complete supported symbols continue to demangle cleanly.
+        // Positive controls & plain C verbatim preservation (M3 D-M3-2: `_main` stays `_main`).
         #expect(MachOSymbolDemangler.demangle("$s15MachGraphTarget13LicensePacketV") == "MachGraphTarget.LicensePacket")
         #expect(
             MachOSymbolDemangler.demangle("$s15MachGraphTarget13LicensePacketVMn")
-                == "MachGraphTarget.LicensePacket (nominal type descriptor)"
+                == "nominal type descriptor for MachGraphTarget.LicensePacket"
         )
         #expect(MachOSymbolDemangler.demangle("$ss6UInt64V") == "Swift.UInt64")
-        #expect(MachOSymbolDemangler.demangle("_main") == "main")
+        #expect(MachOSymbolDemangler.demangle("_main") == "_main")
+        #expect(MachOSymbolDemangler.demangle("_ZeroFilesTested") == "_ZeroFilesTested")
         #expect(MachOSymbolDemangler.demangle("__mh_execute_header") == "__mh_execute_header")
     }
 
