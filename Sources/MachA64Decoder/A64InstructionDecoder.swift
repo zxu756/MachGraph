@@ -99,7 +99,7 @@ public struct A64InstructionDecoder: Sendable {
             operands: [.unsignedImmediate(imm16)],
             operandText: String(format: "#0x%llx", imm16),
             group: .branchAndSystem,
-            flow: .sequential,
+            flow: .trapOrSupervisor(immediate: UInt16(truncatingIfNeeded: imm16)),
             readsRegisters: [],
             writesRegisters: [],
             readsFlags: false,

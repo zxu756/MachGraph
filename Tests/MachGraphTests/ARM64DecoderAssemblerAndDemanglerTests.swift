@@ -1422,7 +1422,7 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(resolvedChain == 0x0123_4567_89AB_CDEF)
     }
 
-    @Test("Stage 6 Rule 2: 0x0000xxxx decodes as udf #imm16 while keeping sequential flow, assembler round-trip, and CFG invariants")
+    @Test("Stage 6 Rule 2 (updated in M4 D-M4-3): 0x0000xxxx decodes as udf #imm16 with trap terminator flow, assembler round-trip, and zero-padding pruning")
     func udfImmediateDecodingAssemblerRoundTripAndHypothesis6() throws {
         let pc = VirtualAddress(0x1_0000_1000)
         let rawText = try String(contentsOf: RepoFixtures.a64TableURL("udf"), encoding: .utf8)
@@ -1447,7 +1447,7 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
                 udfCount += 1
                 #expect(decoded.mnemonic == .unknown, "word=0x\(String(word, radix: 16))")
                 #expect(decoded.mnemonicText == "udf", "word=0x\(String(word, radix: 16))")
-                #expect(decoded.flow == .sequential, "word=0x\(String(word, radix: 16))")
+                #expect(decoded.flow == .trapOrSupervisor(immediate: UInt16(truncatingIfNeeded: word & 0xFFFF)), "word=0x\(String(word, radix: 16))")
                 #expect(decoded.readsRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
                 #expect(decoded.writesRegisters.isEmpty, "word=0x\(String(word, radix: 16))")
                 #expect(decoded.formattedDisassembly == "udf \(expectedOps)", "word=0x\(String(word, radix: 16))")
@@ -1475,12 +1475,12 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
         #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf #0x10000", at: pc) }
         #expect(throws: MachGraphError.self) { _ = try assembler.assembleSingle("udf x0", at: pc) }
 
-        // Hypothesis 6 check: 0x0000xxxx keeps sequential flow, pure 0x00000000 alignment padding is still pruned,
-        // and jump-table recovery is completely unaffected.
+        // M4 D-M4-3 check: 0x0000xxxx terminates the basic block with no fallthrough edge, while unreachable
+        // pure 0x00000000 alignment padding blocks are still pruned.
         let insnsWithTrailingZeroPadding: [A64DecodedInstruction] = [
             decoder.decode(word: 0x5280_0540, at: pc),                  // mov w0, #0x2a
-            decoder.decode(word: 0x0000_DEAD, at: pc.adding(UInt64(4))), // udf #0xdead (sequential inside block)
-            decoder.decode(word: 0xD65F_03C0, at: pc.adding(UInt64(8))), // ret
+            decoder.decode(word: 0x0000_DEAD, at: pc.adding(UInt64(4))), // udf #0xdead (trap terminator)
+            decoder.decode(word: 0xD65F_03C0, at: pc.adding(UInt64(8))), // ret (unreachable non-padding block)
             decoder.decode(word: 0x0000_0000, at: pc.adding(UInt64(12))), // udf #0x0 (trailing alignment padding)
             decoder.decode(word: 0x0000_0000, at: pc.adding(UInt64(16))), // udf #0x0 (trailing alignment padding)
         ]
@@ -1489,9 +1489,12 @@ struct ARM64DecoderAssemblerAndDemanglerTests {
             name: "_udf_padding_probe",
             instructions: insnsWithTrailingZeroPadding
         )
-        #expect(cfg.blocks.count == 1)
-        #expect(cfg.blocks[0].instructions.count == 3)
+        #expect(cfg.blocks.count == 2)
+        #expect(cfg.blocks[0].instructions.count == 2)
         #expect(cfg.blocks[0].instructions[1].formattedDisassembly == "udf #0xdead")
+        #expect(cfg.blocks[0].isExit)
+        #expect(cfg.blocks[0].successorIDs.isEmpty)
+        #expect(cfg.blocks[1].instructions.map(\.mnemonic) == [.ret])
     }
 
     @Test("Stage 7 Group 1: AdvSIMD vector three-register same (integer, bitwise, FP32/FP64, FP16, FHM, RDMA, FCMA) matches advsimd_vec_three_same.tsv")
