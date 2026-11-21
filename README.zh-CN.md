@@ -2,26 +2,37 @@
 
 **[English](README.md)** | **简体中文**
 
-纯 Swift 实现的 macOS (`arm64`) ARM64/ARM64e 反汇编器、内联微型汇编器与 Universal/Mach-O 64 二进制解析工具，内置中英双语命令行（`--lang zh|en`）与 stdio JSON-RPC 2.0 MCP 服务端。
+面向 macOS (`arm64`) 的 Swift ARM64/ARM64e 反汇编器、内联微型汇编器、符号解混淆器与 Universal/Mach-O 64 二进制及元数据解析工具，内置中英双语命令行（`--lang zh|en`）与 stdio JSON-RPC 2.0 MCP 服务端。
 
-> **可复现基线（`2026-11-14`，`macOS 27.0.1 (26A434) arm64`，原始记录见 [`reports/m0-quick.txt`](reports/m0-quick.txt)）：**
-> Mach-O 容器解析、dyld 链式修正、内嵌代码签名哈希计算与 ARM64 指令解码均由纯 Swift 在进程内完成，默认分析路径不调用 `otool`、`llvm-objdump`、`nm` 或 `codesign` 等外部命令。
-> - **`/bin/ls`（`arm64e` 切片）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令（`2026-11-20`，`Apple LLVM 21.0.0`）与 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text /bin/ls` 对照，在**助记符归一规则为 `0` 条**（[`Scripts/acceptance/mnemonic_normalization.py`](Scripts/acceptance/mnemonic_normalization.py)）下，助记符一致数为 **`3,846 / 3,846`（`100.00%`）**，**判错 `0` 条**，**未识别指令（`.inst`）`0` 条**，按 [`Scripts/acceptance/operand_normalization.py`](Scripts/acceptance/operand_normalization.py) 的 `4` 条参考侧规则 `O1`–`O4` 比较的操作数一致数为 **`3,846 / 3,846`（`100.00%`）**。
+> **可复现基线（`macOS 27.0.1 (26A434) arm64`）：**
+> Mach-O 容器解析、dyld 链式修正、Objective-C 元数据、内嵌代码签名哈希与 entitlements 解析、ARM64 指令解码及交叉引用分析均由 Swift 在进程内直接读取二进制完成，不调用 `otool`、`llvm-objdump`、`nm` 或 `codesign` 等外部命令。符号解混淆（`demangle` 及符号表加载）在 macOS 本进程内直接链接调用系统 `libswiftCore` 的 `swift_demangle` 与 `libc++abi` 的 `__cxa_demangle`（不起任何子进程；仓库内的手写 Swift/Itanium C++ 解混淆器保留作回退）。
+> - **`/bin/ls`（`arm64e` 切片，`M0`–`M2`，原始记录见 [`reports/m0-quick.txt`](reports/m0-quick.txt)）：** `5` 个段（segment）与 `11` 个节（section）的名称、虚拟地址、大小与文件偏移与 `otool -arch arm64e -l /bin/ls` 逐项完全一致；`__TEXT,__text` 全部 `3,846` 条指令（`2026-11-20`，`Apple LLVM 21.0.0`）与 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=arm64e --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text /bin/ls` 对照，在**助记符归一规则为 `0` 条**（[`Scripts/acceptance/mnemonic_normalization.py`](Scripts/acceptance/mnemonic_normalization.py)）下，助记符一致数为 **`3,846 / 3,846`（`100.00%`）**，**判错 `0` 条**，**未识别指令（`.inst`）`0` 条**，按 [`Scripts/acceptance/operand_normalization.py`](Scripts/acceptance/operand_normalization.py) 的 `4` 条参考侧规则 `O1`–`O4` 比较的操作数一致数为 **`3,846 / 3,846`（`100.00%`）**。
 > - **`/usr/bin/ssh`（`arm64e` 切片）：** 仅对带指令属性的节（`S_ATTR_PURE_INSTRUCTIONS` / `S_ATTR_SOME_INSTRUCTIONS`）解码出 **`115,546` 条指令**，非指令数据节（如 `__TEXT,__info_plist`）输出为 **`0` 行**。
-> - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）、`./Scripts/test.sh milestone 1` 与 `./Scripts/test.sh milestone 2`。对照 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>`（`2026-11-20`，`macOS 27.0.1 (26A434) arm64`，`Apple LLVM 21.0.0`），仓库里提交的 [`full` 报告](reports/differential-full-2026-11-20.json)（`/bin`、`/usr/bin`、`/usr/sbin`、`/usr/libexec`，`1,278` 个文件，`65,969,684` 条指令，助记符归一规则 `0` 条，操作数规则 `O1`–`O4` 共 `4` 条）记录：**助记符一致 `65,969,542 / 65,969,684`（总体 `99.9998%`；已识别 `65,969,542` 条中 `100.0000%`）**，**判错 `0` 条**，**未识别 `0` 条**（另有 `8` 个文件共 `142` 个字 `llvm-objdump` 同样输出 `.long`），**操作数一致 `65,969,542 / 65,969,542`（`100.0000%`，差异 `0` 条）**。
+> - **全量指令与操作数对照（`M2`，`2026-11-20`，`Apple LLVM 21.0.0`，[`reports/differential-full-2026-11-20.json`](reports/differential-full-2026-11-20.json)）：** 在 `/bin`、`/usr/bin`、`/usr/sbin`、`/usr/libexec` 共 `1,278` 个系统二进制（`65,969,684` 条指令，助记符归一规则 `0` 条，操作数规则 `O1`–`O4` 共 `4` 条）上，**助记符一致 `65,969,542 / 65,969,684`（总体 `99.9998%`；已识别 `65,969,542` 条中 `100.0000%`）**，**判错 `0` 条**，**未识别 `0` 条**（另有 `8` 个文件共 `142` 个字 `llvm-objdump` 同样输出 `.long`），**操作数一致 `65,969,542 / 65,969,542`（`100.0000%`，差异 `0` 条）**。
+> - **全量元数据与符号解混淆对照（`M3`，`2026-11-21`，`Apple LLVM 21.0.0` 与 `cctools-1040`，[`reports/m3-metadata-full-2026-11-21.json`](reports/m3-metadata-full-2026-11-21.json)、[`reports/m3-metadata-full-2026-11-21.txt`](reports/m3-metadata-full-2026-11-21.txt)）：** 运行 `python3 -I Scripts/acceptance/m3-metadata-differential.py full --machgraph .build/release/MachGraph`，在同一批 **`1,278` 个文件**（候选 `1,281` 个，跳过无 `arm64`/`arm64e` 切片 `3` 个，崩溃 `0` 个）上**六项检查合计 `0` 处差异**：**已定义符号 `114,513 / 114,513` 条**（对照 `nm --no-dyldinfo`）、**依赖库与安装 ID `11,516 / 11,516` 条**（对照 `otool -L`）、**entitlements 顶层键 `8,152 / 8,152` 个**（`513` 个带 entitlements 文件 + `765` 个空 `{}`，对照 `codesign -a <slice> -d --entitlements :-`）、**解混淆四桶唯一符号 `117,076 / 117,076` 个**（Swift `28,982` 个对照 `swift-demangle -compact`、C++ `__Z`/`___Z`/`____Z` `12,611` 个对照 `c++filt` 逐个传参、单 `_Z` 普通 C 符号 `105` 个原样保留、其余符号 `75,378` 个原样保留；错误或半截输出 `0` 条）、**`CALL`（`bl`）交叉引用边 `7,498,057 / 7,498,057` 条**（对照覆盖全部 `S_ATTR_PURE_INSTRUCTIONS` 纯指令节的 `llvm-objdump`，全语料 `18,497,352` 条交叉引用中非字符串节 `STRING_REF` 为 `0` 条）、**Objective-C 元数据项 `155,495 / 155,495` 条**（对照 `otool -ov` 与 `otool -l`）。
+> - **在本机复现：** 运行 `./Scripts/test.sh milestone 0`（或 `./Scripts/acceptance/m0-quick.sh`）、`./Scripts/test.sh milestone 1`、`./Scripts/test.sh milestone 2` 与 `./Scripts/test.sh milestone 3`。
 
 ---
 
-## 已通过 `M0`–`M2` 验收的能力
+## 已通过 `M0`–`M3` 验收的能力
 
-| 领域 | 子命令 | `M0`–`M2` 已验证范围 |
+| 领域 | 子命令 | `M0`–`M3` 已验证范围 |
 |---|---|---|
-| **Universal 与 Mach-O 64 容器解析** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN` 与动态库依赖（支持文本与 `--json`）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
-| **链式修正、符号、字符串与代码签名** | `fixups`、`symbols`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`），将 `LC_SYMTAB` 符号与 `[inferred:...]` 推导入口/桩符号显式区分并标注来源（`symbols`），扫描可打印字符串（`strings`），输出整个文件的一个香农熵数值，以及字节卡方值、零字节占比、1024 字节滑动窗口的个数与异常数（`entropy`；不输出各节的熵），并校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash（`codesign`）。 |
-| **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤，查询调用/跳转/数据交叉引用（`xrefs`），导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
+| **Universal 与 Mach-O 64 容器解析及依赖库** | `info`、`segments` | 解析 Fat/Fat64 多架构切片、`mach_header_64`、`LC_SEGMENT_64` 段与节、`LC_UUID`、`LC_BUILD_VERSION`、`LC_MAIN`、`LC_ID_DYLIB`（`installID`）以及带三段式 `X.Y.Z` `currentVersion` 与 `compatibilityVersion` 的有序动态库依赖（文本模式与 `--json` 均完整输出）；对空文件、纯文本、截断的 Mach-O 文件以及暂不支持的 ELF `ET_REL` 可重定位目标文件均以非零退出码报错退出。 |
+| **链式修正、符号、解混淆、ObjC、字符串与代码签名** | `fixups`、`symbols`、`demangle`、`objc`、`strings`、`codesign`、`entropy` | 解析 `LC_DYLD_CHAINED_FIXUPS` 绑定与重定位记录（`fixups`）；完整保留 `LC_SYMTAB` 全部有地址已定义符号（不去重同地址别名或多重集项，且不被 `[inferred:...]` 推导项覆盖，`symbols`）；在进程内通过 `swift_demangle` 与 `__cxa_demangle` 解混淆位置参数或标准输入逐行传入的 Swift 与 Itanium C++ 符号，无法解混淆或普通 C 符号原样返回（`demangle`）；解析 Objective-C 类、`±[Class sel]` 实例与类方法、成员变量、分类与协议（`objc`，支持 `--slice`）；扫描可打印字符串（`strings`）；输出整个文件的香农熵、字节卡方值、零字节占比及 1024 字节滑动窗口异常计数（`entropy`）；校验内嵌 `LC_CODE_SIGNATURE` SHA-256 `CodeDirectory` 与 CDHash，并将 XML（`0xFADE7171`）及 CoreEntitlements DER（`0xFADE7172`）槽位中的 entitlements 无损解析为原生布尔、整数、字符串、数组与嵌套字典 JSON 结构（`codesign`）。 |
+| **ARM64 / ARM64e 反汇编与交叉引用** | `disasm`、`xrefs`、`cfg-dot` | 仅反汇编带 `S_ATTR_PURE_INSTRUCTIONS` 或 `S_ATTR_SOME_INSTRUCTIONS` 属性的节；支持 `--symbol` / `--function`、`--address` 与 `--count` 过滤；查询目标传入/传出交叉引用，或在省略 `--address` 与 `--symbol` 时输出全文件交叉引用整表（`xrefs`；`ADRP+ADD` / `ADR` 仅在目标位于字符串节时标 `STRING_REF`，指向可执行代码节时标 `CODE_REF`，其余数据节标 `DATA_READ`）；导出 Graphviz DOT 控制流图（`cfg-dot`）。目标函数或地址不存在时以退出码 `1` 报错且 `stdout` 不输出任何指令。 |
 | **内联 ARM64 微型汇编与临时重签名** | `asm`、`patch-asm`、`resign` | `asm` 从 `--asm` 或标准输入读取 ARM64 语句并在 `--at` 起逐条汇编成机器码，不读写任何文件（退出码 `0` 全部成功，`3` 表示有合法 A64 写法汇编器还不支持，`1` 表示有写错的语句）。`patch-asm` 将汇编结果写入副本并重算 Mach-O `LC_CODE_SIGNATURE` SHA-256 页哈希完成临时重签名。`;` 只是语句分隔符（注释用 `//` 或 `/* */`）：只要有一条语句汇编不了，`patch-asm` 就以非零退出码报错，不写出文件。补丁内部盖住跳转目标、函数起点、符号或 PAC/BTI 落点时默认拒绝写入，加 `--force` 可跳过这项安全检查。 |
 | **解码器与汇编器差分对照验收（`M2`）** | `disasm`、`asm` | `2026-11-21` 验收通过（见 [`reports/MachGraph-M2.md`](reports/MachGraph-M2.md) 与 [`reports/differential-full-2026-11-20.json`](reports/differential-full-2026-11-20.json)，复现命令 `./Scripts/test.sh milestone 2`），对照 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>`（助记符归一规则 `0` 条，操作数规则 `O1`–`O4` 共 `4` 条）：`full` `1,278` 个文件实测崩溃 `0`、判错 `0`、不认识 `0`、助记符一致 `65,969,542 / 65,969,684`（`99.9998%`）、操作数一致 `100%`（`65,969,542 / 65,969,542`）；`standard`（`ls`、`ssh`、`vim`）判错 `0`、不认识 `0`、操作数一致 `707,444 / 707,444`；汇编对照 `Scripts/acceptance/asm-clang.py standard` 共 `912` 种形态中 `911` 种经 `clang` 汇编得到原机器码（`adrp` 跳过 `1` 种），`Scripts/acceptance/asm-roundtrip.py standard` 中 `M2` 之前的 `699,038` 条指令（`814` 种形态）返回 `ok`、新解码 `8,406` 条中 `ok` `6,667` 条、`unsupported` `1,739` 条（`mismatch` `0`、`error` `0`）。 |
+| **元数据与符号解混淆差分对照验收（`M3`）** | `symbols`、`info`、`codesign`、`demangle`、`xrefs`、`objc` | `2026-11-21` 验收通过（`macOS 27.0.1 (26A434) arm64`，`Apple LLVM version 21.0.0`，`cctools-1040`；见 [`reports/MachGraph-M3.md`](reports/MachGraph-M3.md)、[`reports/m3-metadata-full-2026-11-21.json`](reports/m3-metadata-full-2026-11-21.json)、[`reports/m3-metadata-objc.txt`](reports/m3-metadata-objc.txt)，复现命令 `./Scripts/test.sh milestone 3`）：在 `full` `1,278` 个文件上六项检查全部 `0` 差异——`symbols` `114,513 / 114,513` 条对照 `xcrun nm --no-dyldinfo -arch <slice> <file>`；`dylibs` `11,516 / 11,516` 条对照 `xcrun otool -arch <slice> -L <file>`；`entitlements` `8,152 / 8,152` 个顶层键（`513` 个文件带 entitlements、`765` 个为空 `{}`）对照 `/usr/bin/codesign -a <slice> -d --entitlements :- <file>` 原生类型深度比较；`demangle` `117,076 / 117,076` 个唯一符号（Swift `28,982` 个 `100.00%` 对照 `xcrun swift-demangle -compact`，C++ `12,611` 个 `100.00%` 对照 `/usr/bin/c++filt` 逐个以命令行参数传入，单 `_Z` 普通 C 符号 `105` 个 `100.00%` 原样保留，其余符号 `75,378` 个 `100.00%` 原样保留；错误输出 `0` 条）；`xrefs` `7,498,057 / 7,498,057` 条 `CALL`（`bl`）边对照 `xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti`（并以 `llvm-objdump --section=<seg>,<sect>` 覆盖全部非 `__TEXT,__text` 的 `S_ATTR_PURE_INSTRUCTIONS` 纯指令节），全语料 `18,497,352` 条交叉引用中非字符串节 `STRING_REF` 为 `0` 条（字符串节 `STRING_REF` `1,752,712` 条、`CODE_REF` `308,955` 条）；`objc` 在 `full` 上 `155,495 / 155,495` 条及在 `objc` 四文件语料（`Calculator.app` `62`、`assetutil` `2,378`、`screencapture` `42`、`log` `291`）上 `2,773 / 2,773` 条对照 `xcrun otool -arch <slice> -ov <file>` + `otool -arch <slice> -l <file>`。 |
 | **中英双语命令行、HTML 报告与 MCP 服务端** | `export-html`、`mcp` | 支持 `--lang zh|en` 与 `MACHGRAPH_LANG=zh|en`（简体中文环境自动默认中文），导出单文件离线双语（`中文 \| EN`）HTML 分诊报告（`export-html`），并提供基于 `stdio` 的 JSON-RPC 2.0 MCP 服务端（`mcp`，所有工具调用均要求显式传入 `binaryPath`）。 |
+
+---
+
+## 系统库与外部程序调用边界说明
+
+- **二进制与元数据解析、反汇编、内联汇编、CFG/交叉引用与代码签名（`M0`–`M3`）：** 全部由 Swift 直接读取二进制字节在进程内完成；所有命令行子命令与 `mcp` 工具均**不启动** `otool`、`llvm-objdump`、`nm`、`codesign`、`swift-demangle` 或 `c++filt` 等外部子进程（上述系统工具仅在 `Scripts/acceptance/` 下的外部验收对照脚本中作为独立参考答案调用）。
+- **符号解混淆（`demangle` 与符号表加载）：** 在 macOS 上于**本进程内**直接链接调用系统 `libswiftCore.dylib` 的 `swift_demangle` 与 `libc++abi.dylib` 的 `__cxa_demangle`（不起任何外部子进程）；纯 Swift 手写的 `Swift5ABIDemangler` 与 `ItaniumCppDemangler` 保留在仓库内作为非 Darwin 环境或显式关闭系统运行时时的回退。
+- **可选 Ghidra 无头对照后端（`Sources/MachMicroDecompiler/StructuralRegionAndPseudoCEmitter.swift` 中的 `GhidraHeadlessSideBySideBridge`）：** 包含全仓库源码中唯一一处 `Foundation.Process()` 调用，用于执行 `<ghidraInstallDir>/support/analyzeHeadless`。命令行 `decompile` 子命令与 `mcp` **从不调用**该桥接；它**仅**在桌面图形界面用户点击「`Ghidra 12.1.4 对比`」（`"Ghidra 12.1.4 Diff"`，`MachStudioViewModel.toggleOrRunGhidraComparison`）或库调用方显式调用 `GhidraHeadlessSideBySideBridge.decompileFunction` / `decompileSideBySide`，**并且** `probeInstallation()` 检测到所配置的 `GHIDRA_INSTALL_DIR` / `JAVA_HOME`（或偏好设置 / 默认路径 `~/Applications/ghidra_12.1.4_PUBLIC` 与 `/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`）下同时存在可执行的 `support/analyzeHeadless`、OpenJDK 21 `bin/java` 与 Ghidra 原生 `decompile` 程序时，才会在临时目录中启动 `analyzeHeadless`。
 
 ---
 
@@ -33,27 +44,35 @@ swift build --product MachGraph
 ./Scripts/acceptance/readme-commands.sh
 ```
 
-统一测试入口（`Scripts/test.sh`）。`milestone 0` 把日志写到临时目录，不改动工作区；要更新仓库里 `reports/` 下的记录，用 `./Scripts/test.sh milestone 0 --record`：
+统一测试入口（`Scripts/test.sh`）。`milestone 0` 与 `milestone 3` 把日志写到临时目录，不改动工作区；在干净工作区上运行 `./Scripts/test.sh milestone 3 --record` 可刷新 `reports/` 下的 M3 记录，运行 `./Scripts/test.sh mutations` 可在隔离临时拷贝中执行 M3 变异检查（`Scripts/acceptance/m3-mutations.sh`）：
 
 ```bash
 ./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachHeadlessCLI
 ./Scripts/test.sh milestone 0
+./Scripts/test.sh milestone 3
 ```
 
 ---
 
 ## 命令行与 MCP 示例
 
-以下每条命令均直接作用于真实二进制文件（无隐藏演示回退；未传 `<文件>` 且未显式指定 `--demo` 时退出码为 `2`），并在 [`Scripts/acceptance/readme-commands.sh`](Scripts/acceptance/readme-commands.sh) 中逐条原样回放验证：
+以下每条命令均直接作用于真实二进制文件或显式输入（无隐藏演示回退；未传 `<文件>` 且未显式指定 `--demo` 时退出码为 `2`），并在 [`Scripts/acceptance/readme-commands.sh`](Scripts/acceptance/readme-commands.sh) 中逐条原样回放验证：
 
 ```bash
-# 查看 /bin/ls 的容器摘要、段节映射、dyld 链式修正、符号表与代码签名（文本与 JSON）
+# 查看容器摘要（含动态库依赖）、段节映射、dyld 链式修正、符号表与原生类型 entitlements
 .build/debug/MachGraph info /bin/ls
 .build/debug/MachGraph info /bin/ls --json
 .build/debug/MachGraph segments /bin/ls
 .build/debug/MachGraph fixups /bin/ls --json
 .build/debug/MachGraph symbols /bin/ls
 .build/debug/MachGraph codesign /bin/ls
+.build/debug/MachGraph codesign /usr/bin/ssh --json
+
+# 在进程内解混淆 Swift 与 Itanium C++ 符号（位置参数或标准输入逐行读取）、查看 ObjC 元数据并导出全表交叉引用
+.build/debug/MachGraph demangle '_$sSiN' __Z3fooi _ZeroFilesTested --json
+printf '_$sSiN\n__Z12set_darkbooti.cold.1\n_main\n' | .build/debug/MachGraph demangle
+.build/debug/MachGraph objc /System/Applications/Calculator.app/Contents/MacOS/Calculator --json
+.build/debug/MachGraph xrefs /bin/ls --json
 
 # 从 LC_MAIN 入口符号反汇编 /bin/ls，或按地址反汇编仓库内的真实编译样本
 .build/debug/MachGraph disasm /bin/ls --symbol entry --count 12
@@ -96,13 +115,12 @@ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"
 
 ## 后续里程碑计划与实验性/冻结模块说明
 
-以下路线图事项及仓库内既有模块**尚未**完成独立参考工具对照验收，不计入上方已验证能力表：
+`M0`–`M3` 已完成并在上方列出。以下路线图事项及仓库内既有模块**尚未**完成独立参考工具对照验收，不计入上方已验证能力表：
 
-- **M3 — 元数据与符号解混淆对照：** `symbols --json` 与 `nm -arch arm64e` 完整集合对齐（含未定义外部导入符号 `U`）、Swift `$s`（对照 `swift-demangle`）与 C++ `_Z`（对照 `c++filt`）解混淆基准、ObjC 元数据（对照 `otool -ov`）及 entitlements 键值对照。
-- **M4 — 控制流图不变量与性能：** 基本块划分不变量校验、与 Ghidra 基本块边界对比，以及 `ssh` / `vim` 全量建图性能剖析与优化。
+- **M4 — 控制流图不变量与性能：** 基本块划分不变量校验、与 Ghidra 基本块边界对比、`bl` 之外间接调用/跨函数尾调用的控制流核验，以及 `ssh` / `vim` 全量建图性能剖析与优化。
 - **M5 — MCP 工具补齐与 SwiftPM 库接口：** 为 `mcp` 增补 `mach_disasm_function`、`mach_list_symbols`、`mach_cfg`、`mach_find_strings`，并提供可独立编译运行的 SwiftPM 库调用示例。
 - **实验性及 M5 前冻结模块：**
-  - **伪 C 反编译器（`decompile` / `MachMicroDecompiler`）：** **实验性功能**——条件表达式、循环上下界与 `switch` 多路分支还原在真实二进制上已知不可靠。`decompile` 输出第 1 行固定打印警告（`// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。`），分析请以 `disasm` 反汇编结果为准。（该模块内另含可选的本地 Ghidra `analyzeHeadless` 对照桥接，仅在用户显式配置本地 Ghidra 路径时调用外部进程。）
+  - **伪 C 反编译器（`decompile` / `MachMicroDecompiler`）：** **实验性功能**——条件表达式、循环上下界与 `switch` 多路分支还原在真实二进制上已知不可靠。`decompile` 输出第 1 行固定打印警告（`// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。`），分析请以 `disasm` 反汇编结果为准。（`GhidraHeadlessSideBySideBridge` 启动本地 Ghidra `analyzeHeadless` 的具体触发条件见上方「系统库与外部程序调用边界说明」。）
   - **安全审计插件（`audit-plugins` / `MachPluginSDK`）：** 基于启发式规则的 `JavaScriptCore` 插件已知存在误报与漏报，尚未完成带标准答案样本集的检出率/误报率标定。
   - **桌面图形界面（`MachStudioViews` / `MachWorkbenchShell`）、`.machproj` 工程库与非 Mach-O 加载器（`ELF64` / `PE32+` / `WASM`）：** 无参启动桌面端默认进入空状态工作台（仅提供“打开文件...”与带 `演示数据` 标记的显式演示加载），完整界面改造、持久化工程库与非 Mach-O 格式对照验收排在 `M5` 之后。
 
