@@ -126,7 +126,7 @@ public enum ColdTungstenPalette: Sendable {
 
     public static func color(for xrefKind: XrefKind) -> Color {
         switch xrefKind {
-        case .directCall, .indirectCall:
+        case .directCall, .indirectCall, .codeReference:
             return tungstenSapphire
         case .conditionalBranch:
             return signalEmerald

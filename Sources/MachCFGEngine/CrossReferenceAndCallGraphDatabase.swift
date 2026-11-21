@@ -1218,20 +1218,94 @@ public struct BinaryAnalysisCoordinator: Sendable {
             }
         }
 
-        // Prepare sorted string ranges & cstring section ranges for fast `.stringReference` matching
-        let sortedStrings = image.strings.sorted { $0.address < $1.address }
-        let cstringRanges = image.sections
-            .filter { $0.kind == .cstring }
-            .map(\.addressRange)
+        // Prepare section & string classifiers so `STRING_REF` is emitted only for true string sections / literals,
+        // `CODE_REF` for executable code sections (`__text`, `__stubs`, etc.), and `DATA_READ` for other data sections (G25).
+        let machOStringSectionNames: Set<String> = [
+            "__cstring",
+            "__ustring",
+            "__oslogstring",
+            "__objc_methname",
+            "__cfstring"
+        ]
+        let isMachOContainer = (image.containerFormat == .machO64 || image.containerFormat == .universalFat)
+        let executableSectionIDs = Set(image.executableSections().map(\.id))
+
+        func isStringSection(_ sec: BinarySection) -> Bool {
+            if machOStringSectionNames.contains(sec.sectionName.lowercased()) {
+                return true
+            }
+            if !isMachOContainer && sec.kind == .cstring {
+                return true
+            }
+            return false
+        }
+
+        func isExecutableCodeSection(_ sec: BinarySection) -> Bool {
+            executableSectionIDs.contains(sec.id) || sec.kind == .code || sec.kind == .stubs
+        }
+
+        let sortedSections = image.sections
+            .filter { $0.size > 0 }
+            .sorted { $0.vmAddress < $1.vmAddress }
+
+        func findSection(containing addr: VirtualAddress) -> BinarySection? {
+            guard !sortedSections.isEmpty else { return nil }
+            var lo = 0
+            var hi = sortedSections.count - 1
+            var bestIdx: Int?
+            while lo <= hi {
+                let mid = (lo + hi) >> 1
+                if sortedSections[mid].vmAddress <= addr {
+                    bestIdx = mid
+                    lo = mid + 1
+                } else {
+                    hi = mid - 1
+                }
+            }
+            if let idx = bestIdx, sortedSections[idx].addressRange.contains(addr) {
+                return sortedSections[idx]
+            }
+            return nil
+        }
+
+        let candidateStrings = image.strings
+            .filter { lit in
+                if let sec = findSection(containing: lit.address) {
+                    if isMachOContainer {
+                        return isStringSection(sec)
+                    }
+                    return !isExecutableCodeSection(sec) && sec.kind != .got && sec.kind != .bss
+                }
+                return !isMachOContainer
+            }
+            .sorted { $0.address < $1.address }
+
+        let sortedFunctionRanges: [AddressRange] = functions
+            .map { fn in
+                let span = fn.endAddress > fn.address ? (fn.endAddress.rawValue - fn.address.rawValue) : 4
+                return AddressRange(start: fn.address, size: max(4, span))
+            }
+            .sorted { $0.start < $1.start }
 
         func resolveCanonicalStringAddress(_ addr: VirtualAddress) -> VirtualAddress? {
-            if !sortedStrings.isEmpty {
+            if let sec = findSection(containing: addr) {
+                if isMachOContainer && !isStringSection(sec) {
+                    return nil
+                }
+                if isExecutableCodeSection(sec) {
+                    return nil
+                }
+            } else if isMachOContainer && !sortedSections.isEmpty {
+                return nil
+            }
+
+            if !candidateStrings.isEmpty {
                 var lo = 0
-                var hi = sortedStrings.count - 1
+                var hi = candidateStrings.count - 1
                 var bestIdx: Int?
                 while lo <= hi {
                     let mid = (lo + hi) >> 1
-                    if sortedStrings[mid].address <= addr {
+                    if candidateStrings[mid].address <= addr {
                         bestIdx = mid
                         lo = mid + 1
                     } else {
@@ -1239,17 +1313,51 @@ public struct BinaryAnalysisCoordinator: Sendable {
                     }
                 }
                 if let idx = bestIdx {
-                    let s = sortedStrings[idx]
+                    let s = candidateStrings[idx]
                     let span = UInt64(max(1, s.lengthBytes))
                     if addr >= s.address && addr < s.address.adding(span) {
                         return s.address
                     }
                 }
             }
-            if cstringRanges.contains(where: { $0.contains(addr) }) {
+
+            if let sec = findSection(containing: addr), isStringSection(sec) {
                 return addr
             }
             return nil
+        }
+
+        func isCodeAddress(_ addr: VirtualAddress) -> Bool {
+            if let sec = findSection(containing: addr) {
+                return isExecutableCodeSection(sec)
+            }
+            guard sortedSections.isEmpty else { return false }
+            var lo = 0
+            var hi = sortedFunctionRanges.count - 1
+            var bestIdx: Int?
+            while lo <= hi {
+                let mid = (lo + hi) >> 1
+                if sortedFunctionRanges[mid].start <= addr {
+                    bestIdx = mid
+                    lo = mid + 1
+                } else {
+                    hi = mid - 1
+                }
+            }
+            if let idx = bestIdx, sortedFunctionRanges[idx].contains(addr) {
+                return true
+            }
+            return boundaryByStart[addr] != nil
+        }
+
+        func classifyAddressTakenTarget(_ target: VirtualAddress) -> (to: VirtualAddress, kind: XrefKind) {
+            if let strAddr = resolveCanonicalStringAddress(target) {
+                return (strAddr, .stringReference)
+            }
+            if isCodeAddress(target) {
+                return (target, .codeReference)
+            }
+            return (target, .dataPointerRead)
         }
 
         // Index multi-instruction idioms by completing instruction address
@@ -1314,10 +1422,18 @@ public struct BinaryAnalysisCoordinator: Sendable {
                             }
                             guard let tgt = idiom.targetAddress else { continue }
 
-                            if let strAddr = resolveCanonicalStringAddress(tgt) {
-                                emitXref(from: insn.address, fromFn: fnAddr, to: strAddr, kind: .stringReference, preview: preview)
-                            } else if let xKind = idiom.xrefKind {
-                                emitXref(from: insn.address, fromFn: fnAddr, to: tgt, kind: xKind, preview: preview)
+                            switch idiom.kind {
+                            case .adrpAddAddress:
+                                let resolved = classifyAddressTakenTarget(tgt)
+                                emitXref(from: insn.address, fromFn: fnAddr, to: resolved.to, kind: resolved.kind, preview: preview)
+                            case .adrpStoreData:
+                                emitXref(from: insn.address, fromFn: fnAddr, to: tgt, kind: .dataPointerWrite, preview: preview)
+                            default:
+                                if let strAddr = resolveCanonicalStringAddress(tgt) {
+                                    emitXref(from: insn.address, fromFn: fnAddr, to: strAddr, kind: .stringReference, preview: preview)
+                                } else if let xKind = idiom.xrefKind {
+                                    emitXref(from: insn.address, fromFn: fnAddr, to: tgt, kind: xKind, preview: preview)
+                                }
                             }
                         }
                     }
@@ -1415,11 +1531,8 @@ public struct BinaryAnalysisCoordinator: Sendable {
                     if insn.mnemonic == .adr,
                        insn.operands.count == 2,
                        case .branchTarget(let target) = insn.operands[1] {
-                        if let strAddr = resolveCanonicalStringAddress(target) {
-                            emitXref(from: insn.address, fromFn: fnAddr, to: strAddr, kind: .stringReference, preview: preview)
-                        } else {
-                            emitXref(from: insn.address, fromFn: fnAddr, to: target, kind: .dataPointerRead, preview: preview)
-                        }
+                        let resolved = classifyAddressTakenTarget(target)
+                        emitXref(from: insn.address, fromFn: fnAddr, to: resolved.to, kind: resolved.kind, preview: preview)
                     } else if insn.mnemonic == .adrp,
                               !pairedADRPAddresses.contains(insn.address),
                               insn.operands.count == 2,
