@@ -161,8 +161,8 @@ SECTION_TYPE_MASK = 0x000000FF
 S_SYMBOL_STUBS = 0x08
 
 # Explicit allowlist of standard imported `noreturn` functions (unprefixed canonical C/ABI names).
-# Verified against ISO C11, POSIX.1-2017, BSD/Darwin Libsystem, compiler-rt, Itanium C++ ABI,
-# libunwind, Objective-C runtime, Swift runtime, and system language runtimes (e.g. libperl).
+# Verified line-by-line against SDK header attributes, compiler/ABI specifications, and corpus
+# call-site evidence (`Scripts/acceptance/noreturn-evidence.json`).
 KNOWN_NORETURN_IMPORT_NAMES: frozenset[str] = frozenset(
     {
         # ISO C11 & POSIX process/thread termination & non-local jumps
@@ -171,12 +171,11 @@ KNOWN_NORETURN_IMPORT_NAMES: frozenset[str] = frozenset(
         "_exit",
         "_Exit",
         "quick_exit",
-        "thrd_exit",
         "pthread_exit",
         "longjmp",
         "_longjmp",
         "siglongjmp",
-        # BSD / Darwin <err.h>, assertions, compiler-rt SSP, OS crash & Libsystem fatal APIs
+        # BSD / Darwin <err.h>, assertions, compiler-rt SSP & Libsystem fatal APIs
         "err",
         "errx",
         "errc",
@@ -185,29 +184,13 @@ KNOWN_NORETURN_IMPORT_NAMES: frozenset[str] = frozenset(
         "verrc",
         "__stack_chk_fail",
         "__assert_rtn",
-        "__assert_fail",
         "abort_report_np",
-        "abort_with_reason",
-        "abort_with_payload",
-        "exit_with_payload",
-        "terminate_with_reason",
-        "terminate_with_payload",
         "_os_crash",
-        "_os_crash_fmt",
-        "_os_crash_msg",
-        "_os_assumes_log_crash",
-        "os_fault_with_payload",
         # Event-loop / server never-returning entry points
         "dispatch_main",
         "xpc_main",
-        "xpc_transaction_exit_clean",
-        "NSApplicationMain",
-        "UIApplicationMain",
-        # Unwinder & Itanium C++ ABI exception / termination intrinsics
+        # Unwinder & Itanium C++ ABI / libc++abi / libc++ exception & termination entry points
         "_Unwind_Resume",
-        "_Unwind_RaiseException",
-        "_Unwind_ForcedUnwind",
-        "_Unwind_Resume_or_Rethrow",
         "__cxa_throw",
         "__cxa_rethrow",
         "__cxa_bad_cast",
@@ -215,39 +198,14 @@ KNOWN_NORETURN_IMPORT_NAMES: frozenset[str] = frozenset(
         "__cxa_throw_bad_array_new_length",
         "__cxa_pure_virtual",
         "__cxa_deleted_virtual",
-        "__cxa_call_unexpected",
         "__cxa_call_terminate",
-        "__clang_call_terminate",
         "_ZSt9terminatev",
-        "_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE",
-        "_ZSt19__throw_logic_errorPKc",
-        "_ZSt20__throw_length_errorPKc",
-        "_ZSt20__throw_out_of_rangePKc",
-        "_ZSt24__throw_out_of_range_fmtPKcz",
-        "_ZSt17__throw_bad_allocv",
-        "_ZSt28__throw_bad_array_new_lengthv",
-        "_ZSt20__throw_system_errori",
-        "_ZSt21__throw_runtime_errorPKc",
-        "_ZSt25__throw_bad_function_callv",
-        "_ZSt16__throw_bad_castv",
-        "_ZSt18__throw_bad_typeidv",
         "__libcpp_verbose_abort",
-        "_ZNSt3__122__libcpp_verbose_abortEPKcz",
-        # Objective-C & Swift runtime fatal / exception entry points
+        # Objective-C runtime exception / termination entry points
         "objc_exception_throw",
         "objc_exception_rethrow",
         "objc_terminate",
-        "swift_unexpectedError",
-        "swift_errorInMain",
-        "swift_fatalError",
-        "swift_deletedMethodError",
-        "swift_deletedAsyncMethodError",
-        "_swift_stdlib_reportFatalError",
-        "_swift_stdlib_reportFatalErrorInFile",
-        "_swift_stdlib_reportUnimplementedInitializer",
-        "_swift_stdlib_reportUnimplementedInitializerInFile",
-        # System embedded language & RPC runtimes (e.g. libperl, DCERPC <dce/dcethread.h>)
-        "dcethread_exc_raise",
+        # System embedded Perl runtime (<CORE/proto.h>)
         "Perl_croak",
         "Perl_croak_nocontext",
         "Perl_croak_no_modify",

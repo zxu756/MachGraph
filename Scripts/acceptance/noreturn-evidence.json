@@ -1,0 +1,776 @@
+[
+  {
+    "name": "NSApplicationMain",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `System/Library/Frameworks/AppKit.framework/Versions/C/Headers/NSApplication.h:615` 声明 `APPKIT_EXTERN int NSApplicationMain(int argc, const char *_Nonnull argv[_Nonnull]);`，返回 `int` 且无不返回标记。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_croak",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 718,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 718–719 行以 `__attribute__noreturn__`（`__attribute__((noreturn))`）声明 `void Perl_croak(...)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_croak_memory_wrap",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 728,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 728–729 行以 `__attribute__noreturn__` 声明 `void Perl_croak_memory_wrap(void)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_croak_no_modify",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 736,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 736–737 行以 `__attribute__noreturn__` 声明 `void Perl_croak_no_modify(void)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_croak_nocontext",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 4841,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 4841–4842 行以 `__attribute__noreturn__` 声明 `void Perl_croak_nocontext(...)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_croak_xs_usage",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 749,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 749–750 行以 `__attribute__noreturn__` 声明 `void Perl_croak_xs_usage(...)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_die",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 871,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 871–872 行显式附带 `__attribute__noreturn__`（`__attribute__((noreturn))`）声明 `Perl_die`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_die_nocontext",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 4851,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 4851–4852 行显式附带 `__attribute__noreturn__`（`__attribute__((noreturn))`）声明 `Perl_die_nocontext`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_my_exit",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 2152,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 2152–2153 行以 `__attribute__noreturn__` 声明 `void Perl_my_exit(pTHX_ U32 status)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "Perl_my_failure_exit",
+    "evidence": "sdk_attribute",
+    "header": "System/Library/Perl/5.34/darwin-thread-multi-2level/CORE/proto.h",
+    "line": 2156,
+    "attribute": "__attribute__noreturn__",
+    "decision": "keep",
+    "note": "SDK 内置 Perl 核心头文件第 2156–2157 行以 `__attribute__noreturn__` 声明 `void Perl_my_failure_exit(pTHX)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "UIApplicationMain",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `System/iOSSupport/System/Library/Frameworks/UIKit.framework/Versions/A/Headers/UIApplication.h:565` 声明 `UIKIT_EXTERN int UIApplicationMain(...)`，返回 `int` 且无不返回标记。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_Exit",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/_stdlib.h",
+    "line": 215,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void _Exit(int) __dead2;`（亦见 `usr/include/unistd.h:660`）。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 0、显式跳转目标 1、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "_Unwind_ForcedUnwind",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/include/unwind.h:85` 声明 `extern _Unwind_Reason_Code _Unwind_ForcedUnwind(...);`，返回 `_Unwind_Reason_Code`（出错时会返回）且无不返回标记。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_Unwind_RaiseException",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/include/unwind_itanium.h:60` 声明 `extern _Unwind_Reason_Code _Unwind_RaiseException(_Unwind_Exception *exception_object);`，返回 `_Unwind_Reason_Code`（无匹配处理器等错误时会返回）且无不返回标记。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_Unwind_Resume",
+    "evidence": "abi_rule",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "keep",
+    "note": "SDK `usr/include/unwind_itanium.h:61` 声明 `extern void _Unwind_Resume(_Unwind_Exception *);` 未标属性，但 Itanium C++ Exception Handling ABI §1.6.3 规定 `_Unwind_Resume` 由编译器在清理着陆垫末尾直接生成调用（LLVM `resume` 指令降级为 `noreturn` 调用）且绝不返回。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 459 处（函数开头 450、显式跳转目标 0、LSDA 异常着陆垫 9、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "_Unwind_Resume_or_Rethrow",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/include/unwind.h:107` 声明 `extern _Unwind_Reason_Code _Unwind_Resume_or_Rethrow(_Unwind_Exception *exception_object);`，返回 `_Unwind_Reason_Code`（出错时会返回）且无不返回标记。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZNSt3__122__libcpp_verbose_abortEPKcz",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件无此重整字面量声明（未重整名 `__libcpp_verbose_abort` 已单独收录），且语料中无直接导入调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt16__throw_bad_castv",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt17__throw_bad_allocv",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件无此重整字面量声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt17rethrow_exceptionNSt15__exception_ptr13exception_ptrE",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 的 `std::rethrow_exception` 重整名，macOS SDK 头文件及 Apple `libc++` 无此符号，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt18__throw_bad_typeidv",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt19__throw_logic_errorPKc",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt20__throw_length_errorPKc",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt20__throw_out_of_rangePKc",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt20__throw_system_errori",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt21__throw_runtime_errorPKc",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt24__throw_out_of_range_fmtPKcz",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt25__throw_bad_function_callv",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt28__throw_bad_array_new_lengthv",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "GNU libstdc++ 内部抛出辅助重整名，macOS SDK 头文件无声明，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_ZSt9terminatev",
+    "evidence": "abi_rule",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "keep",
+    "note": "Itanium C++ ABI 下 `std::terminate()` 的重整符号名（对应 SDK `usr/include/c++/v1/__exception/terminate.h` 中 `[[__noreturn__]] void terminate() _NOEXCEPT;`，ISO C++ `[except.terminate]` 规定绝不返回）。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 3 处（函数开头 3、显式跳转目标 0、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "__assert_fail",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "Linux/glibc 断言辅助符号，macOS SDK 头文件及 Libsystem 无此符号（Darwin 使用 `__assert_rtn`），语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__assert_rtn",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/_assert.h",
+    "line": 63,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void __assert_rtn(const char *, const char *, int, const char *) __dead2 __cold __disable_tail_calls;`。 调用点证据：standard 直接 bl 12 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 75 处（函数开头 68、显式跳转目标 7、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "__clang_call_terminate",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件无声明；Clang 在翻译单元内部将其生成为调用 `_ZSt9terminatev` 的局部 `linkonce_odr` 辅助函数而非外部导入桩（由内部不动点传播覆盖），语料中无导入桩调用点证据。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_bad_cast",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 89,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_bad_cast(void);`（Itanium C++ ABI §2.6）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_bad_typeid",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 90,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_bad_typeid(void);`（Itanium C++ ABI §2.6）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_call_terminate",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 83,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_call_terminate(void*) _LIBCXXABI_NOEXCEPT;`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_call_unexpected",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "C++17 已移除动态异常规范，当前 macOS SDK `usr/include/c++/v1/cxxabi.h` 未声明该符号，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_deleted_virtual",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 98,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_deleted_virtual(void);`（Itanium C++ ABI §3.2.7）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_pure_virtual",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 95,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_pure_virtual(void);`（Itanium C++ ABI §3.2.6）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_rethrow",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 86,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern _LIBCXXABI_FUNC_VIS _LIBCXXABI_NORETURN void __cxa_rethrow();`（Itanium C++ ABI §2.5.4）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__cxa_throw",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 60,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 59–60 行以 `_LIBCXXABI_NORETURN` 声明 `void __cxa_throw(...)`（亦为 Itanium C++ ABI §2.4.3 异常抛出入口）。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 4 处（函数开头 2、显式跳转目标 0、LSDA 异常着陆垫 2、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "__cxa_throw_bad_array_new_length",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/cxxabi.h",
+    "line": 92,
+    "attribute": "_LIBCXXABI_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 91–92 行以 `_LIBCXXABI_NORETURN` 声明 `void __cxa_throw_bad_array_new_length(void);`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__libcpp_verbose_abort",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/c++/v1/__verbose_abort",
+    "line": 24,
+    "attribute": "[[__noreturn__]]",
+    "decision": "keep",
+    "note": "SDK 头文件第 23–24 行以 `[[__noreturn__]]` 声明 `void __libcpp_verbose_abort(const char* __format, ...) _NOEXCEPT;`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "__stack_chk_fail",
+    "evidence": "abi_rule",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "keep",
+    "note": "SDK 头文件无声明；Clang/LLVM `-fstack-protector`（compiler-rt SSP ABI）规定栈金丝雀校验失败时直接调用 `__stack_chk_fail` 终止进程且绝不返回（LLVM IR 标记 `noreturn`）。 调用点证据：standard 直接 bl 649 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 2261 处（函数开头 2044、显式跳转目标 126、LSDA 异常着陆垫 87、brk 4、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "_exit",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/unistd.h",
+    "line": 442,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void _exit(int) __dead2;`。 调用点证据：standard 直接 bl 13 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 28 处（函数开头 18、显式跳转目标 10、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "_longjmp",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/setjmp.h",
+    "line": 89,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void _longjmp(jmp_buf, int) __dead2;`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_os_assumes_log_crash",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件及 `.tbd` 导出表均无此符号，非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_os_crash",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "keep",
+    "note": "只有调用点证据：公开 SDK 头文件无声明且非通用语言 ABI 入口，但语料调用点紧跟 `brk #0x1` 陷阱指令，全部支持不返回。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 0、显式跳转目标 0、LSDA 异常着陆垫 0、brk 1、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "_os_crash_fmt",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明，非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_os_crash_msg",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明，非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_swift_stdlib_reportFatalError",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/lib/swift/shims/AssertionReporting.h:44` 仅声明为 `void` 而未附带 C 不返回属性，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_swift_stdlib_reportFatalErrorInFile",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/lib/swift/shims/AssertionReporting.h:33` 仅声明为 `void` 而未附带 C 不返回属性，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_swift_stdlib_reportUnimplementedInitializer",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/lib/swift/shims/AssertionReporting.h:66` 仅声明为 `void` 而未附带 C 不返回属性，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "_swift_stdlib_reportUnimplementedInitializerInFile",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK `usr/lib/swift/shims/AssertionReporting.h:54` 仅声明为 `void` 而未附带 C 不返回属性，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "abort",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/_abort.h",
+    "line": 33,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void abort(void) __cold __dead2;`（`__dead2` 展开为 `__attribute__((__noreturn__))`）。 调用点证据：standard 直接 bl 2 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 25 处（函数开头 21、显式跳转目标 4、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "abort_report_np",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "keep",
+    "note": "只有调用点证据：公开 SDK 头文件无声明且非通用语言 ABI 入口，但语料调用点位于冷终止块末尾、后接带显式跳转入口的其他基本块且无落入收尾，全部支持不返回。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 0、显式跳转目标 1、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "abort_with_payload",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开用户态 SDK 头文件无声明（仅内核 `sysproto.h:3156` 有返回 `int` 的系统调用表原型），非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "abort_with_reason",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明，非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "dcethread_exc_raise",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件及 `.tbd` 导出表均无此符号，私有 DCERPC 库函数而非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "dispatch_main",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/dispatch/queue.h",
+    "line": 1266,
+    "attribute": "DISPATCH_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 1263–1266 行以 `DISPATCH_NORETURN`（`__attribute__((__noreturn__))`）声明 `void dispatch_main(void);`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 4 处（函数开头 2、显式跳转目标 1、LSDA 异常着陆垫 1、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "err",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 76,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void err(int, const char *, ...) __cold __dead2 __printflike(2, 3);`。 调用点证据：standard 直接 bl 7 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 22 处（函数开头 16、显式跳转目标 6、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "errc",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 78,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void errc(int, int, const char *, ...) __cold __dead2 __printflike(3, 4);`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 5 处（函数开头 5、显式跳转目标 0、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "errx",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 80,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void errx(int, const char *, ...) __cold __dead2 __printflike(2, 3);`。 调用点证据：standard 直接 bl 1 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 31 处（函数开头 25、显式跳转目标 6、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "exit",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/_stdlib.h",
+    "line": 165,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void exit(int) __dead2;`。 调用点证据：standard 直接 bl 33 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 198 处（函数开头 99、显式跳转目标 44、LSDA 异常着陆垫 1、brk 9、udf 0，后面是没人跳到的普通代码 45 次——该 45 处均为 `/usr/bin/heap` 与 `/usr/bin/leaks` 中 `bl _exit` 后死代码无条件跳转 `b`，无收尾/顺序指令）。"
+  },
+  {
+    "name": "exit_with_payload",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件及 `.tbd` 导出表均无此符号，非编译器/语言 ABI 入口，且语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "longjmp",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/setjmp.h",
+    "line": 85,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `extern void longjmp(jmp_buf, int) __dead2;`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 1、显式跳转目标 0、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "objc_exception_rethrow",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/objc/objc-exception.h",
+    "line": 48,
+    "attribute": "OBJC_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 47–48 行以 `OBJC_NORETURN`（`__attribute__((noreturn))`）声明 `void objc_exception_rethrow(void)`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 8 处（函数开头 0、显式跳转目标 0、LSDA 异常着陆垫 0、brk 8、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "objc_exception_throw",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/objc/objc-exception.h",
+    "line": 44,
+    "attribute": "OBJC_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 43–44 行以 `OBJC_NORETURN`（`__attribute__((noreturn))`）声明 `void objc_exception_throw(id _Nonnull exception)`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "objc_terminate",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/objc/objc-exception.h",
+    "line": 60,
+    "attribute": "OBJC_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 59–60 行以 `OBJC_NORETURN`（`__attribute__((noreturn))`）声明 `void objc_terminate(void)`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 8 处（函数开头 0、显式跳转目标 0、LSDA 异常着陆垫 8、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "os_fault_with_payload",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开用户态 SDK 无声明（内核 `System/Library/Frameworks/Kernel.framework/Versions/A/Headers/sys/sysproto.h:3167` 返回 `int`）；非致命诊断故障上报函数，调用后正常返回（如 `notifyd`、`bluetoothd` 调用后继续 `free`/`objc_release`）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "pthread_exit",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/pthread/pthread.h",
+    "line": 356,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void pthread_exit(void * _Nullable) __dead2;`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "quick_exit",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/_stdlib.h",
+    "line": 184,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void quick_exit(int) __dead2;`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "siglongjmp",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/setjmp.h",
+    "line": 91,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void siglongjmp(sigjmp_buf, int) __dead2;`。 调用点证据：standard 直接 bl 1 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 0、显式跳转目标 1、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 0 次）。"
+  },
+  {
+    "name": "swift_deletedAsyncMethodError",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明（Swift 异步虚表占位入口，不通过 `bl` 直接调用），且 `standard`/`full` 语料中无直接调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "swift_deletedMethodError",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明（Swift 虚表占位入口，不通过 `bl` 直接调用），且 `standard`/`full` 语料中无直接调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "swift_errorInMain",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "swift_fatalError",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件及 `libswiftCore.tbd` 均无此符号，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "swift_unexpectedError",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明，且 `standard`/`full` 语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "terminate_with_payload",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开用户态 SDK 无声明（内核 `System/Library/Frameworks/Kernel.framework/Versions/A/Headers/sys/sysproto.h:3155` 为返回 `int` 的系统调用原型）；按目标 `pid` 终止其他进程并向调用者返回 `int`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "terminate_with_reason",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "公开 SDK 头文件无声明；该函数按目标 `pid` 终止其他进程并向调用者返回 `int` 状态码（系统二进制如 `/usr/libexec/watchdogd`、`syspolicyd` 在 `bl _terminate_with_reason` 后紧跟 `cbz w0, ...` 检查返回值）。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "thrd_exit",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "macOS SDK 未提供 C11 `<threads.h>` 头文件及 `thrd_exit` 导出符号，语料中无调用点证据支持。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "verr",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 77,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void verr(int, const char *, __darwin_va_list) __cold __dead2 __printflike(2, 0);`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "verrc",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 79,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void verrc(int, int, const char *, __darwin_va_list) __cold __dead2 __printflike(3, 0);`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "verrx",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/err.h",
+    "line": 81,
+    "attribute": "__dead2",
+    "decision": "keep",
+    "note": "SDK 头文件声明 `void verrx(int, const char *, __darwin_va_list) __cold __dead2 __printflike(2, 0);`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "xpc_main",
+    "evidence": "sdk_attribute",
+    "header": "usr/include/xpc/xpc.h",
+    "line": 2698,
+    "attribute": "XPC_NORETURN",
+    "decision": "keep",
+    "note": "SDK 头文件第 2696–2698 行以 `XPC_NORETURN`（`XPC_ATTRIBUTE(noreturn)`）声明 `void xpc_main(xpc_connection_handler_t handler);`。 调用点证据（standard 3 文件 / full 40 文件）：直接 bl 调用 0 处，后面是没人跳到的普通代码 0 次。"
+  },
+  {
+    "name": "xpc_transaction_exit_clean",
+    "evidence": "none",
+    "header": null,
+    "line": null,
+    "attribute": null,
+    "decision": "remove",
+    "note": "SDK 头文件无声明；实测存在未结束 XPC 事务（`xpc_transaction_begin` 后）调用会正常返回，且 `/usr/libexec/biomesyncd` 的 `sub_100012610` 在 `0x100012670` 调用后紧跟无跳转指向的正常收尾 `ldp x29, x30 / ldp / add sp / retab`。 调用点证据：standard 直接 bl 0 处（后面是没人跳到的普通代码 0 次）；full 直接 bl 1 处（函数开头 0、显式跳转目标 0、LSDA 异常着陆垫 0、brk 0、udf 0，后面是没人跳到的普通代码 1 次——`/usr/libexec/biomesyncd` `sub_100012610` `0x100012670` 后紧跟 `ldp x29, x30 / retab` 正常收尾）。"
+  }
+]

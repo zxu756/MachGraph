@@ -4,8 +4,11 @@
 import contextlib
 import importlib.util
 import io
+import json
 import os
+import re
 import struct
+import subprocess
 import sys
 import unittest
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -1129,6 +1132,145 @@ class TestGhidraDifferentialClassification(unittest.TestCase):
         self.assertEqual(rep_bad["verdict"], "FAIL")
         self.assertGreater(rep_bad["machgraph_error_count"], 0)
         self.assertIn("MACHGRAPH_ERROR_BLOCK_PARTITION_MISMATCH", rep_bad["differences_by_category"])
+
+
+# ---------------------------------------------------------------------------
+# 6. Noreturn Evidence Table, Swift/Python Allowlist Sync & SDK Header Verification
+# ---------------------------------------------------------------------------
+
+
+class TestNoreturnEvidenceAndSync(unittest.TestCase):
+    EVIDENCE_PATH = os.path.join(SCRIPT_DIR, "noreturn-evidence.json")
+    SWIFT_CFG_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(SCRIPT_DIR)),
+        "Sources",
+        "MachCFGEngine",
+        "BasicBlockAndCFGBuilder.swift",
+    )
+
+    def _load_evidence(self):
+        self.assertTrue(os.path.isfile(self.EVIDENCE_PATH), f"Missing {self.EVIDENCE_PATH}")
+        with open(self.EVIDENCE_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        self.assertIsInstance(data, list)
+        self.assertGreater(len(data), 0)
+        return data
+
+    def _parse_swift_unprefixed_names(self):
+        self.assertTrue(os.path.isfile(self.SWIFT_CFG_PATH), f"Missing {self.SWIFT_CFG_PATH}")
+        with open(self.SWIFT_CFG_PATH, "r", encoding="utf-8") as fh:
+            swift_src = fh.read()
+        m = re.search(
+            r"public\s+static\s+let\s+unprefixedNames\s*:\s*Set<String>\s*=\s*\[(.*?)\]",
+            swift_src,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(m, "Could not locate KnownNoreturnSymbols.unprefixedNames literal in Swift source")
+        body_no_comments = re.sub(r"//.*", "", m.group(1))
+        literals = re.findall(r'"([^"]+)"', body_no_comments)
+        self.assertEqual(len(literals), len(set(literals)), "Duplicate string literals in Swift unprefixedNames")
+        return set(literals)
+
+    def test_script_allowlist_evidence_keep_and_swift_literals_match(self) -> None:
+        evidence = self._load_evidence()
+        seen_names = set()
+        for entry in evidence:
+            for key in ("name", "evidence", "header", "line", "attribute", "decision", "note"):
+                self.assertIn(key, entry)
+            nm = entry["name"]
+            self.assertNotIn(nm, seen_names, f"Duplicate symbol '{nm}' in noreturn-evidence.json")
+            seen_names.add(nm)
+            self.assertIn(entry["evidence"], ("sdk_attribute", "abi_rule", "none"))
+            self.assertIn(entry["decision"], ("keep", "remove"))
+            self.assertIsInstance(entry["note"], str)
+            self.assertTrue(entry["note"].strip(), f"Empty note for '{nm}'")
+            if entry["evidence"] == "sdk_attribute":
+                self.assertIsInstance(entry["header"], str)
+                self.assertTrue(entry["header"] and not os.path.isabs(entry["header"]), f"Non-relative SDK header for '{nm}'")
+                self.assertIsInstance(entry["line"], int)
+                self.assertGreater(entry["line"], 0)
+                self.assertIsInstance(entry["attribute"], str)
+                self.assertTrue(entry["attribute"].strip())
+
+        evidence_keep = {e["name"] for e in evidence if e["decision"] == "keep"}
+        script_names = set(m4_acc.KNOWN_NORETURN_IMPORT_NAMES)
+        swift_names = self._parse_swift_unprefixed_names()
+
+        self.assertEqual(script_names, evidence_keep, "m4-cfg-acceptance.py KNOWN_NORETURN_IMPORT_NAMES != evidence keep set")
+        self.assertEqual(swift_names, evidence_keep, "BasicBlockAndCFGBuilder.swift unprefixedNames != evidence keep set")
+        self.assertEqual(script_names, swift_names)
+
+        # Explicitly confirm known returning functions were removed
+        for must_not_have in (
+            "xpc_transaction_exit_clean",
+            "NSApplicationMain",
+            "UIApplicationMain",
+            "_Unwind_RaiseException",
+            "_Unwind_ForcedUnwind",
+            "_Unwind_Resume_or_Rethrow",
+            "terminate_with_reason",
+            "terminate_with_payload",
+            "os_fault_with_payload",
+        ):
+            self.assertNotIn(must_not_have, evidence_keep)
+
+    def test_sdk_attribute_headers_and_lines_match_installed_sdk(self) -> None:
+        try:
+            proc = subprocess.run(
+                ["xcrun", "--show-sdk-path"],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            reason = f"xcrun unavailable on this host ({exc}); skipping SDK header verification"
+            print(reason)
+            self.skipTest(reason)
+            return
+
+        sdk_root = proc.stdout.strip()
+        if proc.returncode != 0 or not sdk_root or not os.path.isdir(sdk_root):
+            reason = f"macOS SDK not found via xcrun (rc={proc.returncode}); skipping SDK header verification"
+            print(reason)
+            self.skipTest(reason)
+            return
+
+        evidence = self._load_evidence()
+        sdk_entries = [e for e in evidence if e["evidence"] == "sdk_attribute"]
+        self.assertGreater(len(sdk_entries), 0)
+
+        for entry in sdk_entries:
+            nm = entry["name"]
+            rel_hdr = entry["header"]
+            line_no = entry["line"]
+            attr = entry["attribute"]
+            full_hdr = os.path.join(sdk_root, rel_hdr)
+            self.assertTrue(os.path.isfile(full_hdr), f"SDK header missing for '{nm}': {rel_hdr}")
+            with open(full_hdr, "r", encoding="utf-8", errors="replace") as fh:
+                lines = fh.read().splitlines()
+            self.assertGreaterEqual(len(lines), line_no, f"Line {line_no} out of range in {rel_hdr} for '{nm}'")
+            lo = max(0, line_no - 5)
+            hi = min(len(lines), line_no + 4)
+            window = "\n".join(lines[lo:hi])
+            self.assertRegex(
+                window,
+                rf"(?<![A-Za-z0-9_$]){re.escape(nm)}(?![A-Za-z0-9_$])",
+                f"Symbol '{nm}' not found near {rel_hdr}:{line_no}",
+            )
+            self.assertIn(
+                attr,
+                window,
+                f"Attribute '{attr}' not found near {rel_hdr}:{line_no} for '{nm}'",
+            )
+
+    def test_sdk_attribute_verification_skips_cleanly_when_sdk_missing(self) -> None:
+        buf = io.StringIO()
+        fake_proc = subprocess.CompletedProcess(args=["xcrun", "--show-sdk-path"], returncode=1, stdout="", stderr="no sdk")
+        with mock.patch("subprocess.run", return_value=fake_proc):
+            with contextlib.redirect_stdout(buf):
+                with self.assertRaises(unittest.SkipTest):
+                    self.test_sdk_attribute_headers_and_lines_match_installed_sdk()
+        self.assertIn("skipping SDK header verification", buf.getvalue())
 
 
 if __name__ == "__main__":
