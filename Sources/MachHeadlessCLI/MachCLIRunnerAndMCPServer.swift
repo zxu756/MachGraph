@@ -91,6 +91,13 @@ public struct MachCLIRunner: Sendable {
             summaryZH: "分别列出 LC_SYMTAB 真实符号与推断出的函数起点符号"
         ),
         CLISubcommandSpec(
+            primaryName: "objc",
+            usageArgsEN: "<file> [--slice <index>] [--json]",
+            usageArgsZH: "<文件> [--slice <序号>] [--json]",
+            summaryEN: "List Objective-C classes, methods, ivars, categories & protocols",
+            summaryZH: "列出 Objective-C 类、实例与类方法、成员变量、分类与协议"
+        ),
+        CLISubcommandSpec(
             primaryName: "strings",
             usageArgsEN: "<file> [--filter <q>] [--json]",
             usageArgsZH: "<文件> [--filter <关键词>] [--json]",
@@ -437,6 +444,8 @@ public struct MachCLIRunner: Sendable {
             return MachCLIOutcome(output: try runSegments(args: rest, language: resolvedLang))
         case "symbols":
             return MachCLIOutcome(output: try runSymbols(args: rest, language: resolvedLang))
+        case "objc":
+            return MachCLIOutcome(output: try runObjC(args: rest, language: resolvedLang))
         case "strings":
             return MachCLIOutcome(output: try runStrings(args: rest, language: resolvedLang))
         case "fixups":
@@ -734,6 +743,168 @@ public struct MachCLIRunner: Sendable {
             lines.append("# Inferred Entries (\(inferredSyms.count)):")
             for sym in inferredSyms {
                 lines.append("\(sym.address.hexString) [inferred:\(sym.provenance.rawValue)] \(sym.demangledName)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func runObjC(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "objc",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "objc", language: language)
+        let img = target.image
+
+        let instanceMethodCount = img.objcClasses.reduce(0) { acc, cls in
+            acc + cls.methods.filter { !$0.isClassMethod }.count
+        }
+        let classMethodCount = img.objcClasses.reduce(0) { acc, cls in
+            acc + cls.methods.filter { $0.isClassMethod }.count
+        }
+        let categoryMethodCount = img.objcCategories.reduce(0) { acc, cat in
+            acc + cat.instanceMethods.count + cat.classMethods.count
+        }
+
+        func encodeMethod(_ m: ObjCMethodMetadata, ownerLabel: String) -> [String: Any] {
+            let prefix = m.isClassMethod ? "+" : "-"
+            return [
+                "name": "\(prefix)[\(ownerLabel) \(m.selector)]",
+                "selector": m.selector,
+                "typeEncoding": m.typeEncoding,
+                "address": m.implementationAddress.rawValue,
+                "addressHex": m.implementationAddress.hexString,
+                "isClassMethod": m.isClassMethod
+            ]
+        }
+
+        if parsed.isJSON {
+            let classesJSON: [[String: Any]] = img.objcClasses.map { cls in
+                let instMethods = cls.methods.filter { !$0.isClassMethod }
+                let clsMethods = cls.methods.filter { $0.isClassMethod }
+                return [
+                    "name": cls.name,
+                    "superclass": cls.superclassName ?? NSNull(),
+                    "address": cls.address.rawValue,
+                    "addressHex": cls.address.hexString,
+                    "instanceSize": cls.instanceSize,
+                    "flags": cls.flags,
+                    "adoptedProtocols": cls.adoptedProtocols,
+                    "instanceMethods": instMethods.map { encodeMethod($0, ownerLabel: cls.name) },
+                    "classMethods": clsMethods.map { encodeMethod($0, ownerLabel: cls.name) },
+                    "ivars": cls.ivars.map { ivar in
+                        [
+                            "name": ivar.name,
+                            "typeEncoding": ivar.typeEncoding,
+                            "offset": ivar.offset,
+                            "size": ivar.size
+                        ] as [String: Any]
+                    }
+                ]
+            }
+
+            let categoriesJSON: [[String: Any]] = img.objcCategories.map { cat in
+                let ownerLabel = "\(cat.className)(\(cat.name))"
+                return [
+                    "name": cat.name,
+                    "className": cat.className,
+                    "address": cat.address.rawValue,
+                    "addressHex": cat.address.hexString,
+                    "adoptedProtocols": cat.adoptedProtocols,
+                    "instanceMethods": cat.instanceMethods.map { encodeMethod($0, ownerLabel: ownerLabel) },
+                    "classMethods": cat.classMethods.map { encodeMethod($0, ownerLabel: ownerLabel) }
+                ]
+            }
+
+            let protocolsJSON: [[String: Any]] = img.objcProtocols.map { proto in
+                [
+                    "name": proto.name,
+                    "address": proto.address.rawValue,
+                    "addressHex": proto.address.hexString,
+                    "adoptedProtocols": proto.adoptedProtocols,
+                    "instanceMethods": proto.instanceMethods.map { encodeMethod($0, ownerLabel: proto.name) },
+                    "classMethods": proto.classMethods.map { encodeMethod($0, ownerLabel: proto.name) },
+                    "optionalInstanceMethods": proto.optionalInstanceMethods.map { encodeMethod($0, ownerLabel: proto.name) },
+                    "optionalClassMethods": proto.optionalClassMethods.map { encodeMethod($0, ownerLabel: proto.name) }
+                ]
+            }
+
+            let dict: [String: Any] = [
+                "fileName": img.fileName,
+                "filePath": img.filePath,
+                "isDemo": target.isDemo,
+                "architecture": img.architecture.displayName,
+                "selectedSliceIndex": img.selectedSliceIndex,
+                "classCount": img.objcClasses.count,
+                "instanceMethodCount": instanceMethodCount,
+                "classMethodCount": classMethodCount,
+                "methodCount": instanceMethodCount + classMethodCount,
+                "categoryCount": img.objcCategories.count,
+                "categoryMethodCount": categoryMethodCount,
+                "protocolCount": img.objcProtocols.count,
+                "classes": classesJSON,
+                "categories": categoriesJSON,
+                "protocols": protocolsJSON
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        var lines: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            lines.append(banner)
+        }
+        lines.append(
+            "ObjC Summary: classes=\(img.objcClasses.count) methods=\(instanceMethodCount + classMethodCount) (instance=\(instanceMethodCount), class=\(classMethodCount)) categories=\(img.objcCategories.count) categoryMethods=\(categoryMethodCount) protocols=\(img.objcProtocols.count)"
+        )
+        lines.append("# Classes (\(img.objcClasses.count)):")
+        for cls in img.objcClasses {
+            let superPart = cls.superclassName.map { " : \($0)" } ?? ""
+            let protoPart = cls.adoptedProtocols.isEmpty ? "" : " <\(cls.adoptedProtocols.joined(separator: ", "))>"
+            lines.append("  \(cls.address.hexString) \(cls.name)\(superPart)\(protoPart) (instanceSize=\(cls.instanceSize))")
+            for ivar in cls.ivars {
+                lines.append("    ivar +\(ivar.offset) \(ivar.name) (\(ivar.typeEncoding), size=\(ivar.size))")
+            }
+            for m in cls.methods where m.isClassMethod {
+                lines.append("    \(m.implementationAddress.hexString) +[\(cls.name) \(m.selector)]")
+            }
+            for m in cls.methods where !m.isClassMethod {
+                lines.append("    \(m.implementationAddress.hexString) -[\(cls.name) \(m.selector)]")
+            }
+        }
+        if !img.objcCategories.isEmpty {
+            lines.append("# Categories (\(img.objcCategories.count)):")
+            for cat in img.objcCategories {
+                let ownerLabel = "\(cat.className)(\(cat.name))"
+                let protoPart = cat.adoptedProtocols.isEmpty ? "" : " <\(cat.adoptedProtocols.joined(separator: ", "))>"
+                lines.append("  \(cat.address.hexString) \(ownerLabel)\(protoPart)")
+                for m in cat.classMethods {
+                    lines.append("    \(m.implementationAddress.hexString) +[\(ownerLabel) \(m.selector)]")
+                }
+                for m in cat.instanceMethods {
+                    lines.append("    \(m.implementationAddress.hexString) -[\(ownerLabel) \(m.selector)]")
+                }
+            }
+        }
+        if !img.objcProtocols.isEmpty {
+            lines.append("# Protocols (\(img.objcProtocols.count)):")
+            for proto in img.objcProtocols {
+                let protoPart = proto.adoptedProtocols.isEmpty ? "" : " <\(proto.adoptedProtocols.joined(separator: ", "))>"
+                lines.append("  \(proto.address.hexString) \(proto.name)\(protoPart)")
+                for m in proto.classMethods {
+                    lines.append("    +[\(proto.name) \(m.selector)]")
+                }
+                for m in proto.instanceMethods {
+                    lines.append("    -[\(proto.name) \(m.selector)]")
+                }
+                for m in proto.optionalClassMethods {
+                    lines.append("    @optional +[\(proto.name) \(m.selector)]")
+                }
+                for m in proto.optionalInstanceMethods {
+                    lines.append("    @optional -[\(proto.name) \(m.selector)]")
+                }
             }
         }
         return lines.joined(separator: "\n")

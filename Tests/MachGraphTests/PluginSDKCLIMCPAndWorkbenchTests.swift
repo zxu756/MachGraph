@@ -1450,4 +1450,128 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
         #expect(lsText.contains("compatibility version "))
         #expect(lsText.contains("current version "))
     }
+
+    // MARK: - 10. M3 Stage 3 (D-M3-4): CLI objc Subcommand (JSON, Text, --slice, EN/ZH --help)
+
+    @Test("M3 D-M3-4: CLI objc --json exports classes, separated instance/class methods, categories, protocols, and summary counts")
+    func m3CLIObjCJSONExportsClassesCategoriesProtocolsAndCounts() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let objcURL = tempDir.appendingPathComponent("ObjCFixture.arm64")
+        try BinaryFormatLoadersTests.buildSyntheticObjCMetadataFixture().write(to: objcURL)
+
+        let cli = MachCLIRunner()
+        let rawJSON = try await cli.execute(arguments: ["objc", objcURL.path, "--json"])
+        let obj = try #require(JSONSerialization.jsonObject(with: Data(rawJSON.utf8)) as? [String: Any])
+
+        #expect(obj["classCount"] as? Int == 2)
+        #expect(obj["instanceMethodCount"] as? Int == 1)
+        #expect(obj["classMethodCount"] as? Int == 1)
+        #expect(obj["methodCount"] as? Int == 2)
+        #expect(obj["categoryCount"] as? Int == 1)
+        #expect(obj["categoryMethodCount"] as? Int == 2)
+        #expect(obj["protocolCount"] as? Int == 2)
+
+        let classes = try #require(obj["classes"] as? [[String: Any]])
+        let appDel = try #require(classes.first { $0["name"] as? String == "_TtC10Calculator11AppDelegate" })
+        #expect(appDel["superclass"] as? String == "_CUIThemeBaseRendition")
+        #expect(appDel["adoptedProtocols"] as? [String] == ["NSApplicationDelegate", "_TtP10Calculator15DisplayProtocol_"])
+
+        let instMethods = try #require(appDel["instanceMethods"] as? [[String: Any]])
+        #expect(instMethods.count == 1)
+        #expect(instMethods[0]["name"] as? String == "-[_TtC10Calculator11AppDelegate applicationWillFinishLaunching:]")
+        #expect(instMethods[0]["selector"] as? String == "applicationWillFinishLaunching:")
+        #expect(instMethods[0]["isClassMethod"] as? Bool == false)
+
+        let clsMethods = try #require(appDel["classMethods"] as? [[String: Any]])
+        #expect(clsMethods.count == 1)
+        #expect(clsMethods[0]["name"] as? String == "+[_TtC10Calculator11AppDelegate sharedAppDelegate]")
+        #expect(clsMethods[0]["selector"] as? String == "sharedAppDelegate")
+        #expect(clsMethods[0]["isClassMethod"] as? Bool == true)
+
+        let ivars = try #require(appDel["ivars"] as? [[String: Any]])
+        #expect(ivars.count == 1)
+        #expect(ivars[0]["name"] as? String == "_mainWindow")
+        #expect((ivars[0]["offset"] as? NSNumber)?.uint32Value == 16)
+
+        let categories = try #require(obj["categories"] as? [[String: Any]])
+        #expect(categories.count == 1)
+        #expect(categories[0]["name"] as? String == "CGAffineTransform")
+        #expect(categories[0]["className"] as? String == "_CUIThemeBaseRendition")
+        let catInst = try #require(categories[0]["instanceMethods"] as? [[String: Any]])
+        let catCls = try #require(categories[0]["classMethods"] as? [[String: Any]])
+        #expect(catInst.map { $0["name"] as? String } == ["-[_CUIThemeBaseRendition(CGAffineTransform) affineScale]"])
+        #expect(catCls.map { $0["name"] as? String } == ["+[_CUIThemeBaseRendition(CGAffineTransform) identityTransform]"])
+
+        let protocols = try #require(obj["protocols"] as? [[String: Any]])
+        #expect(protocols.count == 2)
+        let dispProto = try #require(protocols.first { $0["name"] as? String == "_TtP10Calculator15DisplayProtocol_" })
+        #expect(dispProto["adoptedProtocols"] as? [String] == ["NSApplicationDelegate"])
+        #expect((dispProto["instanceMethods"] as? [[String: Any]])?.compactMap { $0["selector"] as? String } == ["renderDisplay:"])
+        #expect((dispProto["classMethods"] as? [[String: Any]])?.compactMap { $0["selector"] as? String } == ["defaultDisplayMode"])
+        #expect((dispProto["optionalInstanceMethods"] as? [[String: Any]])?.compactMap { $0["selector"] as? String } == ["didRefreshDisplay"])
+        #expect((dispProto["optionalClassMethods"] as? [[String: Any]])?.compactMap { $0["selector"] as? String } == ["supportsHDRDisplay"])
+
+        let calcPath = "/System/Applications/Calculator.app/Contents/MacOS/Calculator"
+        if FileManager.default.isReadableFile(atPath: calcPath) {
+            let calcRaw = try await cli.execute(arguments: ["objc", calcPath, "--slice", "0", "--json"])
+            let calcObj = try #require(JSONSerialization.jsonObject(with: Data(calcRaw.utf8)) as? [String: Any])
+            #expect(calcObj["selectedSliceIndex"] as? Int == 0)
+            #expect(calcObj["classCount"] as? Int == 33)
+            #expect(calcObj["instanceMethodCount"] as? Int == 22)
+            #expect(calcObj["classMethodCount"] as? Int == 0)
+            #expect(calcObj["categoryCount"] as? Int == 0)
+            #expect(calcObj["protocolCount"] as? Int == 7)
+        }
+
+        let assetPath = "/usr/bin/assetutil"
+        if FileManager.default.isReadableFile(atPath: assetPath) {
+            let assetRaw = try await cli.execute(arguments: ["objc", assetPath, "--json"])
+            let assetObj = try #require(JSONSerialization.jsonObject(with: Data(assetRaw.utf8)) as? [String: Any])
+            #expect(assetObj["classCount"] as? Int == 118)
+            // assetutilCUINamedLayerImage declares 2 duplicate selectors in baseMethods: raw count = 2226, unique ±[Class sel] set = 2224
+            #expect(assetObj["methodCount"] as? Int == 2226)
+            let assetClasses = try #require(assetObj["classes"] as? [[String: Any]])
+            var uniqueMethods = Set<String>()
+            for c in assetClasses {
+                for m in (c["instanceMethods"] as? [[String: Any]]) ?? [] {
+                    if let n = m["name"] as? String { uniqueMethods.insert(n) }
+                }
+                for m in (c["classMethods"] as? [[String: Any]]) ?? [] {
+                    if let n = m["name"] as? String { uniqueMethods.insert(n) }
+                }
+            }
+            #expect(uniqueMethods.count == 2224)
+            #expect(assetObj["categoryCount"] as? Int == 4)
+            #expect(assetObj["categoryMethodCount"] as? Int == 26)
+            #expect(assetObj["protocolCount"] as? Int == 10)
+        }
+    }
+
+    @Test("M3 D-M3-4: CLI objc text mode and EN/ZH --help list objc subcommand")
+    func m3CLIObjCTextModeAndBilingualHelp() async throws {
+        let tempDir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        let objcURL = tempDir.appendingPathComponent("ObjCFixture.arm64")
+        try BinaryFormatLoadersTests.buildSyntheticObjCMetadataFixture().write(to: objcURL)
+
+        let cli = MachCLIRunner()
+        let helpEN = try await cli.execute(arguments: ["--help", "--lang", "en"])
+        let helpZH = try await cli.execute(arguments: ["--help", "--lang", "zh"])
+        #expect(helpEN.contains("\n  objc "))
+        #expect(helpZH.contains("\n  objc "))
+
+        let textOut = try await cli.execute(arguments: ["objc", objcURL.path])
+        #expect(textOut.contains("_TtC10Calculator11AppDelegate"))
+        #expect(textOut.contains("-[_TtC10Calculator11AppDelegate applicationWillFinishLaunching:]"))
+        #expect(textOut.contains("+[_TtC10Calculator11AppDelegate sharedAppDelegate]"))
+        #expect(textOut.contains("_CUIThemeBaseRendition(CGAffineTransform)"))
+        #expect(textOut.contains("_TtP10Calculator15DisplayProtocol_"))
+
+        let trueJSONRaw = try await cli.execute(arguments: ["objc", "/usr/bin/true", "--json"])
+        let trueObj = try #require(JSONSerialization.jsonObject(with: Data(trueJSONRaw.utf8)) as? [String: Any])
+        #expect(trueObj["classCount"] as? Int == 0)
+        #expect(trueObj["categoryCount"] as? Int == 0)
+        #expect(trueObj["protocolCount"] as? Int == 0)
+    }
 }
