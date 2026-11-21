@@ -662,6 +662,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
     public let platformName: String
     public let minOSVersion: String
     public let sdkVersion: String
+    public let lcFunctionStarts: [VirtualAddress]
     public let functionStarts: [VirtualAddress]
     public let segments: [BinarySegment]
     public let sections: [BinarySection]
@@ -696,6 +697,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         platformName: String = "macOS",
         minOSVersion: String = "14.0",
         sdkVersion: String = "15.0",
+        lcFunctionStarts: [VirtualAddress] = [],
         functionStarts: [VirtualAddress] = [],
         segments: [BinarySegment],
         sections: [BinarySection],
@@ -729,6 +731,7 @@ public struct LoadedBinaryImage: Sendable, Codable, Hashable, Identifiable {
         self.platformName = platformName
         self.minOSVersion = minOSVersion
         self.sdkVersion = sdkVersion
+        self.lcFunctionStarts = lcFunctionStarts
         self.functionStarts = functionStarts
         self.segments = segments
         self.sections = sections

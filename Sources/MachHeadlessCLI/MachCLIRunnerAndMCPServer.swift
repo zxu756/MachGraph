@@ -521,6 +521,8 @@ public struct MachCLIRunner: Sendable {
         let inferredCount = img.symbols.filter { $0.isInferred }.count
 
         if parsed.isJSON {
+            let isMachOContainer = (img.containerFormat == .machO64 || img.containerFormat == .universalFat)
+            let reportedFunctionStarts = isMachOContainer ? img.lcFunctionStarts : img.functionStarts
             let dict: [String: Any] = [
                 "fileName": img.fileName,
                 "filePath": img.filePath,
@@ -541,7 +543,10 @@ public struct MachCLIRunner: Sendable {
                 "minOSVersion": img.minOSVersion,
                 "sdkVersion": img.sdkVersion,
                 "instructionCount": insnCount,
-                "functionStartsCount": img.functionStarts.count,
+                "functionStartsCount": reportedFunctionStarts.count,
+                "functionStarts": reportedFunctionStarts.map(\.rawValue),
+                "functionStartsHex": reportedFunctionStarts.map(\.hexString),
+                "lcFunctionStarts": img.lcFunctionStarts.map(\.rawValue),
                 "realSymbolCount": realCount,
                 "inferredSymbolCount": inferredCount,
                 "stringCount": img.strings.count,

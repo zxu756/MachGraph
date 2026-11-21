@@ -137,17 +137,32 @@ public struct SwitchJumpTable: Sendable, Codable, Hashable, Identifiable {
     public let tableBaseAddress: VirtualAddress
     public let entryByteSize: Int
     public let targetAddresses: [VirtualAddress]
+    public let isInlineInCode: Bool
 
     public init(
         dispatchInstructionAddress: VirtualAddress,
         tableBaseAddress: VirtualAddress,
         entryByteSize: Int = 4,
-        targetAddresses: [VirtualAddress]
+        targetAddresses: [VirtualAddress],
+        isInlineInCode: Bool = false
     ) {
         self.dispatchInstructionAddress = dispatchInstructionAddress
         self.tableBaseAddress = tableBaseAddress
         self.entryByteSize = entryByteSize
         self.targetAddresses = targetAddresses
+        self.isInlineInCode = isInlineInCode
+    }
+
+    public var tableByteSize: UInt64 {
+        UInt64(max(0, entryByteSize) * targetAddresses.count)
+    }
+
+    public var tableEndAddress: VirtualAddress {
+        tableBaseAddress.adding(tableByteSize)
+    }
+
+    public var tableAddressRange: AddressRange {
+        AddressRange(start: tableBaseAddress, size: tableByteSize)
     }
 }
 
@@ -223,6 +238,7 @@ public struct RecoveredFunction: Sendable, Codable, Hashable, Identifiable {
     public let dominatorTree: [DominatorTreeNode]
     public let naturalLoops: [NaturalLoop]
     public let jumpTables: [SwitchJumpTable]
+    public let inlineJumpTableRanges: [AddressRange]
     public let cyclomaticComplexity: Int
     public let instructionCount: Int
     public let layout: SugiyamaCFGLayout?
@@ -241,6 +257,7 @@ public struct RecoveredFunction: Sendable, Codable, Hashable, Identifiable {
         dominatorTree: [DominatorTreeNode] = [],
         naturalLoops: [NaturalLoop] = [],
         jumpTables: [SwitchJumpTable] = [],
+        inlineJumpTableRanges: [AddressRange]? = nil,
         cyclomaticComplexity: Int? = nil,
         layout: SugiyamaCFGLayout? = nil
     ) {
@@ -257,6 +274,7 @@ public struct RecoveredFunction: Sendable, Codable, Hashable, Identifiable {
         self.dominatorTree = dominatorTree
         self.naturalLoops = naturalLoops
         self.jumpTables = jumpTables
+        self.inlineJumpTableRanges = inlineJumpTableRanges ?? jumpTables.filter(\.isInlineInCode).map(\.tableAddressRange)
         let computedCC = max(1, edges.count - blocks.count + 2)
         self.cyclomaticComplexity = cyclomaticComplexity ?? computedCC
         self.instructionCount = blocks.reduce(0) { $0 + $1.instructions.count }

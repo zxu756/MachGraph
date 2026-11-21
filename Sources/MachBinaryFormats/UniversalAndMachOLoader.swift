@@ -1475,7 +1475,8 @@ public enum MachO64Loader {
         let mergedFunctionStarts = consolidateFunctionStarts(
             explicitStarts: functionStarts,
             symbols: finalSymbols,
-            entryPoint: entryPoint
+            entryPoint: entryPoint,
+            sections: sections
         )
 
         // Scan Strings & Compute Overall Entropy
@@ -1505,6 +1506,7 @@ public enum MachO64Loader {
             platformName: platformName,
             minOSVersion: minOSVersion,
             sdkVersion: sdkVersion,
+            lcFunctionStarts: functionStarts,
             functionStarts: mergedFunctionStarts,
             segments: segments,
             sections: sections,
@@ -1744,20 +1746,29 @@ public enum MachO64Loader {
     private static func consolidateFunctionStarts(
         explicitStarts: [VirtualAddress],
         symbols: [BinarySymbol],
-        entryPoint: VirtualAddress?
+        entryPoint: VirtualAddress?,
+        sections: [BinarySection]
     ) -> [VirtualAddress] {
-        var set = Set<VirtualAddress>(explicitStarts)
+        let insnAttrMask = MachOConstants.sAttrPureInstructions | MachOConstants.sAttrSomeInstructions
+        let execRanges = sections
+            .filter { ($0.flags & insnAttrMask) != 0 && $0.size > 0 }
+            .map(\.addressRange)
+        func isExecutable(_ addr: VirtualAddress) -> Bool {
+            addr != .zero && execRanges.contains { $0.contains(addr) }
+        }
+
+        var set = Set<VirtualAddress>(explicitStarts.filter(isExecutable))
         for sym in symbols {
             switch sym.kind {
             case .function, .exportedEntry, .objcMethod, .swiftFunction:
-                if sym.address != .zero {
+                if isExecutable(sym.address) {
                     set.insert(sym.address)
                 }
             default:
                 break
             }
         }
-        if let entry = entryPoint, entry != .zero {
+        if let entry = entryPoint, isExecutable(entry) {
             set.insert(entry)
         }
         return set.sorted()
