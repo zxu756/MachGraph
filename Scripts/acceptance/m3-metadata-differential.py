@@ -77,11 +77,16 @@ PER_FILE_TIMEOUT_SECONDS = 60.0
 PER_MIB_TIMEOUT_SECONDS = 5.0
 MAX_PER_FILE_TIMEOUT_SECONDS = 900.0
 
-AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements")
+AVAILABLE_CHECKS: Tuple[str, ...] = ("symbols", "dylibs", "entitlements", "demangle")
 
 NM_REFERENCE_TEMPLATE = "xcrun nm --no-dyldinfo -arch <slice> <file>"
 OTOOL_L_REFERENCE_TEMPLATE = "xcrun otool -arch <slice> -L <file>"
 CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE = "/usr/bin/codesign -a <slice> -d --entitlements :- <file>"
+SWIFT_DEMANGLE_REFERENCE_TEMPLATE = "xcrun swift-demangle -compact  (stdin line-by-line)"
+CPPFILT_REFERENCE_TEMPLATE = "/usr/bin/c++filt <symbol...>"
+
+SWIFT_DEMANGLE_PREFIXES: Tuple[str, ...] = ("_$s", "$s", "_$S", "$S", "_T0", "__T0")
+DEMANGLE_MIN_EQUAL_PCT = 99.0
 
 _NM_LINE_RE = re.compile(r"^([0-9a-fA-F]{8,16}|\s{8,16}) ([A-Za-z?-]) (.*)$")
 _REDACTED_FN_RE = re.compile(r"^<redacted function \d+>$")
@@ -138,9 +143,19 @@ def run_subprocess_bytes(
     timeout: Optional[float] = None,
     env: Optional[Dict[str, str]] = None,
     cwd: Optional[str] = None,
+    input_bytes: Optional[bytes] = None,
 ) -> subprocess.CompletedProcess:
     """Execute a subprocess while strictly enforcing `MAX_CONCURRENT_SUBPROCESSES`."""
     with _SUBPROCESS_SEMAPHORE:
+        if input_bytes is not None:
+            return subprocess.run(
+                list(cmd),
+                input=input_bytes,
+                capture_output=True,
+                timeout=timeout,
+                env=env,
+                cwd=cwd,
+            )
         return subprocess.run(
             list(cmd),
             capture_output=True,
@@ -247,6 +262,8 @@ def collect_environment_metadata(machgraph_bin: str, repo_root: Optional[str] = 
             "nm_version": nm_ver,
             "otool_version": otool_ver,
             "codesign_path": "/usr/bin/codesign",
+            "swift_demangle_cmd": "xcrun swift-demangle -compact",
+            "cppfilt_version": pick_version_line(run_text(["/usr/bin/c++filt", "--version"])),
         },
         "machgraph_commit": commit_sha,
         "worktree_clean": is_worktree_clean(repo_root=root),
@@ -1026,6 +1043,365 @@ CHECK_HANDLERS: Dict[str, Callable[[str, str, str, Dict[str, str], float], Dict[
 }
 
 
+def extract_demangle_candidates_for_binary(
+    path: str, arch: str, timeout_sec: float
+) -> Tuple[Optional[Tuple[List[str], List[str], List[str]]], Optional[str], bool, bool]:
+    """Run `xcrun nm --no-dyldinfo -arch <arch> <path>` and extract Swift, `__Z`, and plain `_Z` symbols."""
+    cmd = ["xcrun", "nm", "--no-dyldinfo", "-arch", arch, path]
+    try:
+        proc = run_subprocess_bytes(cmd, timeout=max(120.0, timeout_sec))
+    except subprocess.TimeoutExpired:
+        return (None, f"nm --no-dyldinfo timed out after {max(120.0, timeout_sec):.0f}s", True, False)
+
+    out_txt, non_utf8_out = decode_utf8_safe(proc.stdout)
+    err_txt, non_utf8_err = decode_utf8_safe(proc.stderr)
+    had_non_utf8 = non_utf8_out or non_utf8_err
+    if proc.returncode != 0:
+        return (None, format_exit_reason("nm --no-dyldinfo", proc.returncode, err_txt), False, had_non_utf8)
+
+    swift_syms: List[str] = []
+    cpp_zz_syms: List[str] = []
+    plain_z_syms: List[str] = []
+    for line in out_txt.splitlines():
+        m = _NM_LINE_RE.match(line)
+        if not m:
+            continue
+        name = m.group(3).strip()
+        if not name or _REDACTED_FN_RE.match(name):
+            continue
+        if name.startswith(SWIFT_DEMANGLE_PREFIXES):
+            swift_syms.append(name)
+        elif name.startswith("__Z"):
+            cpp_zz_syms.append(name)
+        elif name.startswith("_Z"):
+            plain_z_syms.append(name)
+
+    return ((swift_syms, cpp_zz_syms, plain_z_syms), None, False, had_non_utf8)
+
+
+def _run_stdin_line_batch(
+    cmd: Sequence[str],
+    label: str,
+    symbols: Sequence[str],
+    env: Optional[Dict[str, str]],
+    chunk_size: int = 5000,
+    timeout_sec: float = 120.0,
+) -> Tuple[Optional[List[str]], Optional[str], bool, bool]:
+    if not symbols:
+        return ([], None, False, False)
+    outputs: List[str] = []
+    any_non_utf8 = False
+    for start in range(0, len(symbols), chunk_size):
+        chunk = symbols[start : start + chunk_size]
+        payload = ("\n".join(chunk) + "\n").encode("utf-8")
+        try:
+            proc = run_subprocess_bytes(cmd, timeout=timeout_sec, env=env, input_bytes=payload)
+        except subprocess.TimeoutExpired:
+            return (None, f"{label} timed out after {timeout_sec:.0f}s", True, any_non_utf8)
+        out_txt, nu_out = decode_utf8_safe(proc.stdout)
+        err_txt, nu_err = decode_utf8_safe(proc.stderr)
+        any_non_utf8 = any_non_utf8 or nu_out or nu_err
+        if proc.returncode != 0:
+            return (None, format_exit_reason(label, proc.returncode, err_txt), False, any_non_utf8)
+        lines = out_txt.splitlines()
+        if len(lines) != len(chunk):
+            return (
+                None,
+                f"{label} returned {len(lines)} lines for {len(chunk)} input symbols",
+                False,
+                any_non_utf8,
+            )
+        outputs.extend(lines)
+    return (outputs, None, False, any_non_utf8)
+
+
+def _run_cppfilt_argv_batch(
+    symbols: Sequence[str],
+    chunk_size: int = 500,
+    timeout_sec: float = 120.0,
+) -> Tuple[Optional[List[str]], Optional[str], bool, bool]:
+    """Invoke `/usr/bin/c++filt <symbol...>` so `_Z*`/`__Z*` symbols containing spaces/brackets are not split as prose."""
+    if not symbols:
+        return ([], None, False, False)
+    outputs: List[str] = []
+    any_non_utf8 = False
+    for start in range(0, len(symbols), chunk_size):
+        chunk = list(symbols[start : start + chunk_size])
+        cmd = ["/usr/bin/c++filt", *chunk]
+        try:
+            proc = run_subprocess_bytes(cmd, timeout=timeout_sec)
+        except subprocess.TimeoutExpired:
+            return (None, f"c++filt timed out after {timeout_sec:.0f}s", True, any_non_utf8)
+        out_txt, nu_out = decode_utf8_safe(proc.stdout)
+        err_txt, nu_err = decode_utf8_safe(proc.stderr)
+        any_non_utf8 = any_non_utf8 or nu_out or nu_err
+        if proc.returncode != 0:
+            return (None, format_exit_reason("c++filt", proc.returncode, err_txt), False, any_non_utf8)
+        lines = out_txt.splitlines()
+        if len(lines) != len(chunk):
+            return (
+                None,
+                f"c++filt returned {len(lines)} lines for {len(chunk)} input symbols",
+                False,
+                any_non_utf8,
+            )
+        outputs.extend(lines)
+    return (outputs, None, False, any_non_utf8)
+
+
+def _run_machgraph_demangle_json_check(
+    machgraph_bin: str,
+    symbols: Sequence[str],
+    expected_outputs: Sequence[str],
+    env: Dict[str, str],
+    chunk_size: int = 5000,
+    timeout_sec: float = 120.0,
+) -> Tuple[Optional[str], List[Dict[str, Any]], bool]:
+    """Verify `machgraph demangle --json` matches text mode and sets `demangled == (output != input)`."""
+    if not symbols:
+        return (None, [], False)
+    mismatches: List[Dict[str, Any]] = []
+    any_non_utf8 = False
+    for start in range(0, len(symbols), chunk_size):
+        chunk = symbols[start : start + chunk_size]
+        exp_chunk = expected_outputs[start : start + chunk_size]
+        payload = ("\n".join(chunk) + "\n").encode("utf-8")
+        try:
+            proc = run_subprocess_bytes(
+                [machgraph_bin, "demangle", "--json"],
+                timeout=timeout_sec,
+                env=env,
+                input_bytes=payload,
+            )
+        except subprocess.TimeoutExpired:
+            return (f"machgraph demangle --json timed out after {timeout_sec:.0f}s", [], any_non_utf8)
+        out_txt, nu_out = decode_utf8_safe(proc.stdout)
+        err_txt, nu_err = decode_utf8_safe(proc.stderr)
+        any_non_utf8 = any_non_utf8 or nu_out or nu_err
+        if proc.returncode != 0:
+            return (format_exit_reason("machgraph demangle --json", proc.returncode, err_txt), [], any_non_utf8)
+        try:
+            arr = json.loads(out_txt)
+        except Exception as exc:
+            return (f"machgraph demangle --json invalid JSON: {sanitize_text(str(exc))[:200]}", [], any_non_utf8)
+        if not isinstance(arr, list) or len(arr) != len(chunk):
+            return (
+                f"machgraph demangle --json returned {len(arr) if isinstance(arr, list) else type(arr).__name__} items for {len(chunk)} inputs",
+                [],
+                any_non_utf8,
+            )
+        for item, sym, exp_out in zip(arr, chunk, exp_chunk):
+            expected_flag = exp_out != sym
+            if (
+                not isinstance(item, dict)
+                or item.get("input") != sym
+                or item.get("output") != exp_out
+                or type(item.get("demangled")) is not bool
+                or item.get("demangled") != expected_flag
+            ):
+                mismatches.append(
+                    {
+                        "kind": "demangle_json_mismatch",
+                        "symbol": sym,
+                        "expected_output": exp_out,
+                        "expected_demangled": expected_flag,
+                        "got": item,
+                    }
+                )
+                if len(mismatches) >= MAX_EXAMPLES_PER_CHECK:
+                    return (None, mismatches, any_non_utf8)
+    return (None, mismatches, any_non_utf8)
+
+
+def _classify_demangle_bucket(
+    bucket_name: str,
+    symbols: Sequence[str],
+    ref_outputs: Sequence[str],
+    mg_outputs: Sequence[str],
+    first_file_of: Dict[str, str],
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    total = len(symbols)
+    equal_count = 0
+    raw_passthrough_count = 0
+    wrong_count = 0
+    examples: List[Dict[str, Any]] = []
+
+    for sym, ref, mg in zip(symbols, ref_outputs, mg_outputs):
+        if mg == ref:
+            equal_count += 1
+        elif mg == sym:
+            raw_passthrough_count += 1
+            if bucket_name == "plain_c_z" and len(examples) < MAX_EXAMPLES_PER_CHECK:
+                examples.append(
+                    {
+                        "kind": "plain_c_z_mismatch",
+                        "bucket": bucket_name,
+                        "file": sanitize_display_path(first_file_of.get(sym, "")),
+                        "symbol": sym,
+                        "ref": ref,
+                        "mg": mg,
+                    }
+                )
+        else:
+            wrong_count += 1
+            if len(examples) < MAX_EXAMPLES_PER_CHECK:
+                examples.append(
+                    {
+                        "kind": "wrong_demangle_output",
+                        "bucket": bucket_name,
+                        "file": sanitize_display_path(first_file_of.get(sym, "")),
+                        "symbol": sym,
+                        "ref": ref,
+                        "mg": mg,
+                    }
+                )
+
+    equal_pct = round((100.0 * equal_count / total), 4) if total > 0 else 100.0
+    raw_pct = round((100.0 * raw_passthrough_count / total), 4) if total > 0 else 0.0
+    wrong_pct = round((100.0 * wrong_count / total), 4) if total > 0 else 0.0
+
+    summary = {
+        "unique_symbols": total,
+        "equal": equal_count,
+        "equal_pct": equal_pct,
+        "raw_passthrough": raw_passthrough_count,
+        "raw_passthrough_pct": raw_pct,
+        "wrong": wrong_count,
+        "wrong_pct": wrong_pct,
+    }
+    return (summary, examples)
+
+
+def evaluate_corpus_demangle(
+    swift_syms: Sequence[str],
+    cpp_zz_syms: Sequence[str],
+    plain_z_syms: Sequence[str],
+    first_file_of: Dict[str, str],
+    machgraph_bin: str,
+    isolated_home: str,
+    compared_files: int,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], bool]:
+    """Run corpus-wide batch demangling checks for Swift, C++ (`__Z`), and plain C (`_Z`)."""
+    t0 = time.monotonic()
+    env = dict(
+        os.environ,
+        HOME=isolated_home,
+        CFFIXED_USER_HOME=isolated_home,
+        SWIFT_BACKTRACE="enable=no",
+    )
+    any_non_utf8 = False
+
+    ref_swift, err, to, nu = _run_stdin_line_batch(
+        ["xcrun", "swift-demangle", "-compact"], "swift-demangle -compact", swift_syms, env=None
+    )
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or ref_swift is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "swift-demangle failed", "timed_out": to}, any_non_utf8)
+
+    mg_swift, err, to, nu = _run_stdin_line_batch(
+        [machgraph_bin, "demangle"], "machgraph demangle (swift)", swift_syms, env=env
+    )
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or mg_swift is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "machgraph demangle failed", "timed_out": to}, any_non_utf8)
+
+    ref_cpp, err, to, nu = _run_cppfilt_argv_batch(cpp_zz_syms)
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or ref_cpp is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "c++filt failed", "timed_out": to}, any_non_utf8)
+
+    mg_cpp, err, to, nu = _run_stdin_line_batch(
+        [machgraph_bin, "demangle"], "machgraph demangle (cpp)", cpp_zz_syms, env=env
+    )
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or mg_cpp is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "machgraph demangle failed", "timed_out": to}, any_non_utf8)
+
+    ref_plain_z, err, to, nu = _run_cppfilt_argv_batch(plain_z_syms)
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or ref_plain_z is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "c++filt (_Z) failed", "timed_out": to}, any_non_utf8)
+
+    mg_plain_z, err, to, nu = _run_stdin_line_batch(
+        [machgraph_bin, "demangle"], "machgraph demangle (_Z)", plain_z_syms, env=env
+    )
+    any_non_utf8 = any_non_utf8 or nu
+    if err is not None or mg_plain_z is None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": err or "machgraph demangle (_Z) failed", "timed_out": to}, any_non_utf8)
+
+    # Verify `--json` mode consistency across a representative slice (up to 512 symbols from each bucket)
+    sample_syms = list(swift_syms[:256]) + list(cpp_zz_syms[:256]) + list(plain_z_syms[:128])
+    sample_exp = list(mg_swift[:256]) + list(mg_cpp[:256]) + list(mg_plain_z[:128])
+    json_err, json_mismatches, nu_json = _run_machgraph_demangle_json_check(
+        machgraph_bin, sample_syms, sample_exp, env=env
+    )
+    any_non_utf8 = any_non_utf8 or nu_json
+    if json_err is not None:
+        return (None, {"file": "<corpus:demangle>", "check": "demangle", "error": json_err, "timed_out": False}, any_non_utf8)
+
+    swift_sum, swift_ex = _classify_demangle_bucket("swift", swift_syms, ref_swift, mg_swift, first_file_of)
+    cpp_sum, cpp_ex = _classify_demangle_bucket("cpp", cpp_zz_syms, ref_cpp, mg_cpp, first_file_of)
+    plain_sum, plain_ex = _classify_demangle_bucket("plain_c_z", plain_z_syms, ref_plain_z, mg_plain_z, first_file_of)
+
+    # Plain `_Z` C symbols must be 100% verbatim (`mg == sym` whenever `ref == sym`).
+    plain_verbatim_violations = 0
+    for sym, ref, mg in zip(plain_z_syms, ref_plain_z, mg_plain_z):
+        if ref == sym and mg != sym:
+            plain_verbatim_violations += 1
+
+    swift_ok = swift_sum["wrong"] == 0 and swift_sum["equal_pct"] >= DEMANGLE_MIN_EQUAL_PCT
+    cpp_ok = cpp_sum["wrong"] == 0 and cpp_sum["equal_pct"] >= DEMANGLE_MIN_EQUAL_PCT
+    plain_ok = plain_sum["wrong"] == 0 and plain_verbatim_violations == 0 and plain_sum["equal"] == plain_sum["unique_symbols"]
+    json_ok = len(json_mismatches) == 0
+    all_ok = swift_ok and cpp_ok and plain_ok and json_ok
+
+    examples: List[Dict[str, Any]] = []
+    for item in [*swift_ex, *cpp_ex, *plain_ex, *json_mismatches]:
+        if len(examples) < MAX_EXAMPLES_PER_CHECK:
+            examples.append(item)
+
+    if not swift_ok and swift_sum["wrong"] == 0 and len(examples) < MAX_EXAMPLES_PER_CHECK:
+        examples.append(
+            {
+                "kind": "swift_below_min_equal_pct",
+                "equal_pct": swift_sum["equal_pct"],
+                "min_required_pct": DEMANGLE_MIN_EQUAL_PCT,
+            }
+        )
+    if not cpp_ok and cpp_sum["wrong"] == 0 and len(examples) < MAX_EXAMPLES_PER_CHECK:
+        examples.append(
+            {
+                "kind": "cpp_below_min_equal_pct",
+                "equal_pct": cpp_sum["equal_pct"],
+                "min_required_pct": DEMANGLE_MIN_EQUAL_PCT,
+            }
+        )
+
+    total_unique = swift_sum["unique_symbols"] + cpp_sum["unique_symbols"] + plain_sum["unique_symbols"]
+    total_equal = swift_sum["equal"] + cpp_sum["equal"] + plain_sum["equal"]
+    total_wrong = swift_sum["wrong"] + cpp_sum["wrong"] + plain_sum["wrong"] + len(json_mismatches)
+    diff_count = total_wrong
+    if not all_ok and diff_count == 0:
+        diff_count = (total_unique - total_equal) or 1
+
+    elapsed_sec = round(time.monotonic() - t0, 2)
+    summary = {
+        "compared_files": compared_files,
+        "matched_files": compared_files if all_ok else max(0, compared_files - 1),
+        "mismatched_files": 0 if all_ok else 1,
+        "total_ref_items": total_unique,
+        "total_mg_items": total_equal,
+        "total_diffs": diff_count,
+        "batch_elapsed_seconds": elapsed_sec,
+        "min_equal_pct": DEMANGLE_MIN_EQUAL_PCT,
+        "swift": swift_sum,
+        "cpp": cpp_sum,
+        "plain_c_z": plain_sum,
+        "examples": examples,
+    }
+    return (summary, None, any_non_utf8)
+
+
 def evaluate_one_binary(
     path: str,
     selected_checks: Sequence[str],
@@ -1064,7 +1440,23 @@ def evaluate_one_binary(
 
     per_check: Dict[str, Dict[str, Any]] = {}
     any_non_utf8 = False
+    demangle_cands: Optional[Tuple[List[str], List[str], List[str]]] = None
     for chk in selected_checks:
+        if chk == "demangle":
+            cands_tuple, dm_err, dm_to, dm_nu = extract_demangle_candidates_for_binary(path, arch, timeout_sec)
+            any_non_utf8 = any_non_utf8 or dm_nu
+            if dm_err is not None or cands_tuple is None:
+                return {
+                    "path": path,
+                    "arch": arch,
+                    "failed_check": "demangle",
+                    "failure": dm_err or "nm --no-dyldinfo failed",
+                    "timed_out": dm_to,
+                    "non_utf8": any_non_utf8,
+                    "seconds": round(time.monotonic() - t0, 3),
+                }
+            demangle_cands = cands_tuple
+            continue
         res = CHECK_HANDLERS[chk](path, arch, machgraph_bin, env, timeout_sec)
         any_non_utf8 = any_non_utf8 or bool(res.get("non_utf8"))
         if res.get("status") == "failure":
@@ -1079,13 +1471,16 @@ def evaluate_one_binary(
             }
         per_check[chk] = res
 
-    return {
+    out_row: Dict[str, Any] = {
         "path": path,
         "arch": arch,
         "checks": per_check,
         "non_utf8": any_non_utf8,
         "seconds": round(time.monotonic() - t0, 3),
     }
+    if demangle_cands is not None:
+        out_row["demangle_candidates"] = demangle_cands
+    return out_row
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -1154,6 +1549,41 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             worker_count,
             lambda p: evaluate_one_binary(p, selected_checks, args.machgraph, isolated_home),
         )
+        corpus_demangle_summary: Optional[Dict[str, Any]] = None
+        corpus_demangle_failure: Optional[Dict[str, Any]] = None
+        corpus_demangle_non_utf8 = False
+        if "demangle" in selected_checks:
+            swift_set = set()
+            cpp_zz_set = set()
+            plain_z_set = set()
+            first_file_of: Dict[str, str] = {}
+            valid_file_count = 0
+            for r in rows:
+                if "skipped" in r or "failure" in r:
+                    continue
+                valid_file_count += 1
+                sw_l, cz_l, pz_l = r.get("demangle_candidates", ([], [], []))
+                for s in sw_l:
+                    swift_set.add(s)
+                    if s not in first_file_of:
+                        first_file_of[s] = r["path"]
+                for s in cz_l:
+                    cpp_zz_set.add(s)
+                    if s not in first_file_of:
+                        first_file_of[s] = r["path"]
+                for s in pz_l:
+                    plain_z_set.add(s)
+                    if s not in first_file_of:
+                        first_file_of[s] = r["path"]
+            corpus_demangle_summary, corpus_demangle_failure, corpus_demangle_non_utf8 = evaluate_corpus_demangle(
+                sorted(swift_set),
+                sorted(cpp_zz_set),
+                sorted(plain_z_set),
+                first_file_of,
+                args.machgraph,
+                isolated_home,
+                valid_file_count,
+            )
     finally:
         if temp_home_ctx is not None:
             temp_home_ctx.cleanup()
@@ -1230,6 +1660,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         compact_checks: Dict[str, Any] = {}
 
         for chk in selected_checks:
+            if chk == "demangle":
+                sw_l, cz_l, pz_l = r.get("demangle_candidates", ([], [], []))
+                cand_cnt = len(sw_l) + len(cz_l) + len(pz_l)
+                part_Tokens.append(f"demangle=SCAN({cand_cnt})")
+                compact_checks["demangle"] = {
+                    "status": "pass",
+                    "swift_candidates": len(sw_l),
+                    "cpp_candidates": len(cz_l),
+                    "plain_c_z_candidates": len(pz_l),
+                }
+                continue
             cres = per_check[chk]
             csum = check_summaries[chk]
             csum["compared_files"] += 1
@@ -1278,10 +1719,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 for ex in cres.get("examples", [])[:MAX_EXAMPLES_PER_CHECK]:
                     print(f"    [{chk} example] {json.dumps(ex, ensure_ascii=False)}")
 
+    if corpus_demangle_non_utf8:
+        non_utf8_files += 1
+    if corpus_demangle_failure is not None:
+        failures.append(
+            {
+                "file": corpus_demangle_failure["file"],
+                "check": "demangle",
+                "error": sanitize_text(str(corpus_demangle_failure["error"])),
+                "timed_out": bool(corpus_demangle_failure.get("timed_out")),
+            }
+        )
+        print(f"[CRASH/FAIL] <corpus:demangle>: {sanitize_text(str(corpus_demangle_failure['error']))}")
+    elif corpus_demangle_summary is not None:
+        check_summaries["demangle"] = corpus_demangle_summary
+
     total_mismatched_files = sum(
         1 for rec in file_records if rec["status"] != "PASS"
     )
-    passed = len(failures) == 0 and total_mismatched_files == 0 and compared_files > 0
+    any_check_mismatched = any(check_summaries[c]["mismatched_files"] > 0 for c in selected_checks)
+    passed = len(failures) == 0 and total_mismatched_files == 0 and not any_check_mismatched and compared_files > 0
     verdict = "PASS" if passed else "FAIL"
 
     print("")
@@ -1293,6 +1750,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             f"mismatched_files={csum['mismatched_files']} total_diffs={csum['total_diffs']} "
             f"ref_items={csum['total_ref_items']} mg_items={csum['total_mg_items']}"
         )
+        if chk == "demangle" and "swift" in csum:
+            sw = csum["swift"]
+            cp = csum["cpp"]
+            pz = csum["plain_c_z"]
+            print(
+                f"  Swift ({sw['unique_symbols']} unique): equal={sw['equal']} ({sw['equal_pct']:.2f}%) "
+                f"raw_passthrough={sw['raw_passthrough']} ({sw['raw_passthrough_pct']:.2f}%) wrong={sw['wrong']}"
+            )
+            print(
+                f"  C++ __Z ({cp['unique_symbols']} unique): equal={cp['equal']} ({cp['equal_pct']:.2f}%) "
+                f"raw_passthrough={cp['raw_passthrough']} ({cp['raw_passthrough_pct']:.2f}%) wrong={cp['wrong']}"
+            )
+            print(
+                f"  Plain C _Z ({pz['unique_symbols']} unique): equal_verbatim={pz['equal']} ({pz['equal_pct']:.2f}%) "
+                f"wrong={pz['wrong']} batch_elapsed={csum.get('batch_elapsed_seconds', 0.0):.2f}s"
+            )
         for ex in csum["examples"][:MAX_EXAMPLES_PER_CHECK]:
             print(f"  example: {json.dumps(ex, ensure_ascii=False)}")
 
@@ -1318,6 +1791,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 "symbols": NM_REFERENCE_TEMPLATE,
                 "dylibs": OTOOL_L_REFERENCE_TEMPLATE,
                 "entitlements": CODESIGN_ENTITLEMENTS_REFERENCE_TEMPLATE,
+                "demangle_swift": SWIFT_DEMANGLE_REFERENCE_TEMPLATE,
+                "demangle_cpp": CPPFILT_REFERENCE_TEMPLATE,
             },
             "summary": {
                 "candidate_macho_files": len(candidates),

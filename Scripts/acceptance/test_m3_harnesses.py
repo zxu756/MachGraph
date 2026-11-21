@@ -569,5 +569,168 @@ class TestM3EntitlementsSubcheck(unittest.TestCase):
             self.assertEqual(report["checks"]["entitlements"]["examples"][0]["kind"], "extra_in_machgraph")
 
 
+class TestM3DemangleSubcheck(unittest.TestCase):
+    """Verify corpus-level Swift (`xcrun swift-demangle -compact` stdin) and C++ (`/usr/bin/c++filt`) gates."""
+
+    def test_demangle_passes_above_99_pct_with_zero_wrong_and_100_pct_plain_z_and_empty_buckets(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_a = os.path.join(tmp, "swift_cpp_bin")
+            bin_empty = os.path.join(tmp, "pure_c_bin")
+            _write_thin_arm64_header(bin_a, filetype=2)
+            _write_thin_arm64_header(bin_empty, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+            out_json = os.path.join(tmp, "demangle_pass.json")
+
+            swift_syms = [f"_$s4Demo4Func{i}yyF" for i in range(99)] + ["_T04Demo6LegacyyyF"]
+            cpp_zz_syms = [f"__Z4func{i}i" for i in range(99)] + ["__Z8fallbackv"]
+            plain_z_syms = ["_ZeroFilesTested", "_Zfirst", "_ZinComputeProgramAlign"]
+
+            nm_lines = [b"                 U " + s.encode("ascii") + b"\n" for s in swift_syms[:50]]
+            nm_lines += [f"000000010000{i:04x} T {s}\n".encode("ascii") for i, s in enumerate(swift_syms[50:], 1)]
+            nm_lines += [f"000000010001{i:04x} T {s}\n".encode("ascii") for i, s in enumerate(cpp_zz_syms, 1)]
+            nm_lines += [f"000000010002{i:04x} D {s}\n".encode("ascii") for i, s in enumerate(plain_z_syms, 1)]
+            nm_lines.append(b"0000000100030000 T _main\n")
+
+            def ref_demangle_one(sym: str) -> str:
+                if sym.startswith("_$s4Demo4Func"):
+                    return f"Demo.Func{sym[13:-3]}() -> ()"
+                if sym == "_T04Demo6LegacyyyF":
+                    return "Demo.Legacy() -> ()"
+                if sym.startswith("__Z4func"):
+                    return f"func{sym[8:-1]}(int)"
+                if sym == "__Z8fallbackv":
+                    return "fallback()"
+                return sym
+
+            def mg_demangle_one(sym: str) -> str:
+                # 1 raw fallback out of 100 in Swift (99.0% equal, 0 wrong) and 1 raw fallback out of 100 in C++ (99.0% equal, 0 wrong)
+                if sym in ("_T04Demo6LegacyyyF", "__Z8fallbackv"):
+                    return sym
+                return ref_demangle_one(sym)
+
+            def fake_run(cmd, *args, **kwargs):
+                if cmd[0] == "lipo":
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                if cmd[:3] == ["xcrun", "nm", "--no-dyldinfo"]:
+                    target = cmd[-1]
+                    if target == bin_a:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"".join(nm_lines), stderr=b"")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"0000000100001000 T _main\n", stderr=b"")
+                if cmd[:3] == ["xcrun", "swift-demangle", "-compact"]:
+                    raw_in = kwargs.get("input", b"").decode("utf-8").splitlines()
+                    out = "\n".join(ref_demangle_one(s) for s in raw_in) + ("\n" if raw_in else "")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                if cmd[0] == "/usr/bin/c++filt":
+                    arg_syms = cmd[2:] if len(cmd) >= 2 and cmd[1] == "--" else cmd[1:]
+                    if not arg_syms and kwargs.get("input"):
+                        arg_syms = kwargs["input"].decode("utf-8").splitlines()
+                    out = "\n".join(ref_demangle_one(s) for s in arg_syms) + ("\n" if arg_syms else "")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                if cmd[0] == fake_mg and cmd[1] == "demangle":
+                    raw_in = kwargs.get("input", b"").decode("utf-8").splitlines()
+                    if "--json" in cmd:
+                        arr = [
+                            {"input": s, "output": mg_demangle_one(s), "demangled": mg_demangle_one(s) != s}
+                            for s in raw_in
+                        ]
+                        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(arr).encode("utf-8"), stderr=b"")
+                    out = "\n".join(mg_demangle_one(s) for s in raw_in) + ("\n" if raw_in else "")
+                    return subprocess.CompletedProcess(cmd, 0, stdout=out.encode("utf-8"), stderr=b"")
+                return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+            buf = io.StringIO()
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(buf):
+                rc = m3_diff.main([bin_a, "--only", "demangle", "--machgraph", fake_mg, "--json-out", out_json])
+            self.assertEqual(rc, 0, buf.getvalue())
+            report = _read_json(out_json)
+            self.assertEqual(report["verdict"], "PASS")
+            dem = report["checks"]["demangle"]
+            self.assertEqual(dem["swift"]["equal"], 99)
+            self.assertEqual(dem["swift"]["raw_passthrough"], 1)
+            self.assertEqual(dem["swift"]["wrong"], 0)
+            self.assertEqual(dem["cpp"]["equal"], 99)
+            self.assertEqual(dem["cpp"]["raw_passthrough"], 1)
+            self.assertEqual(dem["cpp"]["wrong"], 0)
+            self.assertEqual(dem["plain_c_z"]["equal"], 3)
+            self.assertEqual(dem["plain_c_z"]["wrong"], 0)
+
+            # Empty Swift/C++ buckets (e.g. pure C binary /bin/ls) must also pass cleanly
+            out_empty = os.path.join(tmp, "demangle_empty.json")
+            with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc_empty = m3_diff.main(
+                    [bin_empty, "--only", "demangle", "--machgraph", fake_mg, "--json-out", out_empty]
+                )
+            self.assertEqual(rc_empty, 0)
+
+    def test_demangle_fails_on_single_wrong_output_or_plain_z_underscore_strip_or_below_99_pct(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bin_path = os.path.join(tmp, "mutated_bin")
+            _write_thin_arm64_header(bin_path, filetype=2)
+            fake_mg = _make_executable_script(tmp, "fake-mg", "#!/usr/bin/env python3\n")
+
+            swift_syms = [f"_$s4Demo4Func{i}yyF" for i in range(100)]
+            cpp_syms = [f"__Z4func{i}i" for i in range(100)]
+            nm_stdout = "".join(
+                [f"000000010000{i:04x} T {s}\n" for i, s in enumerate(swift_syms + cpp_syms, 1)]
+                + ["0000000100090000 D _ZeroFilesTested\n"]
+            ).encode("ascii")
+
+            def ref_one(s: str) -> str:
+                if s.startswith("_$s4Demo4Func"):
+                    return f"Demo.Func{s[13:-3]}() -> ()"
+                if s.startswith("__Z4func"):
+                    return f"func{s[8:-1]}(int)"
+                return s
+
+            # Case 1: 99% Swift equal, 0% raw, 1% wrong (stripped '_' instead of verbatim) -> MUST FAIL (wrong > 0)!
+            # Case 2: 100% Swift & C++, but _ZeroFilesTested -> ZeroFilesTested -> MUST FAIL!
+            # Case 3: 98% Swift equal, 2% raw passthrough, 0 wrong -> MUST FAIL (< 99.0%)!
+            cases = [
+                ("swift_wrong_non_raw", lambda s: s[1:] if s == "_$s4Demo4Func0yyF" else ref_one(s)),
+                ("plain_z_stripped", lambda s: "ZeroFilesTested" if s == "_ZeroFilesTested" else ref_one(s)),
+                ("below_99_threshold", lambda s: s if s in ("_$s4Demo4Func0yyF", "_$s4Demo4Func1yyF") else ref_one(s)),
+            ]
+
+            for label, mutator in cases:
+                out_json = os.path.join(tmp, f"{label}.json")
+
+                def fake_run(cmd, *args, _mut=mutator, **kwargs):
+                    if cmd[0] == "lipo":
+                        return subprocess.CompletedProcess(cmd, 0, stdout=b"arm64e\n", stderr=b"")
+                    if cmd[:3] == ["xcrun", "nm", "--no-dyldinfo"]:
+                        return subprocess.CompletedProcess(cmd, 0, stdout=nm_stdout, stderr=b"")
+                    if cmd[:3] == ["xcrun", "swift-demangle", "-compact"]:
+                        lines = kwargs.get("input", b"").decode("utf-8").splitlines()
+                        return subprocess.CompletedProcess(
+                            cmd, 0, stdout=("\n".join(ref_one(x) for x in lines) + "\n").encode("utf-8"), stderr=b""
+                        )
+                    if cmd[0] == "/usr/bin/c++filt":
+                        syms = cmd[2:] if len(cmd) >= 2 and cmd[1] == "--" else cmd[1:]
+                        if not syms and kwargs.get("input"):
+                            syms = kwargs["input"].decode("utf-8").splitlines()
+                        return subprocess.CompletedProcess(
+                            cmd, 0, stdout=("\n".join(ref_one(x) for x in syms) + "\n").encode("utf-8"), stderr=b""
+                        )
+                    if cmd[0] == fake_mg and cmd[1] == "demangle":
+                        lines = kwargs.get("input", b"").decode("utf-8").splitlines()
+                        if "--json" in cmd:
+                            arr = [{"input": x, "output": _mut(x), "demangled": _mut(x) != x} for x in lines]
+                            return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(arr).encode("utf-8"), stderr=b"")
+                        return subprocess.CompletedProcess(
+                            cmd, 0, stdout=("\n".join(_mut(x) for x in lines) + "\n").encode("utf-8"), stderr=b""
+                        )
+                    return subprocess.CompletedProcess(cmd, 0, stdout=b"ok\n", stderr=b"")
+
+                with mock.patch.object(m3_diff.subprocess, "run", side_effect=fake_run), contextlib.redirect_stdout(
+                    io.StringIO()
+                ):
+                    rc = m3_diff.main([bin_path, "--only", "demangle", "--machgraph", fake_mg, "--json-out", out_json])
+                self.assertEqual(rc, 1, f"Case {label} must fail")
+                rep = _read_json(out_json)
+                self.assertEqual(rep["verdict"], "FAIL")
+
+
 if __name__ == "__main__":
     unittest.main()
