@@ -24,6 +24,9 @@ TMP_REPO="$TMP_WORK/repo"
 TMP_HOME="$TMP_WORK/home"
 mkdir -p "$TMP_REPO" "$TMP_HOME"
 
+INITIAL_SOURCE_DIFF="$(git -C "$REPO_ROOT" diff -- Package.swift Sources Tests Fixtures)"
+INITIAL_SOURCE_UNTRACKED="$(git -C "$REPO_ROOT" ls-files --others --exclude-standard -- Package.swift Sources Tests Fixtures)"
+
 # Copy only buildable package inputs into the temporary directory (never copy .git or touch REPO_ROOT).
 cp "$REPO_ROOT/Package.swift" "$TMP_REPO/Package.swift"
 if [[ -f "$REPO_ROOT/Package.resolved" ]]; then
@@ -377,8 +380,10 @@ run_mutation "7" \
     "07_noreturn" \
     /usr/bin/ssh --only invariants
 
-# Verify product source tree in REPO_ROOT was never touched
-if ! git -C "$REPO_ROOT" diff --quiet -- Package.swift Sources Tests Fixtures; then
+# Verify product source tree in REPO_ROOT was never touched during this run
+AFTER_SOURCE_DIFF="$(git -C "$REPO_ROOT" diff -- Package.swift Sources Tests Fixtures)"
+AFTER_SOURCE_UNTRACKED="$(git -C "$REPO_ROOT" ls-files --others --exclude-standard -- Package.swift Sources Tests Fixtures)"
+if [[ "$AFTER_SOURCE_DIFF" != "$INITIAL_SOURCE_DIFF" || "$AFTER_SOURCE_UNTRACKED" != "$INITIAL_SOURCE_UNTRACKED" ]]; then
     echo "[FAIL] Repository product/test sources have unexpected modifications!" >&2
     exit 1
 fi
