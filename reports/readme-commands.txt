@@ -1,8 +1,8 @@
 === MachGraph README Commands Replay (README.md + README.zh-CN.md) ===
-Date (UTC): 2026-11-22T11:48:51Z
+Date (UTC): 2026-11-22T12:58:05Z
 macOS:      macOS 27.0.1 (26A434) arm64
 
-[PASS] README.md and README.zh-CN.md contain the same 32 commands (22 MachGraph invocations)
+[PASS] README.md and README.zh-CN.md contain the same 41 commands (26 MachGraph invocations)
 [PASS] README.md: all 13 MachGraph options it uses are listed in --help (en + zh): --address --asm --at --count --demo --force --function --help --json --lang --output --slice --symbol
 [PASS] README.zh-CN.md: all 13 MachGraph options it uses are listed in --help (en + zh): --address --asm --at --count --demo --force --function --help --json --lang --output --slice --symbol
 [PASS] every MachGraph example starts with a subcommand listed in --help; none can open the desktop app
@@ -56,12 +56,25 @@ $ .build/debug/MachGraph info --demo --lang zh
   -> OK ([演示数据] banner present)
 $ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_inspect_binary","arguments":{"binaryPath":"/bin/ls"}}}\n' | .build/debug/MachGraph mcp
   -> OK (mach_inspect_binary returned the /bin/ls summary, isError=false)
+$ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_disasm_function","arguments":{"binaryPath":"/bin/ls","address":"0x100000960","count":12}}}\n' | .build/debug/MachGraph mcp
+  -> OK (mach_disasm_function byte-identical to CLI disasm --json (3289 bytes, 12 instructions))
+$ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_cfg","arguments":{"binaryPath":"/bin/ls","address":"0x100000960"}}}\n' | .build/debug/MachGraph mcp
+  -> OK (mach_cfg byte-identical to CLI cfg --json (97877 bytes, _entry 154 blocks))
+$ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_list_symbols","arguments":{"binaryPath":"/bin/ls"}}}\n' | .build/debug/MachGraph mcp
+  -> OK (mach_list_symbols byte-identical to CLI symbols --json (68639 bytes))
+$ printf '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}\n{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"mach_find_strings","arguments":{"binaryPath":"/bin/ls","filter":"usage"}}}\n' | .build/debug/MachGraph mcp
+  -> OK (mach_find_strings byte-identical to CLI strings --json (1 matched strings))
 [NOT REPLAYED] swift build --product MachGraph  (build entry point)
+[NOT REPLAYED] swift build -c release --product MachGraph  (build entry point)
 [NOT REPLAYED] ./Scripts/acceptance/m0-quick.sh  (build/test entry point; ./Scripts/acceptance/m0-quick.sh exists and is executable)
 [NOT REPLAYED] ./Scripts/acceptance/readme-commands.sh  (build/test entry point; ./Scripts/acceptance/readme-commands.sh exists and is executable)
 [NOT REPLAYED] ./Scripts/test.sh scope MachBinaryFormats MachA64Decoder MachCFGEngine MachHeadlessCLI  (build/test entry point; ./Scripts/test.sh exists and is executable)
 [NOT REPLAYED] ./Scripts/test.sh milestone 0  (build/test entry point; ./Scripts/test.sh exists and is executable)
+[NOT REPLAYED] ./Scripts/test.sh milestone 1  (build/test entry point; ./Scripts/test.sh exists and is executable)
+[NOT REPLAYED] ./Scripts/test.sh milestone 2  (build/test entry point; ./Scripts/test.sh exists and is executable)
 [NOT REPLAYED] ./Scripts/test.sh milestone 3  (build/test entry point; ./Scripts/test.sh exists and is executable)
 [NOT REPLAYED] ./Scripts/test.sh milestone 4  (build/test entry point; ./Scripts/test.sh exists and is executable)
+[NOT REPLAYED] ./Scripts/test.sh milestone 5  (build/test entry point; ./Scripts/test.sh exists and is executable)
+[NOT REPLAYED] ./Scripts/test.sh mutations  (build/test entry point; ./Scripts/test.sh exists and is executable)
 
-=== ALL 25 README EXAMPLE COMMANDS PASSED (README.md + README.zh-CN.md) ===
+=== ALL 29 README EXAMPLE COMMANDS PASSED (README.md + README.zh-CN.md) ===

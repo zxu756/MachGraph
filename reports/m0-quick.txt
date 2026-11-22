@@ -1,5 +1,5 @@
 === MachGraph M0 Quick Acceptance ===
-Date (UTC): 2026-11-22T11:48:47Z
+Date (UTC): 2026-11-22T12:58:00Z
 macOS:      macOS 27.0.1 (26A434) arm64
 Binary:     .build/debug/MachGraph
 
@@ -19,4 +19,4 @@ Binary:     .build/debug/MachGraph
 [PASS] Row 14 (G28): thin arm64 Mach-O (33552 B) truncated to 200 1200 8000 16776 20000 33152 33551 B: info and disasm exit 1 with empty stdout (EN + ZH)
 [PASS] Row 15 (G30): launch resolution reports a mistyped subcommand as 'Unknown subcommand' (usage error, exit code 2) in EN + ZH
 
-=== ALL 12 M0 ACCEPTANCE CHECKS AND 3 REWORK CHECKS PASSED in 4.03s (<= 10.00s reference budget) ===
+=== ALL 12 M0 ACCEPTANCE CHECKS AND 3 REWORK CHECKS PASSED in 4.82s (<= 10.00s reference budget) ===
