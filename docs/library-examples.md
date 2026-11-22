@@ -1,5 +1,7 @@
 # MachGraph Swift Library Examples
 
+> **Note:** [`README.md`](../README.md) (and [`README.zh-CN.md`](../README.zh-CN.md)) is the canonical source for the SwiftPM library examples verified by `Scripts/acceptance/m5-lib-examples.py`. In case of any discrepancy, follow [`README.md`](../README.md).
+
 `MachBinaryFormats`, `MachA64Decoder`, and `MachCFGEngine` re-export `MachGraphModels` via `@_exported import MachGraphModels`, so external Swift packages only need to depend on and `import` the target module they use.
 
 ## 1. `MachBinaryFormats` — Read Mach-O Header, Segments, and Code Signature

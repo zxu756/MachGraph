@@ -245,10 +245,113 @@ def expect_mcp(out):
     return "mach_inspect_binary returned the /bin/ls summary, isError=false"
 
 
+def _mcp_tool_text(out: str) -> str:
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    resp = json.loads(lines[-1])
+    assert resp["result"]["isError"] is False, resp
+    return resp["result"]["content"][0]["text"]
+
+
+def expect_mcp_disasm_ls_entry(out):
+    mcp_text = _mcp_tool_text(out)
+    cli_out = subprocess.run(
+        [BIN, "disasm", "/bin/ls", "--address", "0x100000960", "--count", "12", "--json"],
+        cwd=REPO_ROOT,
+        env=RUN_ENV,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    assert mcp_text == cli_out, f"MCP != CLI disasm --json ({len(mcp_text)} vs {len(cli_out)} bytes)"
+    doc = json.loads(mcp_text)
+    assert len(doc["instructions"]) == 12, len(doc["instructions"])
+    return f"mach_disasm_function byte-identical to CLI disasm --json ({len(mcp_text)} bytes, 12 instructions)"
+
+
+def expect_mcp_cfg_ls_entry(out):
+    mcp_text = _mcp_tool_text(out)
+    cli_out = subprocess.run(
+        [BIN, "cfg", "/bin/ls", "--address", "0x100000960", "--json"],
+        cwd=REPO_ROOT,
+        env=RUN_ENV,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    assert mcp_text == cli_out, f"MCP != CLI cfg --json ({len(mcp_text)} vs {len(cli_out)} bytes)"
+    doc = json.loads(mcp_text)
+    assert doc["schema"] == "machgraph.cfg/1" and doc["functionCount"] == 1
+    return f"mach_cfg byte-identical to CLI cfg --json ({len(mcp_text)} bytes, _entry 154 blocks)"
+
+
+def expect_mcp_list_symbols_ls(out):
+    mcp_text = _mcp_tool_text(out)
+    cli_out = subprocess.run(
+        [BIN, "symbols", "/bin/ls", "--json"],
+        cwd=REPO_ROOT,
+        env=RUN_ENV,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    assert mcp_text == cli_out, f"MCP != CLI symbols --json ({len(mcp_text)} vs {len(cli_out)} bytes)"
+    doc = json.loads(mcp_text)
+    assert doc["fileName"] == "ls", doc.get("fileName")
+    return f"mach_list_symbols byte-identical to CLI symbols --json ({len(mcp_text)} bytes)"
+
+
+def expect_mcp_find_strings_ls(out):
+    mcp_text = _mcp_tool_text(out)
+    cli_out = subprocess.run(
+        [BIN, "strings", "/bin/ls", "--filter", "usage", "--json"],
+        cwd=REPO_ROOT,
+        env=RUN_ENV,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout
+    assert mcp_text == cli_out, f"MCP != CLI strings --json ({len(mcp_text)} vs {len(cli_out)} bytes)"
+    doc = json.loads(mcp_text)
+    assert doc["count"] >= 1, doc
+    return f"mach_find_strings byte-identical to CLI strings --json ({doc['count']} matched strings)"
+
+
 MCP_COMMAND = (
     "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\\n"
     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mach_inspect_binary\","
     "\"arguments\":{\"binaryPath\":\"/bin/ls\"}}}\\n' | .build/debug/MachGraph mcp"
+)
+
+MCP_DISASM_LS_ENTRY_COMMAND = (
+    "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\\n"
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mach_disasm_function\","
+    "\"arguments\":{\"binaryPath\":\"/bin/ls\",\"address\":\"0x100000960\",\"count\":12}}}\\n' | .build/debug/MachGraph mcp"
+)
+
+MCP_CFG_LS_ENTRY_COMMAND = (
+    "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\\n"
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mach_cfg\","
+    "\"arguments\":{\"binaryPath\":\"/bin/ls\",\"address\":\"0x100000960\"}}}\\n' | .build/debug/MachGraph mcp"
+)
+
+MCP_LIST_SYMBOLS_LS_COMMAND = (
+    "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\\n"
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mach_list_symbols\","
+    "\"arguments\":{\"binaryPath\":\"/bin/ls\"}}}\\n' | .build/debug/MachGraph mcp"
+)
+
+MCP_FIND_STRINGS_LS_COMMAND = (
+    "printf '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\\n"
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"mach_find_strings\","
+    "\"arguments\":{\"binaryPath\":\"/bin/ls\",\"filter\":\"usage\"}}}\\n' | .build/debug/MachGraph mcp"
 )
 
 EXPECTATIONS = {
@@ -276,6 +379,10 @@ EXPECTATIONS = {
     f"{BIN} --help --lang zh": expect_help_zh,
     f"{BIN} info --demo --lang zh": expect_demo_zh,
     MCP_COMMAND: expect_mcp,
+    MCP_DISASM_LS_ENTRY_COMMAND: expect_mcp_disasm_ls_entry,
+    MCP_CFG_LS_ENTRY_COMMAND: expect_mcp_cfg_ls_entry,
+    MCP_LIST_SYMBOLS_LS_COMMAND: expect_mcp_list_symbols_ls,
+    MCP_FIND_STRINGS_LS_COMMAND: expect_mcp_find_strings_ls,
 }
 
 

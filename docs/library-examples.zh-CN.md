@@ -1,5 +1,7 @@
 # MachGraph Swift 库使用示例
 
+> **说明：** [`README.zh-CN.md`](../README.zh-CN.md)（及 [`README.md`](../README.md)）现为 `Scripts/acceptance/m5-lib-examples.py` 默认校验的库示例权威出处；本文档保留归档，内容以 [`README.zh-CN.md`](../README.zh-CN.md) / [`README.md`](../README.md) 为准。
+
 `MachBinaryFormats`、`MachA64Decoder` 与 `MachCFGEngine` 均已通过 `@_exported import MachGraphModels` 重导出底层模型类型，外部 Swift 包只需依赖并 `import` 对应的目标模块即可直接使用。
 
 ## 1. `MachBinaryFormats` —— 读取 Mach-O 头、段表与代码签名
