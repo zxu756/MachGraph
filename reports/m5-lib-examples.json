@@ -1,42 +1,42 @@
 {
   "diffs": [],
-  "elapsed_s": 52.349,
-  "en_doc": "docs/library-examples.md",
+  "elapsed_s": 50.421,
+  "en_doc": "README.md",
   "examples": [
     {
       "actual_output": "format=Mach-O Universal Fat arch=arm64e (PAC)\nentry=0x0000000100000960 segments=5 [__PAGEZERO,__TEXT,__DATA_CONST,__DATA,__LINKEDIT]\nlcFunctionStarts=50\nsigned=true cdhash=54097a160b61765dca72b46d0beb36ddf7bbde75266276c007734fadffa899ce",
-      "build_elapsed_s": 7.8114,
+      "build_elapsed_s": 6.7731,
       "build_returncode": 0,
       "line_count": 14,
       "module": "MachBinaryFormats",
       "reference_output": "format=Mach-O Universal Fat arch=arm64e (PAC)\nentry=0x0000000100000960 segments=5 [__PAGEZERO,__TEXT,__DATA_CONST,__DATA,__LINKEDIT]\nlcFunctionStarts=50\nsigned=true cdhash=54097a160b61765dca72b46d0beb36ddf7bbde75266276c007734fadffa899ce",
-      "run_elapsed_s": 0.3417,
+      "run_elapsed_s": 0.3471,
       "run_returncode": 0
     },
     {
       "actual_output": "0x0000000100000000  d10043ff  sub sp, sp, #0x10\n0x0000000100000004  52800540  mov w0, #0x2a\n0x0000000100000008  910043ff  add sp, sp, #0x10\n0x000000010000000c  d65f03c0  ret",
-      "build_elapsed_s": 7.3131,
+      "build_elapsed_s": 7.3229,
       "build_returncode": 0,
       "line_count": 16,
       "module": "MachA64Decoder",
       "reference_output": "0x0000000100000000  d10043ff  sub sp, sp, #0x10\n0x0000000100000004  52800540  mov w0, #0x2a\n0x0000000100000008  910043ff  add sp, sp, #0x10\n0x000000010000000c  d65f03c0  ret",
-      "run_elapsed_s": 0.33,
+      "run_elapsed_s": 0.4116,
       "run_returncode": 0
     },
     {
       "actual_output": "functions=133 entry=_entry@0x0000000100000960\nblocks=154 edges=259 dom=154 loops=1",
-      "build_elapsed_s": 8.3421,
+      "build_elapsed_s": 8.2029,
       "build_returncode": 0,
       "line_count": 16,
       "module": "MachCFGEngine",
       "reference_output": "functions=133 entry=_entry@0x0000000100000960\nblocks=154 edges=259 dom=154 loops=1",
-      "run_elapsed_s": 0.4103,
+      "run_elapsed_s": 0.4167,
       "run_returncode": 0
     }
   ],
   "negative_probes": [
     {
-      "elapsed_s": 5.762,
+      "elapsed_s": 5.5888,
       "expected_access": "package",
       "module": "MachBinaryFormats",
       "probe": "ELF64Loader_package",
@@ -45,7 +45,7 @@
       "symbol": "ELF64Loader"
     },
     {
-      "elapsed_s": 1.4424,
+      "elapsed_s": 1.2708,
       "expected_access": "package",
       "module": "MachBinaryFormats",
       "probe": "PE32PlusLoader_package",
@@ -54,7 +54,7 @@
       "symbol": "PE32PlusLoader"
     },
     {
-      "elapsed_s": 1.4995,
+      "elapsed_s": 1.4965,
       "expected_access": "package",
       "module": "MachBinaryFormats",
       "probe": "WasmModuleLoader_package",
@@ -63,7 +63,7 @@
       "symbol": "WasmModuleLoader"
     },
     {
-      "elapsed_s": 1.3939,
+      "elapsed_s": 1.2866,
       "expected_access": "package",
       "module": "MachBinaryFormats",
       "probe": "loadRawBinary_package",
@@ -72,7 +72,7 @@
       "symbol": "loadRawBinary"
     },
     {
-      "elapsed_s": 1.5503,
+      "elapsed_s": 1.6486,
       "expected_access": "internal",
       "module": "MachBinaryFormats",
       "probe": "ASN1DERWalker_internal",
@@ -81,7 +81,7 @@
       "symbol": "ASN1DERWalker"
     },
     {
-      "elapsed_s": 1.1836,
+      "elapsed_s": 1.1887,
       "expected_access": "internal",
       "module": "MachBinaryFormats",
       "probe": "MachO64Loader_internal",
@@ -90,7 +90,7 @@
       "symbol": "MachO64Loader"
     },
     {
-      "elapsed_s": 1.7477,
+      "elapsed_s": 1.8054,
       "expected_access": "internal",
       "module": "MachA64Decoder",
       "probe": "signExtend_internal",
@@ -99,7 +99,7 @@
       "symbol": "signExtend"
     },
     {
-      "elapsed_s": 1.2841,
+      "elapsed_s": 1.2207,
       "expected_access": "internal",
       "module": "MachA64Decoder",
       "probe": "DecodeBitMasks_internal",
@@ -108,7 +108,7 @@
       "symbol": "DecodeBitMasks"
     },
     {
-      "elapsed_s": 1.5313,
+      "elapsed_s": 1.547,
       "expected_access": "internal",
       "module": "MachA64Decoder",
       "probe": "A64BitUtils_internal",
@@ -117,7 +117,7 @@
       "symbol": "A64BitUtils"
     },
     {
-      "elapsed_s": 1.273,
+      "elapsed_s": 1.2751,
       "expected_access": "package",
       "module": "MachA64Decoder",
       "probe": "A64SystemRegisterTable_package",
@@ -126,7 +126,7 @@
       "symbol": "A64SystemRegisterTable"
     },
     {
-      "elapsed_s": 3.0313,
+      "elapsed_s": 2.9943,
       "expected_access": "package",
       "module": "MachCFGEngine",
       "probe": "PostDominatorTreeNode_package",
@@ -135,7 +135,7 @@
       "symbol": "PostDominatorTreeNode"
     },
     {
-      "elapsed_s": 1.6132,
+      "elapsed_s": 1.5523,
       "expected_access": "package",
       "module": "MachCFGEngine",
       "probe": "SugiyamaCFGLayoutSolver_package",
@@ -144,7 +144,7 @@
       "symbol": "SugiyamaCFGLayoutSolver"
     },
     {
-      "elapsed_s": 2.5758,
+      "elapsed_s": 2.2974,
       "expected_access": "package",
       "module": "MachCFGEngine",
       "probe": "KnownNoreturnSymbols_package",
@@ -153,7 +153,7 @@
       "symbol": "KnownNoreturnSymbols"
     },
     {
-      "elapsed_s": 0.9787,
+      "elapsed_s": 0.9792,
       "expected_access": "unexported_product",
       "module": "MachGraph",
       "probe": "removed_product_MachMicroDecompiler",
@@ -163,6 +163,6 @@
     }
   ],
   "passed": true,
-  "timestamp_utc": "2026-11-22T12:06:03Z",
-  "zh_doc": "docs/library-examples.zh-CN.md"
+  "timestamp_utc": "2026-11-22T13:00:36Z",
+  "zh_doc": "README.zh-CN.md"
 }
