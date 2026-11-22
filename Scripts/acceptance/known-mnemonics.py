@@ -241,8 +241,8 @@ def render_swift_source(
         f"//   - Random words (seeds {seeds_str} x {FUZZ_WORDS_PER_SEED:,}): {len(random_clean)}\n",
         f"// Total unique mnemonics: {len(union_sorted)}\n",
         "\n",
-        "public enum A64KnownMnemonics {\n",
-        "    public static let all: Set<String> = [\n",
+        "enum A64KnownMnemonics {\n",
+        "    static let all: Set<String> = [\n",
     ]
     for mnem in union_sorted:
         lines.append(f'        "{mnem}",\n')

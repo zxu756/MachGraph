@@ -3,7 +3,7 @@ import Testing
 import MachGraphModels
 @testable import MachBinaryFormats
 import MachA64Decoder
-import MachCFGEngine
+@testable import MachCFGEngine
 
 @Suite("Control-Flow Graph, Dominators, Sugiyama Layout & Cross-References")
 struct CFGDominatorsSugiyamaAndXrefsTests {

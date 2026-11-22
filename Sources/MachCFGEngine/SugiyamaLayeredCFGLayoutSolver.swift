@@ -3,31 +3,31 @@ import MachGraphModels
 
 // MARK: - Sugiyama Hierarchical Layout Configuration & Styling
 
-public enum SugiyamaEdgeRoutingMode: String, Sendable, Codable, Hashable, CaseIterable {
+package enum SugiyamaEdgeRoutingMode: String, Sendable, Codable, Hashable, CaseIterable {
     case orthogonalChannel = "Orthogonal Channel"
     case cubicBezierSpline = "Cubic Spline"
 }
 
-public struct SugiyamaLayoutConfiguration: Sendable, Codable, Hashable {
-    public var minNodeWidth: Double
-    public var maxNodeWidth: Double
-    public var characterAdvanceWidth: Double
-    public var nodeHorizontalPadding: Double
-    public var headerBarHeight: Double
-    public var instructionLineHeight: Double
-    public var nodeVerticalPadding: Double
-    public var minNodeHeight: Double
-    public var horizontalNodeSpacing: Double
-    public var dummyCorridorWidth: Double
-    public var baseVerticalLayerSpacing: Double
-    public var channelTrackSpacing: Double
-    public var outerGutterLaneSpacing: Double
-    public var canvasMargin: Double
-    public var maxCrossingMinimizationSweeps: Int
-    public var coffmanGrahamMaxLayerWidth: Int
-    public var routingMode: SugiyamaEdgeRoutingMode
+package struct SugiyamaLayoutConfiguration: Sendable, Codable, Hashable {
+    package var minNodeWidth: Double
+    package var maxNodeWidth: Double
+    package var characterAdvanceWidth: Double
+    package var nodeHorizontalPadding: Double
+    package var headerBarHeight: Double
+    package var instructionLineHeight: Double
+    package var nodeVerticalPadding: Double
+    package var minNodeHeight: Double
+    package var horizontalNodeSpacing: Double
+    package var dummyCorridorWidth: Double
+    package var baseVerticalLayerSpacing: Double
+    package var channelTrackSpacing: Double
+    package var outerGutterLaneSpacing: Double
+    package var canvasMargin: Double
+    package var maxCrossingMinimizationSweeps: Int
+    package var coffmanGrahamMaxLayerWidth: Int
+    package var routingMode: SugiyamaEdgeRoutingMode
 
-    public init(
+    package init(
         minNodeWidth: Double = 264.0,
         maxNodeWidth: Double = 540.0,
         characterAdvanceWidth: Double = 7.4,
@@ -65,22 +65,22 @@ public struct SugiyamaLayoutConfiguration: Sendable, Codable, Hashable {
         self.routingMode = routingMode
     }
 
-    public static let standard = SugiyamaLayoutConfiguration()
+    package static let standard = SugiyamaLayoutConfiguration()
 }
 
 // MARK: - 5-Phase Sugiyama Hierarchical CFG Layout Solver
 
-public struct SugiyamaCFGLayoutSolver: Sendable {
-    public let configuration: SugiyamaLayoutConfiguration
+package struct SugiyamaCFGLayoutSolver: Sendable {
+    package let configuration: SugiyamaLayoutConfiguration
 
-    public init(configuration: SugiyamaLayoutConfiguration = .standard) {
+    package init(configuration: SugiyamaLayoutConfiguration = .standard) {
         self.configuration = configuration
     }
 
     // MARK: - Public Layout Entry Points
 
     /// Computes a complete 5-phase `SugiyamaCFGLayout` for a `RecoveredFunction`.
-    public func solveLayout(for function: RecoveredFunction) -> SugiyamaCFGLayout {
+    package func solveLayout(for function: RecoveredFunction) -> SugiyamaCFGLayout {
         solveLayout(
             functionAddress: function.address,
             blocks: function.blocks,
@@ -94,7 +94,7 @@ public struct SugiyamaCFGLayoutSolver: Sendable {
     ///   3. Two-sided iterative wmedian/barycentric crossing minimization + adjacent transpose + Fenwick counter,
     ///   4. Brandes-Kopf (2001) 4-directional block alignment + strict overlap-free horizontal compaction,
     ///   5. Interval-colored orthogonal channel & outer-gutter back-edge routing with zero node-box overlap.
-    public func solveLayout(
+    package func solveLayout(
         functionAddress: VirtualAddress,
         blocks: [BasicBlock],
         edges: [CFGEdge]
@@ -221,7 +221,7 @@ public struct SugiyamaCFGLayoutSolver: Sendable {
 
     /// Verifies that no interior orthogonal segment of any `CFGEdgeRoute` pierces the interior bounding box
     /// of any non-endpoint `CFGNodeLayout`.
-    public func verifyZeroNodeBoxOverlap(in layout: SugiyamaCFGLayout, insetEpsilon: Double = 1.5) -> Bool {
+    package func verifyZeroNodeBoxOverlap(in layout: SugiyamaCFGLayout, insetEpsilon: Double = 1.5) -> Bool {
         guard layout.nodes.count > 1 && !layout.routes.isEmpty else { return true }
 
         for route in layout.routes {

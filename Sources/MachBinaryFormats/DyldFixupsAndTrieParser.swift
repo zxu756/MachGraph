@@ -57,14 +57,14 @@ public enum DyldChainedImportFormat: UInt32, Sendable, Codable, Hashable {
     case addend64 = 3
 }
 
-public struct DyldChainedImportEntry: Sendable, Codable, Hashable {
-    public let ordinalIndex: Int
-    public let libraryOrdinal: Int
-    public let isWeakImport: Bool
-    public let symbolName: String
-    public let addend: Int64
+struct DyldChainedImportEntry: Sendable, Codable, Hashable {
+    let ordinalIndex: Int
+    let libraryOrdinal: Int
+    let isWeakImport: Bool
+    let symbolName: String
+    let addend: Int64
 
-    public init(
+    init(
         ordinalIndex: Int,
         libraryOrdinal: Int,
         isWeakImport: Bool,
@@ -81,10 +81,10 @@ public struct DyldChainedImportEntry: Sendable, Codable, Hashable {
 
 // MARK: - Dyld Chained Fixups & Legacy Dyld Info Parser
 
-public enum DyldFixupsAndTrieParser {
-    public static let ptrStartNone: UInt16  = 0xFFFF
-    public static let ptrStartMulti: UInt16 = 0x8000
-    public static let ptrStartLast: UInt16  = 0x8000
+enum DyldFixupsAndTrieParser {
+    static let ptrStartNone: UInt16  = 0xFFFF
+    static let ptrStartMulti: UInt16 = 0x8000
+    static let ptrStartLast: UInt16  = 0x8000
 
     // Legacy Rebase Opcodes
     private static let rebaseOpcodeMask: UInt8                         = 0xF0
@@ -120,7 +120,7 @@ public enum DyldFixupsAndTrieParser {
     private static let bindSubopcodeThreadedApply: UInt8               = 0x01
 
     /// Parses `LC_DYLD_CHAINED_FIXUPS` header, import table, segment starts, and page pointer chains.
-    public static func parseChainedFixups(
+    static func parseChainedFixups(
         sliceData: Data,
         sliceFileOffset: FileOffset,
         fixupsOffset: Int,
@@ -606,7 +606,7 @@ public enum DyldFixupsAndTrieParser {
 
     // MARK: - Legacy LC_DYLD_INFO / LC_DYLD_INFO_ONLY Opcode State Machines
 
-    public static func parseLegacyDyldInfo(
+    static func parseLegacyDyldInfo(
         sliceData: Data,
         sliceFileOffset: FileOffset,
         rebaseRange: (offset: Int, size: Int),
@@ -1127,13 +1127,13 @@ public enum ExportTrieParser {
 
 // MARK: - Compressed Mach-O Export Trie Serializer
 
-public enum ExportTrieBuilder {
-    public struct ExportEntry: Sendable, Hashable {
-        public let name: String
-        public let offsetFromImageBase: UInt64
-        public let flags: UInt64
+package enum ExportTrieBuilder {
+    package struct ExportEntry: Sendable, Hashable {
+        package let name: String
+        package let offsetFromImageBase: UInt64
+        package let flags: UInt64
 
-        public init(name: String, offsetFromImageBase: UInt64, flags: UInt64 = 0) {
+        package init(name: String, offsetFromImageBase: UInt64, flags: UInt64 = 0) {
             self.name = name
             self.offsetFromImageBase = offsetFromImageBase
             self.flags = flags
@@ -1147,7 +1147,7 @@ public enum ExportTrieBuilder {
     }
 
     /// Serializes a list of exported symbols into a genuine compressed ULEB128 Mach-O Export Trie.
-    public static func buildTrie(entries: [ExportEntry]) -> Data {
+    package static func buildTrie(entries: [ExportEntry]) -> Data {
         guard !entries.isEmpty else {
             return Data([0x00, 0x00])
         }

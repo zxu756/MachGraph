@@ -7,10 +7,10 @@ import MachA64Decoder
 /// Canonical table of C / POSIX / BSD-Darwin / C++ ABI / Objective-C / embedded Perl runtime
 /// functions verified never to return to their caller via SDK header `noreturn` attributes,
 /// compiler/ABI specifications, and corpus call-site evidence (`Scripts/acceptance/noreturn-evidence.json`).
-public enum KnownNoreturnSymbols {
-    public static let maxPropagationIterations: Int = 16
+package enum KnownNoreturnSymbols {
+    package static let maxPropagationIterations: Int = 16
 
-    public static let unprefixedNames: Set<String> = [
+    package static let unprefixedNames: Set<String> = [
         // ISO C & POSIX
         "abort", "exit", "_exit", "_Exit", "quick_exit",
         "longjmp", "_longjmp", "siglongjmp", "pthread_exit",
@@ -33,7 +33,7 @@ public enum KnownNoreturnSymbols {
     ]
 
     /// Checks whether a Mach-O / ELF / stub symbol name refers to a known `noreturn` function.
-    public static func matchesSymbolName(_ rawName: String) -> Bool {
+    package static func matchesSymbolName(_ rawName: String) -> Bool {
         var cleaned = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return false }
 
@@ -66,7 +66,7 @@ public enum KnownNoreturnSymbols {
     /// Computes all `noreturn` function entry addresses in `image` by seeding imported/symbol-named
     /// noreturn functions and running bounded fixed-point propagation (`maxIterations`) over internal
     /// wrapper functions whose every reachable path terminates in a noreturn call, noreturn tail-jump, or trap.
-    public static func resolveNoreturnAddresses(
+    package static func resolveNoreturnAddresses(
         image: LoadedBinaryImage,
         boundaries: [DiscoveredFunctionBoundary],
         instructionsByFunction: [VirtualAddress: [A64DecodedInstruction]],
@@ -285,11 +285,11 @@ public enum KnownNoreturnSymbols {
 
 // MARK: - Directed Block Pair & CFG Builder Configuration
 
-public struct CFGDirectedPair: Sendable, Codable, Hashable {
-    public let sourceBlockID: Int
-    public let targetBlockID: Int
+package struct CFGDirectedPair: Sendable, Codable, Hashable {
+    package let sourceBlockID: Int
+    package let targetBlockID: Int
 
-    public init(sourceBlockID: Int, targetBlockID: Int) {
+    package init(sourceBlockID: Int, targetBlockID: Int) {
         self.sourceBlockID = sourceBlockID
         self.targetBlockID = targetBlockID
     }
@@ -318,21 +318,21 @@ public struct CFGBuilderConfiguration: Sendable, Codable, Hashable {
 
 // MARK: - Structural Complexity & Intermediate CFG Representation
 
-public struct CFGStructuralMetrics: Sendable, Codable, Hashable {
-    public let blockCount: Int
-    public let edgeCount: Int
-    public let entryBlockCount: Int
-    public let exitBlockCount: Int
-    public let conditionalBranchBlockCount: Int
-    public let switchDispatchBlockCount: Int
-    public let unreachableBlockCount: Int
-    public let instructionCount: Int
-    public let cyclomaticComplexity: Int
-    public let maxInDegree: Int
-    public let maxOutDegree: Int
-    public let averageInstructionsPerBlock: Double
+struct CFGStructuralMetrics: Sendable, Codable, Hashable {
+    let blockCount: Int
+    let edgeCount: Int
+    let entryBlockCount: Int
+    let exitBlockCount: Int
+    let conditionalBranchBlockCount: Int
+    let switchDispatchBlockCount: Int
+    let unreachableBlockCount: Int
+    let instructionCount: Int
+    let cyclomaticComplexity: Int
+    let maxInDegree: Int
+    let maxOutDegree: Int
+    let averageInstructionsPerBlock: Double
 
-    public init(
+    init(
         blockCount: Int,
         edgeCount: Int,
         entryBlockCount: Int,
@@ -361,26 +361,26 @@ public struct CFGStructuralMetrics: Sendable, Codable, Hashable {
     }
 }
 
-public struct BuiltFunctionCFG: Sendable, Codable, Hashable, Identifiable {
-    public var id: UInt64 { functionAddress.rawValue }
-    public let functionAddress: VirtualAddress
-    public let endAddress: VirtualAddress
-    public let name: String
-    public let demangledName: String
-    public let blocks: [BasicBlock]
-    public let edges: [CFGEdge]
-    public let jumpTables: [SwitchJumpTable]
-    public let prologueAnalysis: A64PrologueEpilogueAnalysis
-    public let isLeaf: Bool
-    public let isThunk: Bool
-    public let usesPAC: Bool
-    public let stackFrameBytes: Int
-    public let cyclomaticComplexity: Int
-    public let unreachableBlockIDs: [Int]
-    public let tailCallTargets: [VirtualAddress]
-    public let metrics: CFGStructuralMetrics
+package struct BuiltFunctionCFG: Sendable, Codable, Hashable, Identifiable {
+    package var id: UInt64 { functionAddress.rawValue }
+    package let functionAddress: VirtualAddress
+    package let endAddress: VirtualAddress
+    package let name: String
+    package let demangledName: String
+    package let blocks: [BasicBlock]
+    package let edges: [CFGEdge]
+    package let jumpTables: [SwitchJumpTable]
+    package let prologueAnalysis: A64PrologueEpilogueAnalysis
+    package let isLeaf: Bool
+    package let isThunk: Bool
+    package let usesPAC: Bool
+    package let stackFrameBytes: Int
+    package let cyclomaticComplexity: Int
+    package let unreachableBlockIDs: [Int]
+    package let tailCallTargets: [VirtualAddress]
+    let metrics: CFGStructuralMetrics
 
-    public init(
+    init(
         functionAddress: VirtualAddress,
         endAddress: VirtualAddress,
         name: String,
@@ -431,7 +431,7 @@ public struct CFGBuilderEngine: Sendable {
     // MARK: - Primary CFG Construction Entry Points
 
     /// Builds a complete `BuiltFunctionCFG` from a `DiscoveredFunctionBoundary`, decoded instructions, and recovered switch tables.
-    public func buildCFG(
+    package func buildCFG(
         boundary: DiscoveredFunctionBoundary,
         instructions: [A64DecodedInstruction],
         jumpTables: [SwitchJumpTable] = [],
@@ -454,7 +454,7 @@ public struct CFGBuilderEngine: Sendable {
     }
 
     /// Leader-identification pass + basic block partitioning + control-flow edge construction + ABI frame/PAC inspection.
-    public func buildCFG(
+    package func buildCFG(
         functionAddress: VirtualAddress,
         endAddress: VirtualAddress? = nil,
         name: String,
@@ -956,7 +956,7 @@ public struct CFGBuilderEngine: Sendable {
 
     /// Annotates `BasicBlock.loopDepth` and `CFGEdge.isBackEdge` using Lengauer-Tarjan natural loop results,
     /// assembling a finalized `RecoveredFunction`.
-    public func finalizeRecoveredFunction(
+    func finalizeRecoveredFunction(
         from cfg: BuiltFunctionCFG,
         dominatorTree: [DominatorTreeNode],
         naturalLoops: [NaturalLoop],
@@ -990,7 +990,7 @@ public struct CFGBuilderEngine: Sendable {
     }
 
     /// Pure transformation updating `BasicBlock.loopDepth` and `CFGEdge.isBackEdge`.
-    public func annotateLoopAndBackEdgeMetadata(
+    func annotateLoopAndBackEdgeMetadata(
         blocks: [BasicBlock],
         edges: [CFGEdge],
         naturalLoops: [NaturalLoop],
@@ -1035,7 +1035,7 @@ public struct CFGBuilderEngine: Sendable {
     }
 
     /// Identifies SSA critical edges: edges `(u -> v)` where `u` has multiple successors AND `v` has multiple predecessors.
-    public func criticalEdges(in cfg: BuiltFunctionCFG) -> [CFGEdge] {
+    package func criticalEdges(in cfg: BuiltFunctionCFG) -> [CFGEdge] {
         var outDeg: [Int: Int] = [:]
         var inDeg: [Int: Int] = [:]
         for b in cfg.blocks {
@@ -1048,7 +1048,7 @@ public struct CFGBuilderEngine: Sendable {
     }
 
     /// Removes all unreachable blocks from `cfg`, optionally compacting block IDs to `0..<count`.
-    public func pruneUnreachableBlocks(
+    package func pruneUnreachableBlocks(
         in cfg: BuiltFunctionCFG,
         renumberCompactly: Bool = true
     ) -> BuiltFunctionCFG {
@@ -1091,7 +1091,7 @@ public struct CFGBuilderEngine: Sendable {
         )
     }
 
-    public func computeStructuralMetrics(
+    func computeStructuralMetrics(
         blocks: [BasicBlock],
         edges: [CFGEdge],
         reachableBlockIDs: Set<Int>

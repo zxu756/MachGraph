@@ -3,7 +3,7 @@ import MachGraphModels
 
 // MARK: - 64-Bit ELF Loader (System V ABI — AArch64 / x86_64 / RISC-V)
 
-public enum ELF64Loader {
+package enum ELF64Loader {
     private static let elfClass64: UInt8          = 2
     private static let elfData2LSB: UInt8         = 1
     private static let elfData2MSB: UInt8         = 2
@@ -69,7 +69,7 @@ public enum ELF64Loader {
         let pMemSz: UInt64
     }
 
-    public static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
+    package static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
         guard data.count >= 64 else {
             throw MachGraphError.unexpectedEOF(offset: 0, requested: 64, available: data.count)
         }
@@ -660,7 +660,7 @@ public enum ELF64Loader {
 
 // MARK: - PE32+ (64-Bit Windows Portable Executable — ARM64 / x86_64) Loader
 
-public enum PE32PlusLoader {
+package enum PE32PlusLoader {
     private static let mzMagic: UInt16                 = 0x5A4D
     private static let peSignature: UInt32             = 0x0000_4550
     private static let pe32PlusOptionalMagic: UInt16   = 0x020B
@@ -686,7 +686,7 @@ public enum PE32PlusLoader {
         let characteristics: UInt32
     }
 
-    public static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
+    package static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
         guard data.count >= 0x40 else {
             throw MachGraphError.unexpectedEOF(offset: 0, requested: 64, available: data.count)
         }
@@ -1132,8 +1132,8 @@ public enum PE32PlusLoader {
 
 // MARK: - WebAssembly 1.0 (.wasm) Binary Module Loader
 
-public enum WasmModuleLoader {
-    public static let wasmSyntheticBaseAddress = VirtualAddress(0x1000_0000)
+package enum WasmModuleLoader {
+    package static let wasmSyntheticBaseAddress = VirtualAddress(0x1000_0000)
 
     private struct WasmFuncSignature: Sendable {
         let params: [String]
@@ -1146,7 +1146,7 @@ public enum WasmModuleLoader {
         }
     }
 
-    public static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
+    package static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {
         guard data.count >= 8 else {
             throw MachGraphError.unexpectedEOF(offset: 0, requested: 8, available: data.count)
         }
@@ -1516,9 +1516,9 @@ public enum WasmModuleLoader {
 
 // MARK: - Printable String, ObjC Selector & Entropy Scanner
 
-public enum StringAndEntropyScanner {
+enum StringAndEntropyScanner {
     /// Scans data-bearing sections for ASCII/UTF-8 (`>= minLength`), UTF-16LE literals, and `__objc_methname` selectors.
-    public static func extractStrings(
+    static func extractStrings(
         sliceData: Data,
         sliceFileOffset: FileOffset,
         sections: [BinarySection],
@@ -1742,7 +1742,7 @@ public enum StringAndEntropyScanner {
     }
 
     /// Computes Shannon entropy in `[0.0, 8.0]` bits/byte for a slice subrange.
-    public static func sectionEntropy(sliceData: Data, offset: Int, size: Int) -> Double {
+    static func sectionEntropy(sliceData: Data, offset: Int, size: Int) -> Double {
         guard offset >= 0 && size > 0 && offset < sliceData.count else { return 0.0 }
         let clamped = min(size, sliceData.count - offset)
         let bytes = Array(sliceData[(sliceData.startIndex + offset)..<(sliceData.startIndex + offset + clamped)])
@@ -1750,12 +1750,12 @@ public enum StringAndEntropyScanner {
     }
 
     /// Computes whole-buffer Shannon entropy.
-    public static func overallEntropy(of data: Data) -> Double {
+    static func overallEntropy(of data: Data) -> Double {
         BinaryHashAndEntropy.shannonEntropy(of: data)
     }
 
     /// Computes fixed-window `EntropyRegionSample` slices across a loaded binary image for entropy heatmaps.
-    public static func computeEntropySamples(
+    static func computeEntropySamples(
         data: Data,
         image: LoadedBinaryImage,
         windowSize: Int = 256

@@ -16,7 +16,7 @@ import MachGraphModels
 ///     which rejects all-ones element masks (`(imms & levels) == levels`); `false` for bitfield ops.
 ///   - regSize: Target register width in bits (`32` or `64`).
 /// - Returns: `(wmask, tmask)` replicated to `regSize` bits, or `nil` if the encoding is reserved/undefined.
-public func DecodeBitMasks(
+func DecodeBitMasks(
     immN: UInt32,
     imms: UInt32,
     immr: UInt32,
@@ -64,8 +64,7 @@ public func DecodeBitMasks(
 }
 
 /// Lowercase Swift convenience alias for `DecodeBitMasks`.
-@inlinable
-public func decodeBitMasks(
+func decodeBitMasks(
     immN: UInt32,
     imms: UInt32,
     immr: UInt32,
@@ -79,7 +78,7 @@ public func decodeBitMasks(
 ///
 /// Determines whether `value` can be represented as an ARM64 logical bitmask immediate of width `regSize`
 /// (`32` or `64`), returning `(n, imms, immr)` when encodable or `nil` otherwise.
-public func encodeBitmaskImmediate(
+func encodeBitmaskImmediate(
     _ value: UInt64,
     regSize: Int
 ) -> (n: UInt32, imms: UInt32, immr: UInt32)? {
@@ -129,8 +128,7 @@ public func encodeBitmaskImmediate(
 }
 
 /// Sign-extends the lowest `bits` (`1...64`) of `value` into a 64-bit signed integer.
-@inlinable
-public func signExtend(_ value: UInt64, bits: Int) -> Int64 {
+func signExtend(_ value: UInt64, bits: Int) -> Int64 {
     precondition(bits >= 1 && bits <= 64, "Bit width for signExtend must be in 1...64")
     if bits == 64 {
         return Int64(bitPattern: value)
@@ -143,7 +141,7 @@ public func signExtend(_ value: UInt64, bits: Int) -> Int64 {
 /// Expands an ARM64 8-bit VFP/SIMD floating-point immediate (`FMOV <Sd|Dd|Hd>, #imm`) to `Double`.
 ///
 /// Architectural definition: `(-1)^imm8<7> * (1 + imm8<3:0>/16) * 2^exp` where `exp` is in `-3...4`.
-public func decodeVFPExpandImm8(_ imm8: UInt8) -> Double {
+func decodeVFPExpandImm8(_ imm8: UInt8) -> Double {
     let signBit = UInt64((imm8 >> 7) & 1) << 63
     let b6 = (imm8 >> 6) & 1
     let notB6 = UInt64(b6 ^ 1)
@@ -158,7 +156,7 @@ public func decodeVFPExpandImm8(_ imm8: UInt8) -> Double {
 /// Inverse of `decodeVFPExpandImm8(_:)`: encodes an exact IEEE-754 `Double` into an ARM64 8-bit FP immediate.
 ///
 /// Returns `nil` if `value` is zero, NaN, infinity, or outside the representable 8-bit VFP set.
-public func encodeVFPImm8(_ value: Double) -> UInt8? {
+func encodeVFPImm8(_ value: Double) -> UInt8? {
     guard value.isFinite && value != 0.0 else { return nil }
     let bits = value.bitPattern
     // Lower 48 fraction bits must be zero (only top 4 mantissa bits are encoded)
@@ -185,10 +183,9 @@ public func encodeVFPImm8(_ value: Double) -> UInt8? {
 
 // MARK: - Low-Level Bit & Mask Utilities
 
-public enum A64BitUtils {
+enum A64BitUtils {
     /// Extracts inclusive bit slice `word[msb:lsb]`.
-    @inlinable
-    public static func extract(_ word: UInt32, _ msb: Int, _ lsb: Int) -> UInt32 {
+    static func extract(_ word: UInt32, _ msb: Int, _ lsb: Int) -> UInt32 {
         let width = msb - lsb + 1
         if width >= 32 {
             return word >> lsb
@@ -198,35 +195,30 @@ public enum A64BitUtils {
     }
 
     /// Extracts single bit `word[index]` as `0` or `1`.
-    @inlinable
-    public static func bit(_ word: UInt32, _ index: Int) -> UInt32 {
+    static func bit(_ word: UInt32, _ index: Int) -> UInt32 {
         (word >> index) & 1
     }
 
     /// Extracts single bit `word[index]` as `Bool`.
-    @inlinable
-    public static func flag(_ word: UInt32, _ index: Int) -> Bool {
+    static func flag(_ word: UInt32, _ index: Int) -> Bool {
         ((word >> index) & 1) != 0
     }
 
     /// Returns index (`0...31`) of the highest set bit, or `-1` if `value == 0`.
-    @inlinable
-    public static func highestSetBit(_ value: UInt32) -> Int {
+    static func highestSetBit(_ value: UInt32) -> Int {
         guard value != 0 else { return -1 }
         return 31 - value.leadingZeroBitCount
     }
 
     /// Returns a mask with the lowest `count` (`0...64`) bits set to `1`.
-    @inlinable
-    public static func onesMask(_ count: Int) -> UInt64 {
+    static func onesMask(_ count: Int) -> UInt64 {
         if count <= 0 { return 0 }
         if count >= 64 { return UInt64.max }
         return (UInt64(1) << count) - 1
     }
 
     /// Rotates `value` right by `shift` bits within an `width`-bit (`1...64`) lane.
-    @inlinable
-    public static func rotateRight(_ value: UInt64, by shift: Int, width: Int) -> UInt64 {
+    static func rotateRight(_ value: UInt64, by shift: Int, width: Int) -> UInt64 {
         let mask = onesMask(width)
         let v = value & mask
         guard width > 1 else { return v }
@@ -236,8 +228,7 @@ public enum A64BitUtils {
     }
 
     /// Replicates an `elementWidth`-bit pattern across `totalWidth` bits (`32` or `64`).
-    @inlinable
-    public static func replicateElement(_ elem: UInt64, elementWidth: Int, totalWidth: Int) -> UInt64 {
+    static func replicateElement(_ elem: UInt64, elementWidth: Int, totalWidth: Int) -> UInt64 {
         let elemMask = onesMask(elementWidth)
         var acc = elem & elemMask
         var w = elementWidth
@@ -249,7 +240,7 @@ public enum A64BitUtils {
     }
 
     /// Evaluates ARM64 AdvSIMD 64-bit modified immediate (`cmode=1110, op=1`: each byte replicated from bit).
-    public static func expandSIMDByteMaskImmediate(_ imm8: UInt8) -> UInt64 {
+    static func expandSIMDByteMaskImmediate(_ imm8: UInt8) -> UInt64 {
         var result: UInt64 = 0
         for byteIndex in 0..<8 {
             if ((imm8 >> byteIndex) & 1) != 0 {
@@ -260,7 +251,7 @@ public enum A64BitUtils {
     }
 
     /// Inverse of `expandSIMDByteMaskImmediate(_:)`.
-    public static func compressSIMDByteMaskImmediate(_ value: UInt64) -> UInt8? {
+    static func compressSIMDByteMaskImmediate(_ value: UInt64) -> UInt8? {
         var imm8: UInt8 = 0
         for byteIndex in 0..<8 {
             let byte = UInt8(truncatingIfNeeded: value >> (byteIndex * 8))
@@ -276,19 +267,19 @@ public enum A64BitUtils {
 
 // MARK: - ARM64 / Apple Silicon System Register Table
 
-public struct A64SystemRegisterDescriptor: Sendable, Codable, Hashable {
-    public let name: String
-    public let encoding: UInt16
-    public let op0: UInt8
-    public let op1: UInt8
-    public let crn: UInt8
-    public let crm: UInt8
-    public let op2: UInt8
-    public let summary: String
-    public let isReadable: Bool
-    public let isWritable: Bool
+struct A64SystemRegisterDescriptor: Sendable, Codable, Hashable {
+    let name: String
+    let encoding: UInt16
+    let op0: UInt8
+    let op1: UInt8
+    let crn: UInt8
+    let crm: UInt8
+    let op2: UInt8
+    let summary: String
+    let isReadable: Bool
+    let isWritable: Bool
 
-    public init(
+    init(
         name: String,
         op0: UInt8,
         op1: UInt8,
@@ -318,10 +309,9 @@ public struct A64SystemRegisterDescriptor: Sendable, Codable, Hashable {
     }
 }
 
-public enum A64SystemRegisterTable {
+package enum A64SystemRegisterTable {
     /// Packs `(op0, op1, CRn, CRm, op2)` into the 16-bit system register identifier `word[20:5]`.
-    @inlinable
-    public static func packEncoding(
+    package static func packEncoding(
         op0: UInt32,
         op1: UInt32,
         crn: UInt32,
@@ -338,8 +328,7 @@ public enum A64SystemRegisterTable {
     }
 
     /// Unpacks a 16-bit `word[20:5]` system register identifier into `(op0, op1, CRn, CRm, op2)`.
-    @inlinable
-    public static func unpackEncoding(
+    package static func unpackEncoding(
         _ encoding: UInt16
     ) -> (op0: UInt32, op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) {
         let raw = UInt32(encoding)
@@ -1668,7 +1657,7 @@ public enum A64SystemRegisterTable {
     3 7 14 2 2 rw CNTPS_CVAL_EL1
     """
 
-    public static let allRegisters: [A64SystemRegisterDescriptor] = {
+    static let allRegisters: [A64SystemRegisterDescriptor] = {
         var result: [A64SystemRegisterDescriptor] = []
         result.reserveCapacity(1248)
         for rawLine in rawCatalog.split(whereSeparator: \.isNewline) {
@@ -1730,15 +1719,15 @@ public enum A64SystemRegisterTable {
         return map
     }()
 
-    public static func lookup(encoding: UInt16) -> A64SystemRegisterDescriptor? {
+    static func lookup(encoding: UInt16) -> A64SystemRegisterDescriptor? {
         byReadEncoding[encoding] ?? byWriteEncoding[encoding]
     }
 
-    public static func lookup(encoding: UInt16, isRead: Bool) -> A64SystemRegisterDescriptor? {
+    static func lookup(encoding: UInt16, isRead: Bool) -> A64SystemRegisterDescriptor? {
         isRead ? byReadEncoding[encoding] : byWriteEncoding[encoding]
     }
 
-    public static func name(forEncoding encoding: UInt16) -> String {
+    package static func name(forEncoding encoding: UInt16) -> String {
         if let known = lookup(encoding: encoding) {
             return known.name
         }
@@ -1746,7 +1735,7 @@ public enum A64SystemRegisterTable {
         return "S\(parts.op0)_\(parts.op1)_C\(parts.crn)_C\(parts.crm)_\(parts.op2)"
     }
 
-    public static func name(forEncoding encoding: UInt16, isRead: Bool) -> String {
+    package static func name(forEncoding encoding: UInt16, isRead: Bool) -> String {
         if let known = lookup(encoding: encoding, isRead: isRead) {
             return known.name
         }
@@ -1755,7 +1744,7 @@ public enum A64SystemRegisterTable {
     }
 
     /// Parses either a known architectural name (e.g. `TPIDR_EL0`, `nzcv`) or generic `S3_3_C13_C0_2` syntax.
-    public static func encoding(forName rawName: String) -> UInt16? {
+    package static func encoding(forName rawName: String) -> UInt16? {
         let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = trimmed.lowercased()
         if let known = byLowerName[lower] {
@@ -1781,8 +1770,8 @@ public enum A64SystemRegisterTable {
 
 // MARK: - Barrier Options & Prefetch Operations
 
-public enum A64BarrierOptionTable {
-    public static func name(forCRm crm: UInt32) -> String {
+enum A64BarrierOptionTable {
+    static func name(forCRm crm: UInt32) -> String {
         switch crm & 0xF {
         case 0x1: return "oshld"
         case 0x2: return "oshst"
@@ -1800,12 +1789,12 @@ public enum A64BarrierOptionTable {
         }
     }
 
-    public static func architecturalName(forCRm crm: UInt32) -> String {
+    static func architecturalName(forCRm crm: UInt32) -> String {
         let n = name(forCRm: crm)
         return n.hasPrefix("#") ? n : n.uppercased()
     }
 
-    public static func crm(forText rawText: String) -> UInt32? {
+    static func crm(forText rawText: String) -> UInt32? {
         let lower = rawText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch lower {
         case "oshld": return 0x1
@@ -1833,8 +1822,8 @@ public enum A64BarrierOptionTable {
     }
 }
 
-public enum A64PrefetchOpTable {
-    public static func name(forCode code: UInt32) -> String {
+enum A64PrefetchOpTable {
+    static func name(forCode code: UInt32) -> String {
         let c = code & 0x1F
         let typePart = (c >> 3) & 0x3
         let targetPart = (c >> 1) & 0x3
@@ -1863,7 +1852,7 @@ public enum A64PrefetchOpTable {
         return String(format: "#0x%02x", c)
     }
 
-    public static func code(forText rawText: String) -> UInt32? {
+    static func code(forText rawText: String) -> UInt32? {
         let lower = rawText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         for code: UInt32 in 0..<32 {
             if name(forCode: code) == lower {
@@ -1883,24 +1872,24 @@ public enum A64PrefetchOpTable {
 
 // MARK: - PSTATE Immediate Fields & System Operation Names
 
-public struct A64SysPreferredAlias: Sendable, Equatable {
-    public let mnemonic: String
-    public let operation: String?
-    public let takesRegister: Bool
+struct A64SysPreferredAlias: Sendable, Equatable {
+    let mnemonic: String
+    let operation: String?
+    let takesRegister: Bool
 
-    public init(mnemonic: String, operation: String?, takesRegister: Bool) {
+    init(mnemonic: String, operation: String?, takesRegister: Bool) {
         self.mnemonic = mnemonic
         self.operation = operation
         self.takesRegister = takesRegister
     }
 }
 
-public enum A64SystemOpHelpers {
-    public static func barrierFallbackSysRegName(crm: UInt32, op2: UInt32) -> String {
+enum A64SystemOpHelpers {
+    static func barrierFallbackSysRegName(crm: UInt32, op2: UInt32) -> String {
         "S0_3_C3_C\(crm & 0xF)_\(op2 & 0x7)"
     }
 
-    public static let allBarrierFallbackSysRegLowerNames: Set<String> = {
+    static let allBarrierFallbackSysRegLowerNames: Set<String> = {
         var names: Set<String> = []
         names.reserveCapacity(128)
         for crm: UInt32 in 0..<16 {
@@ -1911,7 +1900,7 @@ public enum A64SystemOpHelpers {
         return names
     }()
 
-    public static func pstateFieldName(op1: UInt32, op2: UInt32) -> String? {
+    static func pstateFieldName(op1: UInt32, op2: UInt32) -> String? {
         switch (op1, op2) {
         case (0b000, 0b101): return "SPSel"
         case (0b011, 0b110): return "DAIFSet"
@@ -1925,7 +1914,7 @@ public enum A64SystemOpHelpers {
         }
     }
 
-    public static let allPstateFieldLowerNames: Set<String> = {
+    static let allPstateFieldLowerNames: Set<String> = {
         var names: Set<String> = []
         for op1: UInt32 in 0..<8 {
             for op2: UInt32 in 0..<8 {
@@ -1938,7 +1927,7 @@ public enum A64SystemOpHelpers {
     }()
 
     /// Preferred architectural / Apple LLVM alias for `SYS` (`op0 == 0b01`, `L == 0`) by instruction bitfields.
-    public static func sysPreferredAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> A64SysPreferredAlias? {
+    static func sysPreferredAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> A64SysPreferredAlias? {
         switch (op1, crn, crm, op2) {
         // op1 = 0, CRn = 7: IC / DC / AT (EL1)
         case (0, 7, 1, 0):  return .init(mnemonic: "ic", operation: "ialluis", takesRegister: false)
@@ -2071,7 +2060,7 @@ public enum A64SystemOpHelpers {
         }
     }
 
-    public static func sysMaintenanceAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> String? {
+    static func sysMaintenanceAlias(op1: UInt32, crn: UInt32, crm: UInt32, op2: UInt32) -> String? {
         guard let preferred = sysPreferredAlias(op1: op1, crn: crn, crm: crm, op2: op2) else {
             return nil
         }
@@ -2084,10 +2073,10 @@ public enum A64SystemOpHelpers {
 
 // MARK: - Register, Shift & Extend Text Parsers (Shared with Inline Assembler)
 
-public enum A64RegisterParser {
+enum A64RegisterParser {
     /// Parses canonical & ABI register names (`x0`..`x30`, `w0`..`w30`, `fp`, `lr`, `sp`, `wsp`, `xzr`, `wzr`,
     /// `b0`..`b31`, `h0`..`h31`, `s0`..`s31`, `d0`..`d31`, `q0`..`q31`, `v0.16b`, etc.).
-    public static func parse(_ rawToken: String) -> A64Register? {
+    static func parse(_ rawToken: String) -> A64Register? {
         let lower = rawToken.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         switch lower {
         case "sp": return .sp
@@ -2136,9 +2125,9 @@ public enum A64RegisterParser {
     }
 }
 
-public enum A64ShiftExtendParser {
+enum A64ShiftExtendParser {
     /// Parses a shift or extend modifier clause such as `"lsl #12"`, `"asr #3"`, `"uxtw #2"`, `"sxtx"`.
-    public static func parse(_ rawClause: String) -> A64ShiftExtend? {
+    static func parse(_ rawClause: String) -> A64ShiftExtend? {
         let trimmed = rawClause.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let parts = trimmed.split(whereSeparator: { $0 == " " || $0 == "\t" })
         guard let opToken = parts.first else { return nil }
@@ -2189,7 +2178,7 @@ public enum A64ShiftExtendParser {
     }
 
     /// Encodes an extended-register option code (`0...7`) and 3-bit shift (`0...4`).
-    public static func encodeExtendOption(_ ext: A64ShiftExtend) -> (option: UInt32, imm3: UInt32)? {
+    static func encodeExtendOption(_ ext: A64ShiftExtend) -> (option: UInt32, imm3: UInt32)? {
         switch ext {
         case .uxtb(let s) where s <= 4: return (0b000, UInt32(s))
         case .uxth(let s) where s <= 4: return (0b001, UInt32(s))
@@ -2204,7 +2193,7 @@ public enum A64ShiftExtendParser {
     }
 
     /// Decodes a 3-bit `option` and shift amount into `A64ShiftExtend`.
-    public static func decodeExtendOption(option: UInt32, shift: UInt8) -> A64ShiftExtend {
+    static func decodeExtendOption(option: UInt32, shift: UInt8) -> A64ShiftExtend {
         switch option & 0x7 {
         case 0b000: return .uxtb(shift)
         case 0b001: return .uxth(shift)
@@ -2220,8 +2209,8 @@ public enum A64ShiftExtendParser {
 
 // MARK: - Darwin XNU ARM64 BSD/Mach Syscall Metadata Helper
 
-public enum A64DarwinSyscallTable {
-    public static func bsdOrMachSyscallName(forX16 rawNumber: Int64) -> String? {
+enum A64DarwinSyscallTable {
+    static func bsdOrMachSyscallName(forX16 rawNumber: Int64) -> String? {
         // Negative numbers on Darwin ARM64 are Mach traps (e.g. -26 = mach_reply_port, -31 = mach_msg_trap)
         if rawNumber < 0 {
             switch rawNumber {

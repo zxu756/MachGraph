@@ -122,8 +122,10 @@ class TestKnownMnemonicsSwiftRenderingAndCheck(_NoXcrunTestCase):
         self.assertIn("Random words (seeds 17, 20261117 x 100,000): 2", swift_text)
         self.assertIn("Total unique mnemonics: 8", swift_text)
 
-        self.assertIn("public enum A64KnownMnemonics {", swift_text)
-        self.assertIn("public static let all: Set<String> = [", swift_text)
+        self.assertIn("enum A64KnownMnemonics {", swift_text)
+        self.assertNotIn("public enum A64KnownMnemonics", swift_text)
+        self.assertIn("static let all: Set<String> = [", swift_text)
+        self.assertNotIn("public static let all", swift_text)
 
         quoted_entries = re.findall(r'^\s*"([^"]+)",?\s*$', swift_text, flags=re.MULTILINE)
         expected_entries = ["add", "autdza", "bl", "hint", "ret", "shrn", "ushll", "xtn"]

@@ -3,7 +3,7 @@ import Testing
 import MachGraphModels
 @testable import MachBinaryFormats
 import MachA64Decoder
-import MachCFGEngine
+@testable import MachCFGEngine
 
 @Suite("M4 Stage 2: CFG Engine Performance Fast Paths & Zero-Drift Equivalence")
 struct MachCFGEnginePerfTests {
@@ -108,5 +108,73 @@ struct MachCFGEnginePerfTests {
 
         let missing = try coordinator.analyzeCFGOnly(image, data: data, selector: .symbol("__nonexistent_symbol__"))
         #expect(missing.functions.isEmpty)
+    }
+
+    @Test("M5 Stage 2: analyzeCFGOnly(fileURL:preferredSliceIndex:selector:) matches data-loaded analyzeCFGOnly and analyzeBinary")
+    func analyzeCFGOnlyFileURLMatchesDataLoadedVersion() throws {
+        let url = RepoFixtures.thinARM64SampleURL
+        let data = try RepoFixtures.thinARM64SampleData()
+        let image = try UniversalBinaryDispatcher.load(data: data, filePath: url.path, fileName: url.lastPathComponent)
+
+        let cliOptions = BinaryAnalysisOptions(computeSugiyamaLayouts: false, computePostDominatorTrees: false)
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+
+        let expectedFull = try coordinator.analyzeCFGOnly(image, data: data, selector: nil)
+        let fromURLFull = try coordinator.analyzeCFGOnly(fileURL: url)
+        #expect(fromURLFull.image.sha256Hex == expectedFull.image.sha256Hex)
+        #expect(fromURLFull.image.fileName == expectedFull.image.fileName)
+        #expect(fromURLFull.image.selectedSliceIndex == expectedFull.image.selectedSliceIndex)
+        #expect(fromURLFull.image.segments == expectedFull.image.segments)
+        #expect(fromURLFull.image.symbols == expectedFull.image.symbols)
+        #expect(fromURLFull.functions == expectedFull.functions)
+        #expect(fromURLFull.boundariesByAddress == expectedFull.boundariesByAddress)
+        #expect(fromURLFull.inlineJumpTableRanges == expectedFull.inlineJumpTableRanges)
+
+        let fullIndexFromURL = try coordinator.analyzeBinary(fileURL: url)
+        #expect(fromURLFull.functions == fullIndexFromURL.functions)
+
+        for fn in expectedFull.functions {
+            let expectedByAddr = try coordinator.analyzeCFGOnly(image, data: data, selector: .address(fn.address))
+            let urlByAddr = try coordinator.analyzeCFGOnly(fileURL: url, selector: .address(fn.address))
+            #expect(urlByAddr.functions == expectedByAddr.functions)
+
+            let expectedBySym = try coordinator.analyzeCFGOnly(image, data: data, selector: .symbol(fn.name))
+            let urlBySym = try coordinator.analyzeCFGOnly(fileURL: url, selector: .symbol(fn.name))
+            #expect(urlBySym.functions == expectedBySym.functions)
+        }
+
+        let missingSym = try coordinator.analyzeCFGOnly(fileURL: url, selector: .symbol("__no_such_symbol__"))
+        #expect(missingSym.functions.isEmpty)
+
+        // Verify preferredSliceIndex forwarding on Universal Fat /bin/ls
+        let lsURL = URL(fileURLWithPath: "/bin/ls")
+        if FileManager.default.fileExists(atPath: lsURL.path) {
+            let lsData = try Data(contentsOf: lsURL, options: [.mappedIfSafe])
+            let lsSlices = try UniversalBinaryDispatcher.parseUniversalSlices(data: lsData)
+            let preferredIdx = try UniversalBinaryDispatcher.selectPreferredSliceIndex(in: lsSlices, preferredSliceIndex: nil)
+            let lsImage = try UniversalBinaryDispatcher.load(
+                data: lsData,
+                filePath: lsURL.path,
+                fileName: lsURL.lastPathComponent,
+                preferredSliceIndex: preferredIdx
+            )
+            if let entry = lsImage.entryPoint {
+                let expectedLS = try coordinator.analyzeCFGOnly(lsImage, data: lsData, selector: .address(entry))
+                let urlLSDefault = try coordinator.analyzeCFGOnly(fileURL: lsURL, selector: .address(entry))
+                let urlLSExplicitSlice = try coordinator.analyzeCFGOnly(
+                    fileURL: lsURL,
+                    preferredSliceIndex: preferredIdx,
+                    selector: .address(entry)
+                )
+                #expect(urlLSDefault.functions == expectedLS.functions)
+                #expect(urlLSExplicitSlice.functions == expectedLS.functions)
+            }
+        }
+
+        // Nonexistent file must throw MachGraphError.fileNotFound
+        let bogusURL = URL(fileURLWithPath: "/nonexistent/machgraph_m5_stage2_missing_binary")
+        #expect(throws: MachGraphError.self) {
+            _ = try coordinator.analyzeCFGOnly(fileURL: bogusURL)
+        }
     }
 }

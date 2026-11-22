@@ -11,13 +11,7 @@ let package = Package(
         .library(name: "MachBinaryFormats", targets: ["MachBinaryFormats"]),
         .library(name: "MachA64Decoder", targets: ["MachA64Decoder"]),
         .library(name: "MachCFGEngine", targets: ["MachCFGEngine"]),
-        .library(name: "MachMicroDecompiler", targets: ["MachMicroDecompiler"]),
-        .library(name: "MachPatchAndHexEngine", targets: ["MachPatchAndHexEngine"]),
-        .library(name: "MachProjectStore", targets: ["MachProjectStore"]),
-        .library(name: "MachPluginSDK", targets: ["MachPluginSDK"]),
         .library(name: "MachHeadlessCLI", targets: ["MachHeadlessCLI"]),
-        .library(name: "MachWorkbenchShell", targets: ["MachWorkbenchShell"]),
-        .library(name: "MachStudioViews", targets: ["MachStudioViews"]),
         .executable(name: "MachGraph", targets: ["MachGraph"])
     ],
     targets: [

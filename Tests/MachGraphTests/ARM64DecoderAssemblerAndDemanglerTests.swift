@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 import MachGraphModels
-import MachA64Decoder
+@testable import MachA64Decoder
 import MachCFGEngine
 
 @Suite("ARM64 Instruction Decoder, Two-Pass Mini-Assembler, Idioms & Demangler")

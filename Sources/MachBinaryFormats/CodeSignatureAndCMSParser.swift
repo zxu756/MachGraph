@@ -514,20 +514,20 @@ public enum CodeSignatureAndCMSParser {
 
 // MARK: - Handwritten ASN.1 DER / CMS SignedData & CoreEntitlements Walker
 
-public enum ASN1DERWalker {
-    public enum TagClass: UInt8, Sendable {
+enum ASN1DERWalker {
+    enum TagClass: UInt8, Sendable {
         case universal       = 0
         case application     = 1
         case contextSpecific = 2
         case privateClass    = 3
     }
 
-    public struct Node: Sendable {
-        public let tagClass: TagClass
-        public let isConstructed: Bool
-        public let tagNumber: UInt32
-        public let valueBytes: [UInt8]
-        public let children: [Node]
+    struct Node: Sendable {
+        let tagClass: TagClass
+        let isConstructed: Bool
+        let tagNumber: UInt32
+        let valueBytes: [UInt8]
+        let children: [Node]
     }
 
     // OID 2.5.4.3 (id-at-commonName) = 55 04 03
@@ -536,7 +536,7 @@ public enum ASN1DERWalker {
     private static let oidPKCS7SignedData: [UInt8] = [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02]
 
     /// Parses ASN.1 DER bytes into a tree of `Node` values (depth-bounded and bounds-safe).
-    public static func parseNodes(bytes: ArraySlice<UInt8>, depth: Int = 0) -> [Node] {
+    static func parseNodes(bytes: ArraySlice<UInt8>, depth: Int = 0) -> [Node] {
         guard depth <= 24 else { return [] }
         var nodes: [Node] = []
         var cursor = bytes.startIndex
@@ -626,7 +626,7 @@ public enum ASN1DERWalker {
     }
 
     /// Extracts X.509 certificate Subject `commonName` (`2.5.4.3`) strings from a CMS `SignedData` (`0xFADE0B01`) blob.
-    public static func extractCMSSignerCommonNames(cmsData: Data) -> [String] {
+    static func extractCMSSignerCommonNames(cmsData: Data) -> [String] {
         let rawBytes = Array(cmsData)
         let topNodes = parseNodes(bytes: rawBytes[...])
         guard let contentInfo = topNodes.first else { return [] }
@@ -719,7 +719,7 @@ public enum ASN1DERWalker {
         }
     }
 
-    public static func decodeASN1String(_ node: Node) -> String? {
+    static func decodeASN1String(_ node: Node) -> String? {
         guard node.tagClass == .universal else { return nil }
         switch node.tagNumber {
         case 12, 19, 22, 20, 26, 27:
@@ -742,7 +742,7 @@ public enum ASN1DERWalker {
     }
 
     /// Parses Apple CoreEntitlements DER (`0xFADE7172`) key-value dictionary entries into native `EntitlementValue` types.
-    public static func parseDEREntitlements(derData: Data) -> [String: EntitlementValue] {
+    static func parseDEREntitlements(derData: Data) -> [String: EntitlementValue] {
         let bytes = Array(derData)
         let top = parseNodes(bytes: bytes[...])
         guard let root = top.first else { return [:] }
@@ -835,9 +835,9 @@ public enum ASN1DERWalker {
 
 // MARK: - Pure-Swift Ad-Hoc Code Signature Builder (CS_SuperBlob + SHA-256 CS_CodeDirectory)
 
-public enum AdHocCodeSignatureBuilder {
+package enum AdHocCodeSignatureBuilder {
     /// Generates a byte-accurate, page-hashed SHA-256 ad-hoc `CS_SuperBlob` (`0xFADE0CC0`) suitable for Mach-O `__LINKEDIT`.
-    public static func buildSuperBlob(
+    package static func buildSuperBlob(
         binarySliceWithoutSignature: Data,
         identifier: String,
         teamID: String? = nil,

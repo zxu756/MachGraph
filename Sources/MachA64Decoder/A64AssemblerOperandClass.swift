@@ -3,7 +3,7 @@ import MachGraphModels
 
 // MARK: - ARM64 Inline Assembler Operand Lexer, Classifier, Gate & Form Normalizer
 
-public enum A64AssemblerOperandClass: Equatable, Hashable, Sendable {
+enum A64AssemblerOperandClass: Equatable, Hashable, Sendable {
     case gpX                     // x0..x30, xzr, sp, fp, lr
     case gpW                     // w0..w30, wzr, wsp
     case scalarB                 // b0..b31
@@ -19,7 +19,7 @@ public enum A64AssemblerOperandClass: Equatable, Hashable, Sendable {
     case memory                  // [...] or [...]!
     case other                   // condition, sysreg, barrier, prfop, bti opt, c<n>, label, ., .±N, bare address
 
-    public var isScalarFPOrSIMD: Bool {
+    var isScalarFPOrSIMD: Bool {
         switch self {
         case .scalarB, .scalarH, .scalarS, .scalarD, .scalarQ:
             return true
@@ -28,12 +28,12 @@ public enum A64AssemblerOperandClass: Equatable, Hashable, Sendable {
         }
     }
 
-    public var isGP: Bool {
+    var isGP: Bool {
         self == .gpX || self == .gpW
     }
 
     /// SIMD classes: scalar B/H/S/D/Q, vector V.<arrangement>, vector element V.<t>[i], and register list {...}.
-    public var isSIMD: Bool {
+    var isSIMD: Bool {
         switch self {
         case .scalarB, .scalarH, .scalarS, .scalarD, .scalarQ,
              .vector, .vectorElement, .registerList:
@@ -44,17 +44,17 @@ public enum A64AssemblerOperandClass: Equatable, Hashable, Sendable {
     }
 }
 
-public enum A64AssemblerLexicalError: Error, Equatable, Sendable {
+enum A64AssemblerLexicalError: Error, Equatable, Sendable {
     case message(String)
 }
 
-public enum A64AssemblerOperandClassifier {
+package enum A64AssemblerOperandClassifier {
 
-    public static let validVectorArrangements: Set<String> = [
+    package static let validVectorArrangements: Set<String> = [
         "8b", "16b", "4h", "8h", "2s", "4s", "1d", "2d", "1q", "4b", "2h",
     ]
 
-    public static let validVectorElementTypes: Set<String> = [
+    package static let validVectorElementTypes: Set<String> = [
         "b", "h", "s", "d", "q", "4b", "2h",
     ]
 
@@ -70,7 +70,7 @@ public enum A64AssemblerOperandClassifier {
 
     // MARK: - Splitting Mnemonic & Operands Outside [...] and {...}
 
-    public static func splitMnemonicAndOperands(_ statement: String) -> (mnemonic: String, operands: [String]) {
+    package static func splitMnemonicAndOperands(_ statement: String) -> (mnemonic: String, operands: [String]) {
         let trimmed = statement.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let splitIdx = trimmed.firstIndex(where: { $0 == " " || $0 == "\t" }) else {
             return (trimmed.lowercased(), [])
@@ -111,7 +111,7 @@ public enum A64AssemblerOperandClassifier {
 
     // MARK: - Lexical Validation & Single-Operand Classification
 
-    public static func classifyOperands(
+    static func classifyOperands(
         _ operands: [String],
         labels: [String: VirtualAddress] = [:]
     ) throws -> [A64AssemblerOperandClass] {
@@ -123,7 +123,7 @@ public enum A64AssemblerOperandClassifier {
         return result
     }
 
-    public static func classifyOperand(
+    static func classifyOperand(
         _ rawToken: String,
         labels: [String: VirtualAddress] = [:]
     ) throws -> A64AssemblerOperandClass {
@@ -297,7 +297,7 @@ public enum A64AssemblerOperandClassifier {
     // MARK: - Gate for Implemented Mnemonics
 
     /// Set of mnemonics directly dispatched by `A64MiniAssembler.encodeInstruction` (excluding `b.<cond>` / `b<cond>`).
-    public static let implementedMnemonics: Set<String> = [
+    package static let implementedMnemonics: Set<String> = [
         // Hints, barriers, system registers
         "nop", "yield", "wfe", "wfi", "sev", "sevl", "xpaclri",
         "paciasp", "pacibsp", "autiasp", "autibsp", "retaa", "retab",
@@ -343,7 +343,7 @@ public enum A64AssemblerOperandClassifier {
 
     /// Returns `true` if `classes` may proceed to `A64MiniAssembler`'s encoder for an implemented `mnemonic`,
     /// or `false` if a SIMD operand class is present in an unimplemented operand-class sequence (`assemblerUnsupported`).
-    public static func allowsOperandClassesForImplementedMnemonic(
+    static func allowsOperandClassesForImplementedMnemonic(
         mnemonic: String,
         classes: [A64AssemblerOperandClass]
     ) -> Bool {
@@ -540,7 +540,7 @@ public enum A64AssemblerOperandClassifier {
     /// - `v<0..31>` -> `V` (arrangement kept);
     /// - `q/d/s/h/b<0..31>` -> `Q/D/S/H/B`;
     /// - Every number (optional `-`, decimal or `0x` hex, including arrangement counts and lane indices) -> `N`.
-    public static func formatInstructionForm(mnemonic: String, operands: [String]) -> String {
+    package static func formatInstructionForm(mnemonic: String, operands: [String]) -> String {
         let lowerMnem = mnemonic.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !operands.isEmpty else {
             return lowerMnem
@@ -781,7 +781,7 @@ public enum A64AssemblerOperandClassifier {
         return UInt64(clean, radix: 10)
     }
 
-    public static func isValidImmediateLiteral(_ lowerWithHash: String) -> Bool {
+    package static func isValidImmediateLiteral(_ lowerWithHash: String) -> Bool {
         guard lowerWithHash.hasPrefix("#") else { return false }
         let body = String(lowerWithHash.dropFirst())
         guard !body.isEmpty else { return false }

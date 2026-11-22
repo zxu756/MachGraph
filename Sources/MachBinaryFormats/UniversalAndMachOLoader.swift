@@ -1,5 +1,5 @@
 import Foundation
-import MachGraphModels
+@_exported import MachGraphModels
 
 // MARK: - Mach-O 64 & Universal Binary Constants
 
@@ -247,9 +247,9 @@ public enum MachOConstants {
 
 // MARK: - Unified Symbol Demangler Forwarder (`MachOSymbolDemangler` -> `SymbolDemangler.shared`)
 
-public enum MachOSymbolDemangler {
+package enum MachOSymbolDemangler {
     /// Forwards all binary-loader, dyld-trie, and metadata demangling requests to the single unified `SymbolDemangler`.
-    public static func demangle(_ rawName: String) -> String {
+    package static func demangle(_ rawName: String) -> String {
         SymbolDemangler.shared.demangle(rawName)
     }
 }
@@ -541,7 +541,7 @@ public enum UniversalBinaryDispatcher {
     }
 
     /// Wraps an arbitrary raw firmware or shellcode blob into a flat `LoadedBinaryImage`.
-    public static func loadRawBinary(
+    package static func loadRawBinary(
         data: Data,
         filePath: String = "<raw-blob>",
         fileName: String? = nil,
@@ -625,7 +625,7 @@ public enum UniversalBinaryDispatcher {
 
 // MARK: - Mach-O 64 Slice Loader
 
-public enum MachO64Loader {
+enum MachO64Loader {
     private struct RawSectionRecord: Sendable {
         let section: BinarySection
         let reserved1: UInt32
@@ -666,7 +666,7 @@ public enum MachO64Loader {
         let exportTrie: LinkeditBlobRange
     }
 
-    public static func loadSlice(
+    static func loadSlice(
         wholeData: Data,
         sliceOffset: Int,
         sliceSize: Int,

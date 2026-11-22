@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import MachGraphModels
 import MachBinaryFormats
-import MachA64Decoder
+@testable import MachA64Decoder
 import MachCFGEngine
 
 @Suite("M2 Stage 15b: Operand Classes, Wrong-Word Gate, Self-Check, G50, PAC XZR & Reference Table Property Tests")

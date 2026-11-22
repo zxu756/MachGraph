@@ -3,16 +3,16 @@ import MachGraphModels
 
 // MARK: - Post-Dominator & Structured Control-Flow Region Models
 
-public struct PostDominatorTreeNode: Sendable, Codable, Hashable, Identifiable {
-    public var id: Int { blockID }
-    public let blockID: Int
+package struct PostDominatorTreeNode: Sendable, Codable, Hashable, Identifiable {
+    package var id: Int { blockID }
+    package let blockID: Int
     /// Immediate post-dominator `blockID`, or `nil` when post-dominated directly by the procedure's virtual exit.
-    public let immediatePostDominatorID: Int?
-    public let postDominatedChildrenIDs: [Int]
-    public let postDominanceFrontierIDs: [Int]
-    public let depthFromExit: Int
+    package let immediatePostDominatorID: Int?
+    package let postDominatedChildrenIDs: [Int]
+    package let postDominanceFrontierIDs: [Int]
+    package let depthFromExit: Int
 
-    public init(
+    package init(
         blockID: Int,
         immediatePostDominatorID: Int?,
         postDominatedChildrenIDs: [Int] = [],
@@ -27,7 +27,7 @@ public struct PostDominatorTreeNode: Sendable, Codable, Hashable, Identifiable {
     }
 }
 
-public enum StructuredRegionKind: String, Sendable, Codable, Hashable, CaseIterable {
+enum StructuredRegionKind: String, Sendable, Codable, Hashable, CaseIterable {
     case ifThen = "if-then"
     case ifThenElse = "if-then-else"
     case switchDispatch = "switch"
@@ -36,17 +36,17 @@ public enum StructuredRegionKind: String, Sendable, Codable, Hashable, CaseItera
     case selfLoop = "self-loop"
 }
 
-public struct StructuredControlRegion: Sendable, Codable, Hashable, Identifiable {
-    public var id: String { "\(kind.rawValue)@\(headerBlockID)" }
-    public let kind: StructuredRegionKind
-    public let headerBlockID: Int
-    public let thenBlockID: Int?
-    public let elseBlockID: Int?
+struct StructuredControlRegion: Sendable, Codable, Hashable, Identifiable {
+    var id: String { "\(kind.rawValue)@\(headerBlockID)" }
+    let kind: StructuredRegionKind
+    let headerBlockID: Int
+    let thenBlockID: Int?
+    let elseBlockID: Int?
     /// Exact merge (`follow`) block ID computed from the post-dominator tree (`ipdom`), if convergent.
-    public let followMergeBlockID: Int?
-    public let bodyBlockIDs: [Int]
+    let followMergeBlockID: Int?
+    let bodyBlockIDs: [Int]
 
-    public init(
+    init(
         kind: StructuredRegionKind,
         headerBlockID: Int,
         thenBlockID: Int? = nil,
@@ -63,17 +63,17 @@ public struct StructuredControlRegion: Sendable, Codable, Hashable, Identifiable
     }
 }
 
-public struct DominatorAndLoopAnalysisResult: Sendable, Codable, Hashable {
-    public let dominatorTree: [DominatorTreeNode]
-    public let postDominatorTree: [PostDominatorTreeNode]
-    public let naturalLoops: [NaturalLoop]
-    public let backEdgePairs: Set<CFGDirectedPair>
-    public let irreducibleRetreatEdges: Set<CFGDirectedPair>
-    public let structuredRegions: [StructuredControlRegion]
-    public let annotatedBlocks: [BasicBlock]
-    public let annotatedEdges: [CFGEdge]
+package struct DominatorAndLoopAnalysisResult: Sendable, Codable, Hashable {
+    package let dominatorTree: [DominatorTreeNode]
+    package let postDominatorTree: [PostDominatorTreeNode]
+    package let naturalLoops: [NaturalLoop]
+    package let backEdgePairs: Set<CFGDirectedPair>
+    package let irreducibleRetreatEdges: Set<CFGDirectedPair>
+    let structuredRegions: [StructuredControlRegion]
+    package let annotatedBlocks: [BasicBlock]
+    package let annotatedEdges: [CFGEdge]
 
-    public init(
+    init(
         dominatorTree: [DominatorTreeNode],
         postDominatorTree: [PostDominatorTreeNode],
         naturalLoops: [NaturalLoop],
@@ -93,7 +93,7 @@ public struct DominatorAndLoopAnalysisResult: Sendable, Codable, Hashable {
         self.annotatedEdges = annotatedEdges
     }
 
-    public var isReducibleFlowGraph: Bool {
+    package var isReducibleFlowGraph: Bool {
         irreducibleRetreatEdges.isEmpty
     }
 }
@@ -108,7 +108,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
     /// Runs the complete dominance, dominance-frontier, natural-loop, and (when `includePostDominatorsAndRegions`
     /// is `true`) post-dominance and structured-region analysis pass over `(blocks, edges)` and returns annotated
     /// blocks (`loopDepth`) and edges (`isBackEdge`).
-    public func analyze(
+    package func analyze(
         blocks: [BasicBlock],
         edges: [CFGEdge],
         entryBlockID: Int? = nil,
@@ -327,7 +327,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
 
     /// Computes `[PostDominatorTreeNode]` on the reversed CFG augmented with a virtual super-exit sentinel,
     /// handling multiple `ret`/`brk`/tail-call exits as well as non-terminating infinite-loop components.
-    public func computePostDominatorTree(
+    package func computePostDominatorTree(
         blocks: [BasicBlock],
         edges: [CFGEdge]
     ) -> [PostDominatorTreeNode] {
@@ -461,7 +461,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
     }
 
     /// Returns the immediate structured merge (`follow`) block ID for a conditional/switch branch header `blockID`.
-    public func structuredMergeBlockID(
+    package func structuredMergeBlockID(
         forBranchBlock blockID: Int,
         postDominatorTree: [PostDominatorTreeNode]
     ) -> Int? {
@@ -472,7 +472,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
 
     /// Identifies natural back-edges `(u -> h)` where `h` dominates `u`, collects loop bodies via reverse CFG
     /// reachability, computes exit targets & nesting depth, and detects any irreducible retreat edges.
-    public func recoverNaturalLoops(
+    func recoverNaturalLoops(
         blocks: [BasicBlock],
         edges: [CFGEdge],
         dominatorTree: [DominatorTreeNode],
@@ -651,7 +651,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
     }
 
     /// Returns `true` iff `postDominatorID` post-dominates `targetID`.
-    public func postDominates(
+    package func postDominates(
         _ postDominatorID: Int,
         _ targetID: Int,
         in postDominatorTree: [PostDominatorTreeNode]
@@ -710,7 +710,7 @@ public struct DominatorAndLoopAnalyzer: Sendable {
 
     /// Identifies structured `if-then`, `if-then-else`, `switch`, `while`, `do-while`, and `self-loop` regions
     /// by combining natural loops with immediate post-dominator (`ipdom`) merge points.
-    public func discoverStructuredRegions(
+    func discoverStructuredRegions(
         blocks: [BasicBlock],
         edges: [CFGEdge],
         dominatorTree: [DominatorTreeNode],

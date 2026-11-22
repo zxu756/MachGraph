@@ -170,14 +170,14 @@ internal struct BinaryMappedMemoryReader: Sendable {
 
 // MARK: - Objective-C 2.0 & Swift 5 Metadata Parser
 
-public enum ObjCAndSwiftMetadataParser {
+enum ObjCAndSwiftMetadataParser {
     // ObjC 2.0 class_ro_t constants
     private static let fastDataMask64: UInt64            = 0x0000_7FFF_FFFF_FFF8
     private static let smallMethodListFlag: UInt32       = 0x8000_0000
     private static let directSelectorMethodFlag: UInt32  = 0x4000_0000
 
     /// Walks Objective-C 2.0 `__objc_classlist`, `__objc_nlclslist`, `__objc_catlist`, `__objc_nlcatlist`, and `__objc_protolist` sections.
-    public static func parseObjCMetadata(
+    static func parseObjCMetadata(
         sliceData: Data,
         sliceFileOffset: FileOffset,
         imageBase: VirtualAddress,
@@ -766,7 +766,7 @@ public enum ObjCAndSwiftMetadataParser {
     // MARK: - Swift 5 Runtime Type & Field Descriptor Extractor
 
     /// Walks `__swift5_types`, `__swift5_protos`, and `__swift5_fieldmd` relative-offset descriptors.
-    public static func parseSwiftMetadata(
+    static func parseSwiftMetadata(
         sliceData: Data,
         sliceFileOffset: FileOffset,
         imageBase: VirtualAddress,
@@ -1061,7 +1061,7 @@ public enum ObjCAndSwiftMetadataParser {
         return humanizeSwiftMangledTypeSpelling(mangled)
     }
 
-    public static func humanizeSwiftMangledTypeSpelling(_ mangled: String) -> String {
+    static func humanizeSwiftMangledTypeSpelling(_ mangled: String) -> String {
         switch mangled {
         case "Si": return "Int"
         case "Su": return "UInt"

@@ -1161,7 +1161,7 @@ class TestNoreturnEvidenceAndSync(unittest.TestCase):
         with open(self.SWIFT_CFG_PATH, "r", encoding="utf-8") as fh:
             swift_src = fh.read()
         m = re.search(
-            r"public\s+static\s+let\s+unprefixedNames\s*:\s*Set<String>\s*=\s*\[(.*?)\]",
+            r"(?:public|package)\s+static\s+let\s+unprefixedNames\s*:\s*Set<String>\s*=\s*\[(.*?)\]",
             swift_src,
             re.DOTALL,
         )

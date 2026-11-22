@@ -7,8 +7,8 @@
 //   - Random words (seeds 17, 20261117 x 100,000): 530
 // Total unique mnemonics: 727
 
-public enum A64KnownMnemonics {
-    public static let all: Set<String> = [
+enum A64KnownMnemonics {
+    static let all: Set<String> = [
         "abs",
         "adc",
         "adcs",

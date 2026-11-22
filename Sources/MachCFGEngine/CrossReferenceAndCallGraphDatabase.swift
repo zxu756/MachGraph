@@ -1,22 +1,22 @@
 import Foundation
-import MachGraphModels
+@_exported import MachGraphModels
 import MachBinaryFormats
 import MachA64Decoder
 
 // MARK: - Import Call Site & Bidirectional Cross-Reference Database
 
-public struct ImportCallSiteRecord: Sendable, Codable, Hashable, Identifiable {
-    public var id: String { "\(callInstructionAddress.hexString)->\(importedSymbolName)" }
-    public let callInstructionAddress: VirtualAddress
-    public let callerFunctionAddress: VirtualAddress?
-    public let callerFunctionName: String?
-    public let stubOrGOTAddress: VirtualAddress
-    public let importedSymbolName: String
-    public let demangledSymbolName: String
-    public let libraryName: String?
-    public let isTailCall: Bool
+package struct ImportCallSiteRecord: Sendable, Codable, Hashable, Identifiable {
+    package var id: String { "\(callInstructionAddress.hexString)->\(importedSymbolName)" }
+    package let callInstructionAddress: VirtualAddress
+    package let callerFunctionAddress: VirtualAddress?
+    package let callerFunctionName: String?
+    package let stubOrGOTAddress: VirtualAddress
+    package let importedSymbolName: String
+    package let demangledSymbolName: String
+    package let libraryName: String?
+    package let isTailCall: Bool
 
-    public init(
+    package init(
         callInstructionAddress: VirtualAddress,
         callerFunctionAddress: VirtualAddress?,
         callerFunctionName: String?,
@@ -40,16 +40,20 @@ public struct ImportCallSiteRecord: Sendable, Codable, Hashable, Identifiable {
 public struct CrossReferenceIndex: Sendable, Codable, Hashable {
     public let allRecords: [XrefRecord]
     public let stringXrefs: [XrefRecord]
-    public let importCallSites: [ImportCallSiteRecord]
+    package let importCallSites: [ImportCallSiteRecord]
 
     private let incomingByTarget: [VirtualAddress: [XrefRecord]]
     private let outgoingBySource: [VirtualAddress: [XrefRecord]]
     private let outgoingByFunction: [VirtualAddress: [XrefRecord]]
     private let stringXrefsByTarget: [VirtualAddress: [XrefRecord]]
 
-    public init(
+    public init(records: [XrefRecord]) {
+        self.init(records: records, importCallSites: [])
+    }
+
+    package init(
         records: [XrefRecord],
-        importCallSites: [ImportCallSiteRecord] = []
+        importCallSites: [ImportCallSiteRecord]
     ) {
         let sortedRecords = records.sorted {
             if $0.fromAddress != $1.fromAddress { return $0.fromAddress < $1.fromAddress }
@@ -107,7 +111,7 @@ public struct CrossReferenceIndex: Sendable, Codable, Hashable {
     }
 
     /// Filters `importCallSites` whose raw or demangled symbol name matches `symbolQuery` (case-insensitive substring or exact).
-    public func importCallSites(matching symbolQuery: String) -> [ImportCallSiteRecord] {
+    package func importCallSites(matching symbolQuery: String) -> [ImportCallSiteRecord] {
         let q = symbolQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return importCallSites }
         return importCallSites.filter {
@@ -119,7 +123,7 @@ public struct CrossReferenceIndex: Sendable, Codable, Hashable {
 
 // MARK: - Whole-Program Call Graph & Dangerous Sink Path Models
 
-public enum DangerousSinkCategory: String, Sendable, Codable, Hashable, CaseIterable {
+package enum DangerousSinkCategory: String, Sendable, Codable, Hashable, CaseIterable {
     case commandExecution = "Process / Command Execution"
     case unboundedMemoryOrString = "Memory Copy / Buffer Handling"
     case formatStringOutput = "Format String / Variadic Output"
@@ -136,7 +140,7 @@ public struct CallGraphNode: Sendable, Codable, Hashable, Identifiable {
     public let isImportedThunk: Bool
     public let isExternalSymbol: Bool
     public let isEntryOrExported: Bool
-    public let sinkCategory: DangerousSinkCategory?
+    package let sinkCategory: DangerousSinkCategory?
     public let inDegree: Int
     public let outDegree: Int
 
@@ -147,7 +151,30 @@ public struct CallGraphNode: Sendable, Codable, Hashable, Identifiable {
         isImportedThunk: Bool = false,
         isExternalSymbol: Bool = false,
         isEntryOrExported: Bool = false,
-        sinkCategory: DangerousSinkCategory? = nil,
+        inDegree: Int = 0,
+        outDegree: Int = 0
+    ) {
+        self.init(
+            address: address,
+            name: name,
+            demangledName: demangledName,
+            isImportedThunk: isImportedThunk,
+            isExternalSymbol: isExternalSymbol,
+            isEntryOrExported: isEntryOrExported,
+            sinkCategory: nil,
+            inDegree: inDegree,
+            outDegree: outDegree
+        )
+    }
+
+    package init(
+        address: VirtualAddress,
+        name: String,
+        demangledName: String,
+        isImportedThunk: Bool = false,
+        isExternalSymbol: Bool = false,
+        isEntryOrExported: Bool = false,
+        sinkCategory: DangerousSinkCategory?,
         inDegree: Int = 0,
         outDegree: Int = 0
     ) {
@@ -186,19 +213,19 @@ public struct CallGraphEdge: Sendable, Codable, Hashable, Identifiable {
     }
 }
 
-public struct CallPathRoute: Sendable, Codable, Hashable, Identifiable {
-    public var id: String {
+package struct CallPathRoute: Sendable, Codable, Hashable, Identifiable {
+    package var id: String {
         hopAddresses.map(\.compactHexString).joined(separator: "->")
     }
-    public let sourceAddress: VirtualAddress
-    public let sinkAddress: VirtualAddress
-    public let sinkName: String
-    public let sinkCategory: DangerousSinkCategory?
-    public let hopAddresses: [VirtualAddress]
-    public let hopNames: [String]
-    public let callSiteChain: [VirtualAddress]
+    package let sourceAddress: VirtualAddress
+    package let sinkAddress: VirtualAddress
+    package let sinkName: String
+    package let sinkCategory: DangerousSinkCategory?
+    package let hopAddresses: [VirtualAddress]
+    package let hopNames: [String]
+    package let callSiteChain: [VirtualAddress]
 
-    public init(
+    package init(
         sourceAddress: VirtualAddress,
         sinkAddress: VirtualAddress,
         sinkName: String,
@@ -216,11 +243,11 @@ public struct CallPathRoute: Sendable, Codable, Hashable, Identifiable {
         self.callSiteChain = callSiteChain
     }
 
-    public var hopCount: Int {
+    package var hopCount: Int {
         max(0, hopAddresses.count - 1)
     }
 
-    public var formattedSummary: String {
+    package var formattedSummary: String {
         hopNames.joined(separator: " -> ")
     }
 }
@@ -279,7 +306,7 @@ public struct ProgramCallGraph: Sendable, Codable, Hashable {
     }
 
     /// Computes the shortest unweighted call-chain route from `source` to `target` using Breadth-First Search (BFS).
-    public func shortestCallPath(
+    package func shortestCallPath(
         from source: VirtualAddress,
         to target: VirtualAddress
     ) -> CallPathRoute? {
@@ -350,7 +377,7 @@ public struct ProgramCallGraph: Sendable, Codable, Hashable {
     }
 
     /// Multi-source BFS discovering shortest call paths from entry points / exported APIs to all reachable dangerous sinks.
-    public func discoverDangerousSinkPaths(
+    package func discoverDangerousSinkPaths(
         fromRoots explicitRoots: [VirtualAddress]? = nil
     ) -> [CallPathRoute] {
         let sinkNodes = nodes.filter { $0.sinkCategory != nil }
@@ -661,14 +688,27 @@ public enum GraphExportFormatter: Sendable {
 public struct BinaryAnalysisOptions: Sendable, Codable, Hashable {
     public var discoveryConfiguration: FunctionDiscoveryConfiguration
     public var cfgConfiguration: CFGBuilderConfiguration
-    public var layoutConfiguration: SugiyamaLayoutConfiguration
+    package var layoutConfiguration: SugiyamaLayoutConfiguration
     public var computeSugiyamaLayouts: Bool
     public var computePostDominatorTrees: Bool
 
     public init(
         discoveryConfiguration: FunctionDiscoveryConfiguration = .standard,
         cfgConfiguration: CFGBuilderConfiguration = .standard,
-        layoutConfiguration: SugiyamaLayoutConfiguration = .standard,
+        computeSugiyamaLayouts: Bool = true,
+        computePostDominatorTrees: Bool = true
+    ) {
+        self.discoveryConfiguration = discoveryConfiguration
+        self.cfgConfiguration = cfgConfiguration
+        self.layoutConfiguration = .standard
+        self.computeSugiyamaLayouts = computeSugiyamaLayouts
+        self.computePostDominatorTrees = computePostDominatorTrees
+    }
+
+    package init(
+        discoveryConfiguration: FunctionDiscoveryConfiguration = .standard,
+        cfgConfiguration: CFGBuilderConfiguration = .standard,
+        layoutConfiguration: SugiyamaLayoutConfiguration,
         computeSugiyamaLayouts: Bool = true,
         computePostDominatorTrees: Bool = true
     ) {
@@ -726,16 +766,16 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
     public let inlineJumpTableRanges: [AddressRange]
     public let crossReferences: CrossReferenceIndex
     public let callGraph: ProgramCallGraph
-    public let dangerousSinkPaths: [CallPathRoute]
+    package let dangerousSinkPaths: [CallPathRoute]
     public let recognizedIdioms: [A64RecognizedIdiom]
-    public let postDominatorTrees: [VirtualAddress: [PostDominatorTreeNode]]
-    public let structuredRegionsByFunction: [VirtualAddress: [StructuredControlRegion]]
+    package let postDominatorTrees: [VirtualAddress: [PostDominatorTreeNode]]
+    let structuredRegionsByFunction: [VirtualAddress: [StructuredControlRegion]]
     public let analysisDurationMilliseconds: Double
 
     private let functionIndexByAddress: [VirtualAddress: Int]
     private let instructionIndexByAddress: [VirtualAddress: Int]
 
-    public init(
+    init(
         image: LoadedBinaryImage,
         functions: [RecoveredFunction],
         decodedInstructions: [A64DecodedInstruction],
@@ -787,7 +827,7 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
 
     public var xrefs: [XrefRecord] { crossReferences.allRecords }
     public var stringXrefs: [XrefRecord] { crossReferences.stringXrefs }
-    public var importCallSites: [ImportCallSiteRecord] { crossReferences.importCallSites }
+    package var importCallSites: [ImportCallSiteRecord] { crossReferences.importCallSites }
     public var inlineJumpTableStarts: [VirtualAddress] { inlineJumpTableRanges.map(\.start) }
 
     /// Exact O(1) lookup for a `RecoveredFunction` by its entry `VirtualAddress`.
@@ -855,7 +895,7 @@ public struct BinaryAnalysisIndex: Sendable, Codable, Hashable {
         callGraph.callees(of: functionAddress).compactMap { function(at: $0) }
     }
 
-    public func shortestCallPath(from source: VirtualAddress, to target: VirtualAddress) -> CallPathRoute? {
+    package func shortestCallPath(from source: VirtualAddress, to target: VirtualAddress) -> CallPathRoute? {
         callGraph.shortestCallPath(from: source, to: target)
     }
 
@@ -912,7 +952,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
 
     /// Registers an in-memory binary buffer so subsequent single-argument `analyzeBinary(image)` calls
     /// can resolve raw section and jump-table bytes by SHA-256 without disk I/O.
-    public static func registerInMemoryBinaryData(_ data: Data, sha256Hex: String? = nil) {
+    package static func registerInMemoryBinaryData(_ data: Data, sha256Hex: String? = nil) {
         LockedBinaryByteRegistry.shared.register(data: data, sha256Hex: sha256Hex)
     }
 
@@ -1240,6 +1280,32 @@ public struct BinaryAnalysisCoordinator: Sendable {
     }
 
     // MARK: - Lightweight CFG-Only Pipeline (`machgraph cfg`)
+
+    /// Convenience loader + lightweight CFG-only analyzer from disk `URL`.
+    public func analyzeCFGOnly(
+        fileURL: URL,
+        preferredSliceIndex: Int? = nil,
+        selector: CFGFunctionSelector? = nil,
+        options explicitOptions: BinaryAnalysisOptions? = nil
+    ) throws -> CFGAnalysisSnapshot {
+        let path = fileURL.path
+        guard FileManager.default.fileExists(atPath: path) else {
+            throw MachGraphError.fileNotFound(path)
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: fileURL, options: [.mappedIfSafe])
+        } catch {
+            throw MachGraphError.ioFailure("Unable to read '\(path)': \(error.localizedDescription)")
+        }
+        let image = try UniversalBinaryDispatcher.load(
+            data: data,
+            filePath: path,
+            fileName: fileURL.lastPathComponent,
+            preferredSliceIndex: preferredSliceIndex
+        )
+        return try analyzeCFGOnly(image, data: data, selector: selector, options: explicitOptions)
+    }
 
     /// Executes function discovery, inline jump-table exclusion, `noreturn` propagation, basic-block CFG construction,
     /// Lengauer-Tarjan dominators, and natural loops WITHOUT building post-dominator trees, structured regions,
@@ -2086,7 +2152,7 @@ public struct BinaryAnalysisCoordinator: Sendable {
     }
 
     /// Classifies C / POSIX / Darwin / Win32 / WebAssembly sink APIs into security-relevant sink categories.
-    public static func classifyDangerousSink(symbolName: String) -> DangerousSinkCategory? {
+    package static func classifyDangerousSink(symbolName: String) -> DangerousSinkCategory? {
         var clean = symbolName.trimmingCharacters(in: .whitespacesAndNewlines)
         for suffix in ["$stub", "@PLT", "$shim", " [stub]"] {
             if clean.hasSuffix(suffix) {
