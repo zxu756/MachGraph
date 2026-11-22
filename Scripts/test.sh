@@ -287,8 +287,47 @@ case "$MODE" in
                     echo "==> [milestone 4] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
                 fi
                 ;;
+            5|m5|M5)
+                echo "==> [milestone 5] Scoped unit tests for M5-touched modules"
+                run_scope \
+                    MachGraphModels \
+                    MachBinaryFormats \
+                    MachA64Decoder \
+                    MachCFGEngine \
+                    MachMicroDecompiler \
+                    MachHeadlessCLI
+                echo "==> [milestone 5] Acceptance harness unit tests"
+                python3 -I "$ROOT_DIR/Scripts/acceptance/test_m5_harnesses.py"
+                echo "==> [milestone 5] Building release MachGraph CLI binary"
+                swift build -c release --product MachGraph >/dev/null
+                REL_BIN="$ROOT_DIR/.build/release/MachGraph"
+                if [ "$RECORD" -eq 1 ]; then
+                    OUT_DIR="$ROOT_DIR/reports"
+                    OUT_LABEL="reports"
+                    mkdir -p "$OUT_DIR"
+                    echo "==> [milestone 5] Running Scripts/acceptance/m5-mcp-acceptance.py (protocol, tools, legacy, perf) --record -> $OUT_LABEL/"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" protocol --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-protocol.txt" --json-out "$OUT_DIR/m5-mcp-protocol.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" tools --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-tools.txt" --json-out "$OUT_DIR/m5-mcp-tools.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" legacy --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-legacy.txt" --json-out "$OUT_DIR/m5-mcp-legacy.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" perf --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-perf.txt" --json-out "$OUT_DIR/m5-mcp-perf.json"
+                    echo "==> [milestone 5] Running Scripts/acceptance/m5-lib-examples.py -> $OUT_LABEL/m5-lib-examples.json & .txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-lib-examples.py" --json-out "$OUT_DIR/m5-lib-examples.json" --txt-out "$OUT_DIR/m5-lib-examples.txt"
+                    echo "==> [milestone 5] Recorded logs under reports/"
+                else
+                    OUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/machgraph-m5-logs.XXXXXX")"
+                    OUT_LABEL="$OUT_DIR"
+                    echo "==> [milestone 5] Running Scripts/acceptance/m5-mcp-acceptance.py (protocol, tools, legacy, perf) -> $OUT_LABEL/"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" protocol --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-protocol.txt" --json-out "$OUT_DIR/m5-mcp-protocol.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" tools --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-tools.txt" --json-out "$OUT_DIR/m5-mcp-tools.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" legacy --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-legacy.txt" --json-out "$OUT_DIR/m5-mcp-legacy.json"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-mcp-acceptance.py" perf --machgraph "$REL_BIN" --txt-out "$OUT_DIR/m5-mcp-perf.txt" --json-out "$OUT_DIR/m5-mcp-perf.json"
+                    echo "==> [milestone 5] Running Scripts/acceptance/m5-lib-examples.py -> $OUT_LABEL/m5-lib-examples.json & .txt"
+                    python3 -I "$ROOT_DIR/Scripts/acceptance/m5-lib-examples.py" --json-out "$OUT_DIR/m5-lib-examples.json" --txt-out "$OUT_DIR/m5-lib-examples.txt"
+                    echo "==> [milestone 5] Logs kept in $OUT_DIR (work tree untouched; pass --record to refresh reports/)"
+                fi
+                ;;
             *)
-                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2, 3, 4)." >&2
+                echo "Error: unsupported milestone '$MS' (supported: 0, 1, 2, 3, 4, 5)." >&2
                 exit 2
                 ;;
         esac

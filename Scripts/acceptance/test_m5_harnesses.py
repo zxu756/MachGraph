@@ -23,7 +23,19 @@ def _load_m5_module():
     return mod
 
 
+def _load_m5_lib_examples_module():
+    path = os.path.join(SCRIPT_DIR, "m5-lib-examples.py")
+    spec = importlib.util.spec_from_file_location("m5_lib_examples_mod", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["m5_lib_examples_mod"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 m5_acc = _load_m5_module()
+m5_lib = _load_m5_lib_examples_module()
 
 
 def _make_valid_tools_list(lang: str = "en") -> List[Dict[str, Any]]:
@@ -538,6 +550,246 @@ class TestLegacyChecks(unittest.TestCase):
         self.assertNotIn("alice", cleaned)
         self.assertIn("<home>", cleaned)
         self.assertIn("<redacted-email>", cleaned)
+
+
+def _make_sample_lib_markdown(lang: str = "en") -> str:
+    heading = "# Library Examples" if lang == "en" else "# 库使用示例"
+    prose1 = "Read header:" if lang == "en" else "读取头部："
+    prose2 = "Decode A64:" if lang == "en" else "解码指令："
+    prose3 = "Build CFG:" if lang == "en" else "构建控制流图："
+    return f"""{heading}
+
+Optional Package.swift snippet that must be ignored by example extraction:
+
+```swift
+// swift-tools-version: 6.0
+import PackageDescription
+```
+
+## 1. MachBinaryFormats
+{prose1}
+
+```swift
+import MachBinaryFormats
+
+@main
+struct BinaryFormatsDemo {{
+    static func main() throws {{
+        let image = try UniversalBinaryDispatcher.load(filePath: "/bin/ls")
+        print("format=\\(image.containerFormat.rawValue)")
+    }}
+}}
+```
+
+```text
+format=Mach-O Universal Fat
+```
+
+## 2. MachA64Decoder
+{prose2}
+
+```swift
+import MachA64Decoder
+
+@main
+struct A64DecoderDemo {{
+    static func main() throws {{
+        let base = VirtualAddress(0x1_0000_0000)
+        let insn = A64InstructionDecoder().decode(word: 0xd65f03c0, at: base)
+        print("\\(insn.address.hexString)  \\(insn.formattedDisassembly)")
+    }}
+}}
+```
+
+```text
+0x0000000100000000  ret
+```
+
+## 3. MachCFGEngine
+{prose3}
+
+```swift
+import Foundation
+import MachCFGEngine
+
+@main
+struct CFGEngineDemo {{
+    static func main() throws {{
+        let snapshot = try BinaryAnalysisCoordinator().analyzeCFGOnly(
+            fileURL: URL(fileURLWithPath: "/bin/ls"),
+            selector: .address(VirtualAddress(0x1_0000_0960))
+        )
+        print("functions=\\(snapshot.boundariesByAddress.count)")
+    }}
+}}
+```
+
+```text
+functions=133
+```
+"""
+
+
+class TestLibExamplesMarkdownAndChecks(unittest.TestCase):
+    def test_extract_and_validate_bilingual_examples_passes_and_skips_package_manifest(self) -> None:
+        md_en = _make_sample_lib_markdown("en")
+        md_zh = _make_sample_lib_markdown("zh")
+        blocks_en = m5_lib.extract_swift_example_blocks(md_en)
+        blocks_zh = m5_lib.extract_swift_example_blocks(md_zh)
+        self.assertEqual(len(blocks_en), 3)
+        self.assertEqual([b["module"] for b in blocks_en], ["MachBinaryFormats", "MachA64Decoder", "MachCFGEngine"])
+        diffs = m5_lib.validate_markdown_example_pair(blocks_en, blocks_zh)
+        self.assertEqual(diffs, [])
+
+    def test_bilingual_code_mismatch_over_20_lines_and_explicit_models_import_fail(self) -> None:
+        md_en = _make_sample_lib_markdown("en")
+        md_zh_diff = _make_sample_lib_markdown("zh").replace("0xd65f03c0", "0xd503201f")
+        diffs_mismatch = m5_lib.validate_markdown_example_pair(
+            m5_lib.extract_swift_example_blocks(md_en),
+            m5_lib.extract_swift_example_blocks(md_zh_diff),
+        )
+        self.assertTrue(any(d["kind"] == "DOC_CODE_MISMATCH" for d in diffs_mismatch))
+
+        # > 20 lines in example 2
+        long_lines = "\n".join(f"        let v{i} = {i}" for i in range(18))
+        md_too_long = md_en.replace(
+            "        let base = VirtualAddress(0x1_0000_0000)",
+            f"        let base = VirtualAddress(0x1_0000_0000)\n{long_lines}",
+        )
+        blocks_long = m5_lib.extract_swift_example_blocks(md_too_long)
+        diffs_long = m5_lib.validate_markdown_example_pair(blocks_long, blocks_long)
+        self.assertTrue(any(d["kind"] == "EXAMPLE_TOO_LONG" for d in diffs_long))
+
+        # Explicit `import MachGraphModels` must be rejected (examples must rely on @_exported)
+        md_explicit_models = md_en.replace(
+            "import MachA64Decoder",
+            "import MachA64Decoder\nimport MachGraphModels",
+        )
+        blocks_models = m5_lib.extract_swift_example_blocks(md_explicit_models)
+        diffs_models = m5_lib.validate_markdown_example_pair(blocks_models, blocks_models)
+        self.assertTrue(any(d["kind"] == "FORBIDDEN_IMPORT" for d in diffs_models))
+
+    def test_build_warnings_and_output_comparison_catch_regressions(self) -> None:
+        self.assertEqual(
+            m5_lib.validate_clean_swift_build("DemoA64", returncode=0, stdout="Build complete!\n", stderr=""),
+            [],
+        )
+        warn_diffs = m5_lib.validate_clean_swift_build(
+            "DemoA64",
+            returncode=0,
+            stdout="",
+            stderr="/tmp/Demo.swift:4:9: warning: initialization of immutable value 'x' was never used\n",
+        )
+        self.assertTrue(any(d["kind"] == "BUILD_WARNING" for d in warn_diffs))
+
+        # Output comparison: exact match passes; stride 4->8 truncation (Mutation 2a) fails
+        ref_out = (
+            "0x0000000100000000  d10043ff  sub sp, sp, #0x10\n"
+            "0x0000000100000004  52800540  mov w0, #0x2a\n"
+        )
+        self.assertEqual(
+            m5_lib.validate_example_output(
+                module_name="MachA64Decoder",
+                actual_returncode=0,
+                actual_stdout=ref_out,
+                actual_stderr="",
+                reference_stdout=ref_out,
+                doc_en_expected=ref_out.strip(),
+                doc_zh_expected=ref_out.strip(),
+            ),
+            [],
+        )
+        diffs_mut2a = m5_lib.validate_example_output(
+            module_name="MachA64Decoder",
+            actual_returncode=0,
+            actual_stdout="0x0000000100000000  d10043ff  sub sp, sp, #0x10\n",
+            actual_stderr="",
+            reference_stdout=ref_out,
+            doc_en_expected=ref_out.strip(),
+            doc_zh_expected=ref_out.strip(),
+        )
+        self.assertTrue(any(d["kind"] == "RUNTIME_OUTPUT_MISMATCH" for d in diffs_mut2a))
+
+        diffs_doc_out = m5_lib.validate_example_output(
+            module_name="MachA64Decoder",
+            actual_returncode=0,
+            actual_stdout=ref_out,
+            actual_stderr="",
+            reference_stdout=ref_out,
+            doc_en_expected="wrong expected output",
+            doc_zh_expected=ref_out.strip(),
+        )
+        self.assertTrue(any(d["kind"] == "DOC_EXPECTED_OUTPUT_MISMATCH" for d in diffs_doc_out))
+
+    def test_negative_probe_validator_enforces_nonzero_and_access_level_diagnostic(self) -> None:
+        # 1. Valid `package` protection level error -> passes
+        self.assertEqual(
+            m5_lib.validate_negative_probe_result(
+                probe_name="ELF64Loader_package",
+                symbol="ELF64Loader",
+                module="MachBinaryFormats",
+                returncode=1,
+                stdout="",
+                stderr="main.swift:3:28: error: 'ELF64Loader' is inaccessible due to 'package' protection level\n",
+            ),
+            [],
+        )
+        # 2. Valid `internal` stripped symbol error -> passes
+        self.assertEqual(
+            m5_lib.validate_negative_probe_result(
+                probe_name="signExtend_internal",
+                symbol="signExtend",
+                module="MachA64Decoder",
+                returncode=1,
+                stdout="",
+                stderr="main.swift:2:7: error: cannot find 'signExtend' in scope\n",
+            ),
+            [],
+        )
+        self.assertEqual(
+            m5_lib.validate_negative_probe_result(
+                probe_name="signExtend_qualified",
+                symbol="signExtend",
+                module="MachA64Decoder",
+                returncode=1,
+                stdout="",
+                stderr="main.swift:2:22: error: module 'MachA64Decoder' has no member named 'signExtend'\n",
+            ),
+            [],
+        )
+        # 3. Valid removed product error -> passes
+        self.assertEqual(
+            m5_lib.validate_negative_probe_result(
+                probe_name="removed_product_MachMicroDecompiler",
+                symbol="MachMicroDecompiler",
+                module="MachGraph",
+                returncode=1,
+                stdout="",
+                stderr="error: product 'MachMicroDecompiler' required by package 'neg' target 'T' not found in package 'MachGraph'.\n",
+            ),
+            [],
+        )
+        # 4. Mutation 2b: symbol leaked back as `public` -> returncode == 0 MUST FAIL
+        leaked_diffs = m5_lib.validate_negative_probe_result(
+            probe_name="ELF64Loader_package",
+            symbol="ELF64Loader",
+            module="MachBinaryFormats",
+            returncode=0,
+            stdout="Build complete!\n",
+            stderr="",
+        )
+        self.assertTrue(any(d["kind"] == "NEGATIVE_PROBE_UNEXPECTEDLY_COMPILED" for d in leaked_diffs))
+
+        # 5. Non-zero exit due to syntax error or wrong symbol MUST FAIL (not an access-level rejection)
+        syntax_diffs = m5_lib.validate_negative_probe_result(
+            probe_name="ELF64Loader_package",
+            symbol="ELF64Loader",
+            module="MachBinaryFormats",
+            returncode=1,
+            stdout="",
+            stderr="main.swift:3:50: error: expected ')' in argument list\n",
+        )
+        self.assertTrue(any(d["kind"] == "NEGATIVE_PROBE_WRONG_DIAGNOSTIC" for d in syntax_diffs))
 
 
 if __name__ == "__main__":
