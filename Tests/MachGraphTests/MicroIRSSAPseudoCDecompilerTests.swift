@@ -540,13 +540,15 @@ struct MicroIRSSAPseudoCDecompilerTests {
 
         let outEN = MachMicroDecompilerEngine().decompile(function: fn, in: index, language: .en)
         let firstLineEN = try #require(outEN.fullSourceText.split(separator: "\n", omittingEmptySubsequences: false).first)
-        #expect(String(firstLineEN) == "// EXPERIMENTAL: Decompiler output — condition expressions are known to be unreliable.")
+        #expect(String(firstLineEN) == "// EXPERIMENTAL: [EXPERIMENTAL / UNVERIFIED] Decompiler output has not passed acceptance — condition expressions are known to be unreliable.")
+        #expect(firstLineEN.contains("EXPERIMENTAL") && firstLineEN.contains("UNVERIFIED"))
         #expect(outEN.renderedLines.first?.lineNumber == 1)
         #expect(outEN.renderedLines.first?.text == String(firstLineEN))
 
         let outZH = MachMicroDecompilerEngine().decompile(function: fn, in: index, language: .zhHans)
         let firstLineZH = try #require(outZH.fullSourceText.split(separator: "\n", omittingEmptySubsequences: false).first)
-        #expect(String(firstLineZH) == "// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。")
+        #expect(String(firstLineZH) == "// 【实验性】【未通过验收】反编译输出尚未通过验收：已知条件表达式还原不可靠，请以反汇编为准。")
+        #expect(firstLineZH.contains("实验性") && firstLineZH.contains("未通过验收"))
         #expect(outZH.renderedLines.first?.lineNumber == 1)
         #expect(outZH.renderedLines.first?.text == String(firstLineZH))
     }

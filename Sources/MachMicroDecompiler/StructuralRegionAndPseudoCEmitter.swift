@@ -1800,8 +1800,8 @@ public struct PseudoCCodeFormatter: Sendable {
 
     public static func experimentalWarningComment(in language: MachLanguage) -> String {
         language.select(
-            "// EXPERIMENTAL: Decompiler output — condition expressions are known to be unreliable.",
-            "// 【实验性】反编译输出：已知条件表达式还原不可靠，请以反汇编为准。"
+            "// EXPERIMENTAL: [EXPERIMENTAL / UNVERIFIED] Decompiler output has not passed acceptance — condition expressions are known to be unreliable.",
+            "// 【实验性】【未通过验收】反编译输出尚未通过验收：已知条件表达式还原不可靠，请以反汇编为准。"
         )
     }
 
