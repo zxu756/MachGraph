@@ -792,5 +792,252 @@ class TestLibExamplesMarkdownAndChecks(unittest.TestCase):
         self.assertTrue(any(d["kind"] == "NEGATIVE_PROBE_WRONG_DIAGNOSTIC" for d in syntax_diffs))
 
 
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+from typing import Optional, Tuple  # noqa: E402
+
+REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
+
+def _load_m5_mutations_test_module():
+    path = os.path.join(SCRIPT_DIR, "test_m5_mutations.py")
+    spec = importlib.util.spec_from_file_location("test_m5_mutations_mod", path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {path}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["test_m5_mutations_mod"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+TestM5MutationsSuite = _load_m5_mutations_test_module().TestM5MutationsSuite
+
+
+class TestReleaseGateAndStepScheduler(unittest.TestCase):
+    """Self-tests for Scripts/test.sh release step wiring, --only, skip=77, and exit-code precedence."""
+
+    TEST_SH = os.path.join(REPO_ROOT, "Scripts", "test.sh")
+
+    def _make_stub_script(self, tmp_dir: str) -> Tuple[str, str]:
+        log_file = os.path.join(tmp_dir, "invoked_steps.log")
+        stub_path = os.path.join(tmp_dir, "release_stub.sh")
+        with open(stub_path, "w", encoding="utf-8") as fh:
+            fh.write(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                'step="$1"\n'
+                "shift\n"
+                f'echo "$step" >> "{log_file}"\n'
+                'if [ "$step" = "m4-ghidra" ]; then\n'
+                '    if [ -z "${GHIDRA_INSTALL_DIR:-}" ] || [ -z "${JAVA_HOME:-}" ]; then\n'
+                '        exec "$@"\n'
+                "    fi\n"
+                "fi\n"
+                'if [ "${STUB_FAIL_STEP:-}" = "$step" ]; then\n'
+                '    exit "${STUB_FAIL_RC:-1}"\n'
+                "fi\n"
+                "exit 0\n"
+            )
+        os.chmod(stub_path, 0o755)
+        return stub_path, log_file
+
+    def _run_release(
+        self,
+        args: List[str],
+        extra_env: Dict[str, Optional[str]],
+    ) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        for k, v in extra_env.items():
+            if v is None:
+                env.pop(k, None)
+            else:
+                env[k] = v
+        return subprocess.run(
+            ["bash", self.TEST_SH, "release", *args],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            env=env,
+            timeout=30,
+        )
+
+    def test_mutations_and_release_step_inventory_include_m2_and_m5(self) -> None:
+        with open(self.TEST_SH, "r", encoding="utf-8") as fh:
+            src = fh.read()
+        self.assertIn("Scripts/acceptance/m5-mutations.sh", src)
+
+        res = subprocess.run(
+            ["bash", self.TEST_SH, "release", "--list-steps"],
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            timeout=15,
+        )
+        self.assertEqual(res.returncode, 0, f"--list-steps failed: {res.stderr}")
+        step_ids = [
+            line.split("\t", 1)[0].strip()
+            for line in res.stdout.splitlines()
+            if line.strip() and not line.startswith("#")
+        ]
+        expected_subset = [
+            # M2 7 items (dual fuzz seeds = 8 steps)
+            "test-asm-harnesses",
+            "encoding-table",
+            "encoding-fuzz-20261117",
+            "encoding-fuzz-17",
+            "asm-roundtrip-standard",
+            "asm-clang-standard",
+            "asm-clang-cases",
+            "known-mnemonics",
+            # M4 Ghidra
+            "m4-ghidra",
+            # M5 items + mutations
+            "test-m5-harnesses",
+            "m5-mcp-protocol",
+            "m5-mcp-tools",
+            "m5-mcp-legacy",
+            "m5-mcp-perf",
+            "m5-lib-examples",
+            "m5-mutations",
+            # Full corpus steps
+            "differential-full",
+            "macho-differential-full",
+            "m3-metadata-full",
+            "m4-cfg-full",
+        ]
+        for req in expected_subset:
+            self.assertIn(req, step_ids, f"Missing release step '{req}' in --list-steps")
+
+    def test_unknown_only_step_is_rejected(self) -> None:
+        res = self._run_release(["--only", "nonexistent-step"], {})
+        self.assertEqual(res.returncode, 2)
+
+    def test_five_release_exit_and_skip_scenarios_with_stubs(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="test-m5-release-gate-") as tmp:
+            stub_path, log_file = self._make_stub_script(tmp)
+            fake_ghidra = os.path.join(tmp, "ghidra")
+            fake_java = os.path.join(tmp, "jdk")
+            os.makedirs(os.path.join(fake_ghidra, "support"), exist_ok=True)
+            os.makedirs(os.path.join(fake_java, "bin"), exist_ok=True)
+            headless = os.path.join(fake_ghidra, "support", "analyzeHeadless")
+            java_bin = os.path.join(fake_java, "bin", "java")
+            for p in (headless, java_bin):
+                with open(p, "w", encoding="utf-8") as fh:
+                    fh.write("#!/bin/sh\nexit 0\n")
+                os.chmod(p, 0o755)
+
+            # 1) All pass -> exit 0 (MACHGRAPH_CORPUS unset defaults to full, so differential-full runs!)
+            r_pass = self._run_release(
+                ["--only", "m0-quick,m4-ghidra,differential-full"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": None,
+                    "GHIDRA_INSTALL_DIR": fake_ghidra,
+                    "JAVA_HOME": fake_java,
+                    "STUB_FAIL_STEP": None,
+                },
+            )
+            self.assertEqual(r_pass.returncode, 0, f"Scenario 1 failed:\n{r_pass.stdout}\n{r_pass.stderr}")
+            self.assertIn("m0-quick", r_pass.stdout)
+            self.assertIn("m4-ghidra", r_pass.stdout)
+            self.assertIn("differential-full", r_pass.stdout)
+            with open(log_file, "r", encoding="utf-8") as fh:
+                ran_1 = fh.read().splitlines()
+            self.assertEqual(ran_1, ["m0-quick", "m4-ghidra", "differential-full"])
+
+            # 2) One step fails -> non-zero (and != 77), remaining steps still run and table printed
+            open(log_file, "w", encoding="utf-8").close()
+            r_fail = self._run_release(
+                ["--only", "m0-quick,encoding-table,known-mnemonics"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "full",
+                    "GHIDRA_INSTALL_DIR": fake_ghidra,
+                    "JAVA_HOME": fake_java,
+                    "STUB_FAIL_STEP": "encoding-table",
+                    "STUB_FAIL_RC": "1",
+                },
+            )
+            self.assertNotEqual(r_fail.returncode, 0)
+            self.assertNotEqual(r_fail.returncode, 77)
+            with open(log_file, "r", encoding="utf-8") as fh:
+                ran_2 = fh.read().splitlines()
+            self.assertEqual(ran_2, ["m0-quick", "encoding-table", "known-mnemonics"])
+
+            # 3) Missing Ghidra env vars -> rest of steps run, exits 77, prints skipped step name
+            open(log_file, "w", encoding="utf-8").close()
+            r_gh_skip = self._run_release(
+                ["--only", "m0-quick,m4-ghidra,known-mnemonics"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "full",
+                    "GHIDRA_INSTALL_DIR": None,
+                    "JAVA_HOME": None,
+                    "STUB_FAIL_STEP": None,
+                },
+            )
+            self.assertEqual(r_gh_skip.returncode, 77, f"Scenario 3 failed:\n{r_gh_skip.stdout}\n{r_gh_skip.stderr}")
+            self.assertIn("m4-ghidra", r_gh_skip.stdout)
+            self.assertIn("SKIPPED", r_gh_skip.stdout)
+            with open(log_file, "r", encoding="utf-8") as fh:
+                ran_3 = fh.read().splitlines()
+            self.assertEqual(ran_3, ["m0-quick", "m4-ghidra", "known-mnemonics"])
+
+            # 4) MACHGRAPH_CORPUS=standard -> full steps marked skipped without executing, exits 77
+            open(log_file, "w", encoding="utf-8").close()
+            r_corpus_skip = self._run_release(
+                ["--only", "m0-quick,differential-full,m4-cfg-full"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "standard",
+                    "GHIDRA_INSTALL_DIR": fake_ghidra,
+                    "JAVA_HOME": fake_java,
+                    "STUB_FAIL_STEP": None,
+                },
+            )
+            self.assertEqual(
+                r_corpus_skip.returncode,
+                77,
+                f"Scenario 4 failed:\n{r_corpus_skip.stdout}\n{r_corpus_skip.stderr}",
+            )
+            self.assertIn("differential-full", r_corpus_skip.stdout)
+            self.assertIn("m4-cfg-full", r_corpus_skip.stdout)
+            with open(log_file, "r", encoding="utf-8") as fh:
+                ran_4 = fh.read().splitlines()
+            self.assertEqual(ran_4, ["m0-quick"], "full steps must not execute when MACHGRAPH_CORPUS!=full")
+
+            # 5a) One step skipped + one step failed (skip first, fail second) -> non-zero and != 77
+            open(log_file, "w", encoding="utf-8").close()
+            r_both_a = self._run_release(
+                ["--only", "m4-ghidra,encoding-table"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "full",
+                    "GHIDRA_INSTALL_DIR": None,
+                    "JAVA_HOME": None,
+                    "STUB_FAIL_STEP": "encoding-table",
+                    "STUB_FAIL_RC": "1",
+                },
+            )
+            self.assertNotEqual(r_both_a.returncode, 0)
+            self.assertNotEqual(r_both_a.returncode, 77)
+
+            # 5b) One step failed + one step skipped (fail first, skip second) -> non-zero and != 77
+            open(log_file, "w", encoding="utf-8").close()
+            r_both_b = self._run_release(
+                ["--only", "encoding-table,differential-full"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "standard",
+                    "GHIDRA_INSTALL_DIR": fake_ghidra,
+                    "JAVA_HOME": fake_java,
+                    "STUB_FAIL_STEP": "encoding-table",
+                    "STUB_FAIL_RC": "1",
+                },
+            )
+            self.assertNotEqual(r_both_b.returncode, 0)
+            self.assertNotEqual(r_both_b.returncode, 77)
+
+
 if __name__ == "__main__":
     unittest.main()
