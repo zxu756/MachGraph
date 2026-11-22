@@ -1,0 +1,16 @@
+{
+  "id": "2d",
+  "description": "ASN1DERWalker widened from internal back to public",
+  "replacements": [
+    {
+      "file": "Sources/MachBinaryFormats/CodeSignatureAndCMSParser.swift",
+      "old": "enum ASN1DERWalker {",
+      "new": "public enum ASN1DERWalker {"
+    },
+    {
+      "file": "Sources/MachBinaryFormats/CodeSignatureAndCMSParser.swift",
+      "old": "    static func extractCMSSignerCommonNames(cmsData: Data) -> [String] {",
+      "new": "    public static func extractCMSSignerCommonNames(cmsData: Data) -> [String] {"
+    }
+  ]
+}

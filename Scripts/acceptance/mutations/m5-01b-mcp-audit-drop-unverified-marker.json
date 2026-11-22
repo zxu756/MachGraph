@@ -1,0 +1,11 @@
+{
+  "id": "1b",
+  "description": "mach_audit_security drops line-1 experimental/unverified banner in EN and ZH",
+  "replacements": [
+    {
+      "file": "Sources/MachHeadlessCLI/MachCLIRunnerAndMCPServer.swift",
+      "old": "    public static func auditExperimentalWarningLine(in language: MachLanguage) -> String {\n        language.select(\n            \"# [EXPERIMENTAL / UNVERIFIED] Static heuristic plugin output has not passed acceptance — false positives and false negatives are known.\",\n            \"# 【实验性・未通过验收】静态启发式安全审计插件尚未通过验收：已知存在误报与漏报。\"\n        )\n    }",
+      "new": "    public static func auditExperimentalWarningLine(in language: MachLanguage) -> String {\n        language.select(\n            \"# Static heuristic plugin security audit output.\",\n            \"# 静态启发式安全审计插件输出。\"\n        )\n    }"
+    }
+  ]
+}

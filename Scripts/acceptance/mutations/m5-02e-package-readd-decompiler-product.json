@@ -1,0 +1,11 @@
+{
+  "id": "2e",
+  "description": "Package.swift re-exports frozen MachMicroDecompiler library product",
+  "replacements": [
+    {
+      "file": "Package.swift",
+      "old": "        .library(name: \"MachHeadlessCLI\", targets: [\"MachHeadlessCLI\"]),",
+      "new": "        .library(name: \"MachHeadlessCLI\", targets: [\"MachHeadlessCLI\"]),\n        .library(name: \"MachMicroDecompiler\", targets: [\"MachMicroDecompiler\"]),"
+    }
+  ]
+}

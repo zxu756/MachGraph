@@ -1,0 +1,11 @@
+{
+  "id": "2f",
+  "description": "MachCFGEngine removes @_exported from import MachGraphModels",
+  "replacements": [
+    {
+      "file": "Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift",
+      "old": "import Foundation\n@_exported import MachGraphModels\nimport MachBinaryFormats",
+      "new": "import Foundation\nimport MachGraphModels\nimport MachBinaryFormats"
+    }
+  ]
+}

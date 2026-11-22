@@ -1,0 +1,11 @@
+{
+  "id": "1a",
+  "description": "mach_disasm_function ignores count parameter (passes maxCount: nil)",
+  "replacements": [
+    {
+      "file": "Sources/MachHeadlessCLI/MachCLIRunnerAndMCPServer.swift",
+      "old": "                let container = try resolveContainer(from: arguments, runner: cliRunner)\n                let json = try cliRunner.formatFunctionDisasm(\n                    target: container,\n                    symbolQuery: symbolQuery,\n                    addressQuery: addressQuery,\n                    maxCount: maxCount,\n                    asJSON: true,\n                    language: language\n                )",
+      "new": "                let container = try resolveContainer(from: arguments, runner: cliRunner)\n                let json = try cliRunner.formatFunctionDisasm(\n                    target: container,\n                    symbolQuery: symbolQuery,\n                    addressQuery: addressQuery,\n                    maxCount: nil,\n                    asJSON: true,\n                    language: language\n                )"
+    }
+  ]
+}

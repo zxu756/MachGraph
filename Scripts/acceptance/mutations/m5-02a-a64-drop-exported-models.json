@@ -1,0 +1,11 @@
+{
+  "id": "2a",
+  "description": "MachA64Decoder removes @_exported from import MachGraphModels",
+  "replacements": [
+    {
+      "file": "Sources/MachA64Decoder/SymbolDemangler.swift",
+      "old": "@_exported import MachGraphModels",
+      "new": "import MachGraphModels"
+    }
+  ]
+}

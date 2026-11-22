@@ -1,0 +1,11 @@
+{
+  "id": "2c",
+  "description": "BinaryAnalysisCoordinator.analyzeCFGOnly(fileURL:) ignores selector (passes selector: nil)",
+  "replacements": [
+    {
+      "file": "Sources/MachCFGEngine/CrossReferenceAndCallGraphDatabase.swift",
+      "old": "        return try analyzeCFGOnly(image, data: data, selector: selector, options: explicitOptions)",
+      "new": "        return try analyzeCFGOnly(image, data: data, selector: nil, options: explicitOptions)"
+    }
+  ]
+}

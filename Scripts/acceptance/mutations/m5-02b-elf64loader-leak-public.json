@@ -1,0 +1,16 @@
+{
+  "id": "2b",
+  "description": "ELF64Loader widened from package back to public",
+  "replacements": [
+    {
+      "file": "Sources/MachBinaryFormats/MultiFormatCrossLoader.swift",
+      "old": "package enum ELF64Loader {",
+      "new": "public enum ELF64Loader {"
+    },
+    {
+      "file": "Sources/MachBinaryFormats/MultiFormatCrossLoader.swift",
+      "old": "        let pMemSz: UInt64\n    }\n\n    package static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {",
+      "new": "        let pMemSz: UInt64\n    }\n\n    public static func load(data: Data, fileName: String, filePath: String) throws -> LoadedBinaryImage {"
+    }
+  ]
+}
