@@ -756,8 +756,8 @@ struct MachHeadlessCLICFGTests {
         #expect(helpZH.contains("\n  cfg "))
         #expect(helpZH.contains("\n  cfg-dot "))
 
-        // MCP must NOT add a cfg tool in Stage 2
+        // M5 adds `mach_cfg` to the MCP tool registry
         let mcpToolNames = MachMCPServer.toolDefinitions.compactMap { $0["name"] as? String }
-        #expect(!mcpToolNames.contains { $0.lowercased().contains("cfg") })
+        #expect(mcpToolNames.contains("mach_cfg"))
     }
 }

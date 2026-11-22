@@ -513,24 +513,66 @@ public struct MachCLIRunner: Sendable {
 
     // MARK: - Subcommand Implementations
 
-    private func runInfo(args: [String], language: MachLanguage) throws -> String {
-        let parsed = try parseArguments(
-            args,
-            subcommand: "info",
-            valueFlags: ["--binary", "--slice"],
-            boolFlags: ["--json", "--demo"],
-            language: language
-        )
-        let target = try loadContainerOnly(parsed: parsed, subcommand: "info", language: language)
+    fileprivate struct LoadedContainerTarget {
+        let data: Data
+        let image: LoadedBinaryImage
+        let isDemo: Bool
+    }
+
+    fileprivate struct LoadedCFGTarget {
+        let data: Data
+        let index: BinaryAnalysisIndex
+        let isDemo: Bool
+    }
+
+    fileprivate struct BinaryInfoSnapshot {
+        let target: LoadedContainerTarget
+        let instructionCount: Int
+        let reportedFunctionStarts: [VirtualAddress]
+        let realSymbolCount: Int
+        let inferredSymbolCount: Int
+    }
+
+    fileprivate enum InfoOutputStyle {
+        case cliText
+        case cliJSON
+        case mcpCompactSummary
+    }
+
+    fileprivate func buildBinaryInfoSnapshot(target: LoadedContainerTarget) -> BinaryInfoSnapshot {
         let img = target.image
         let execSecs = (try? FunctionDiscoveryEngine().decodeExecutableSections(in: img, data: target.data)) ?? []
         let insnCount = execSecs.reduce(0) { $0 + $1.instructions.count }
         let realCount = img.symbols.filter { !$0.isInferred }.count
         let inferredCount = img.symbols.filter { $0.isInferred }.count
+        let isMachOContainer = (img.containerFormat == .machO64 || img.containerFormat == .universalFat)
+        let reportedFunctionStarts = isMachOContainer ? img.lcFunctionStarts : img.functionStarts
+        return BinaryInfoSnapshot(
+            target: target,
+            instructionCount: insnCount,
+            reportedFunctionStarts: reportedFunctionStarts,
+            realSymbolCount: realCount,
+            inferredSymbolCount: inferredCount
+        )
+    }
 
-        if parsed.isJSON {
-            let isMachOContainer = (img.containerFormat == .machO64 || img.containerFormat == .universalFat)
-            let reportedFunctionStarts = isMachOContainer ? img.lcFunctionStarts : img.functionStarts
+    fileprivate func formatBinaryInfo(
+        _ snap: BinaryInfoSnapshot,
+        style: InfoOutputStyle,
+        language: MachLanguage
+    ) throws -> String {
+        let target = snap.target
+        let img = target.image
+        let insnCount = snap.instructionCount
+        let realCount = snap.realSymbolCount
+        let inferredCount = snap.inferredSymbolCount
+        let reportedFunctionStarts = snap.reportedFunctionStarts
+
+        switch style {
+        case .mcpCompactSummary:
+            return "file=\(img.fileName) format=\(img.containerFormat.rawValue) arch=\(img.architecture.displayName) functions=\(reportedFunctionStarts.count) insns=\(insnCount) symbols=\(realCount)+\(inferredCount) fixups=\(img.chainedFixups.count) cdhash=\(img.codeSignature.cdHashHex)"
+
+        case .cliJSON:
             let dict: [String: Any] = [
                 "fileName": img.fileName,
                 "filePath": img.filePath,
@@ -616,35 +658,49 @@ public struct MachCLIRunner: Sendable {
                 ] as [String: Any]
             ]
             return try Self.encodeJSONObject(dict)
-        }
 
-        var lines: [String] = []
-        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
-            lines.append(banner)
+        case .cliText:
+            var lines: [String] = []
+            if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+                lines.append(banner)
+            }
+            lines.append("File:          \(img.fileName) (\(img.fileSize) bytes)")
+            lines.append("SHA-256:       \(img.sha256Hex)")
+            lines.append("Format:        \(img.containerFormat.rawValue)")
+            lines.append("Architecture:  \(img.architecture.displayName) (PIE=\(img.isPositionIndependent))")
+            if let uuid = img.uuidString {
+                lines.append("UUID:          \(uuid)")
+            }
+            lines.append("Image Base:    \(img.imageBase.hexString)")
+            lines.append("Entry Point:   \(img.entryPoint?.hexString ?? "none")")
+            lines.append("Segments:      \(img.segments.count) (\(img.sections.count) sections)")
+            lines.append("Symbols:       \(realCount) symtab, \(inferredCount) inferred")
+            lines.append("Fixups:        \(img.chainedFixups.count)")
+            lines.append("Instructions:  \(insnCount)")
+            lines.append("CodeSign:      signed=\(img.codeSignature.isSigned) adhoc=\(img.codeSignature.isAdHoc) cdhash=\(img.codeSignature.cdHashHex)")
+            if let idLib = img.dylibInstallID {
+                lines.append("Install ID:    \(idLib.installName) (compatibility version \(idLib.compatibilityVersion), current version \(idLib.currentVersion))")
+            }
+            lines.append("Libraries:     \(img.importedLibraries.count)")
+            for lib in img.importedLibraries {
+                let tagSuffix = lib.isWeak ? ", weak" : (lib.isReexport ? ", reexport" : "")
+                lines.append("  \(lib.installName) (compatibility version \(lib.compatibilityVersion), current version \(lib.currentVersion)\(tagSuffix))")
+            }
+            return lines.joined(separator: "\n")
         }
-        lines.append("File:          \(img.fileName) (\(img.fileSize) bytes)")
-        lines.append("SHA-256:       \(img.sha256Hex)")
-        lines.append("Format:        \(img.containerFormat.rawValue)")
-        lines.append("Architecture:  \(img.architecture.displayName) (PIE=\(img.isPositionIndependent))")
-        if let uuid = img.uuidString {
-            lines.append("UUID:          \(uuid)")
-        }
-        lines.append("Image Base:    \(img.imageBase.hexString)")
-        lines.append("Entry Point:   \(img.entryPoint?.hexString ?? "none")")
-        lines.append("Segments:      \(img.segments.count) (\(img.sections.count) sections)")
-        lines.append("Symbols:       \(realCount) symtab, \(inferredCount) inferred")
-        lines.append("Fixups:        \(img.chainedFixups.count)")
-        lines.append("Instructions:  \(insnCount)")
-        lines.append("CodeSign:      signed=\(img.codeSignature.isSigned) adhoc=\(img.codeSignature.isAdHoc) cdhash=\(img.codeSignature.cdHashHex)")
-        if let idLib = img.dylibInstallID {
-            lines.append("Install ID:    \(idLib.installName) (compatibility version \(idLib.compatibilityVersion), current version \(idLib.currentVersion))")
-        }
-        lines.append("Libraries:     \(img.importedLibraries.count)")
-        for lib in img.importedLibraries {
-            let tagSuffix = lib.isWeak ? ", weak" : (lib.isReexport ? ", reexport" : "")
-            lines.append("  \(lib.installName) (compatibility version \(lib.compatibilityVersion), current version \(lib.currentVersion)\(tagSuffix))")
-        }
-        return lines.joined(separator: "\n")
+    }
+
+    private func runInfo(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "info",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "info", language: language)
+        let snap = buildBinaryInfoSnapshot(target: target)
+        return try formatBinaryInfo(snap, style: parsed.isJSON ? .cliJSON : .cliText, language: language)
     }
 
     private func runSegments(args: [String], language: MachLanguage) throws -> String {
@@ -711,16 +767,13 @@ public struct MachCLIRunner: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private func runSymbols(args: [String], language: MachLanguage) throws -> String {
-        let parsed = try parseArguments(
-            args,
-            subcommand: "symbols",
-            valueFlags: ["--binary", "--slice", "--filter"],
-            boolFlags: ["--json", "--demo"],
-            language: language
-        )
-        let target = try loadContainerOnly(parsed: parsed, subcommand: "symbols", language: language)
-        let filter = parsed.values["--filter"]?.lowercased()
+    fileprivate func formatSymbols(
+        target: LoadedContainerTarget,
+        filter rawFilter: String?,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
+        let filter = rawFilter?.lowercased()
         let filtered = target.image.symbols.filter { sym in
             guard let q = filter, !q.isEmpty else { return true }
             return sym.name.lowercased().contains(q) || sym.demangledName.lowercased().contains(q)
@@ -728,7 +781,7 @@ public struct MachCLIRunner: Sendable {
         let realSyms = filtered.filter { !$0.isInferred }
         let inferredSyms = filtered.filter { $0.isInferred }
 
-        if parsed.isJSON {
+        if asJSON {
             func encodeSymbol(_ sym: BinarySymbol) -> [String: Any] {
                 [
                     "name": sym.name,
@@ -768,6 +821,23 @@ public struct MachCLIRunner: Sendable {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func runSymbols(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "symbols",
+            valueFlags: ["--binary", "--slice", "--filter"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "symbols", language: language)
+        return try formatSymbols(
+            target: target,
+            filter: parsed.values["--filter"],
+            asJSON: parsed.isJSON,
+            language: language
+        )
     }
 
     private func runObjC(args: [String], language: MachLanguage) throws -> String {
@@ -932,22 +1002,19 @@ public struct MachCLIRunner: Sendable {
         return lines.joined(separator: "\n")
     }
 
-    private func runStrings(args: [String], language: MachLanguage) throws -> String {
-        let parsed = try parseArguments(
-            args,
-            subcommand: "strings",
-            valueFlags: ["--binary", "--slice", "--filter"],
-            boolFlags: ["--json", "--demo"],
-            language: language
-        )
-        let target = try loadContainerOnly(parsed: parsed, subcommand: "strings", language: language)
-        let filter = parsed.values["--filter"]?.lowercased()
+    fileprivate func formatStrings(
+        target: LoadedContainerTarget,
+        filter rawFilter: String?,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
+        let filter = rawFilter?.lowercased()
         let strs = target.image.strings.filter { lit in
             guard let q = filter, !q.isEmpty else { return true }
             return lit.value.lowercased().contains(q)
         }
 
-        if parsed.isJSON {
+        if asJSON {
             let dict: [String: Any] = [
                 "fileName": target.image.fileName,
                 "isDemo": target.isDemo,
@@ -974,6 +1041,23 @@ public struct MachCLIRunner: Sendable {
             lines.append("\(lit.address.hexString) (\(lit.sectionName)): \(lit.value)")
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func runStrings(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "strings",
+            valueFlags: ["--binary", "--slice", "--filter"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "strings", language: language)
+        return try formatStrings(
+            target: target,
+            filter: parsed.values["--filter"],
+            asJSON: parsed.isJSON,
+            language: language
+        )
     }
 
     private func runFixups(args: [String], language: MachLanguage) throws -> String {
@@ -1031,6 +1115,102 @@ public struct MachCLIRunner: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    fileprivate func formatFunctionDisasm(
+        target: LoadedContainerTarget,
+        symbolQuery: String?,
+        addressQuery: String?,
+        maxCount: Int?,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
+        let cliOptions = BinaryAnalysisOptions(
+            computeSugiyamaLayouts: false,
+            computePostDominatorTrees: false
+        )
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+
+        if asJSON {
+            let selector: CFGFunctionSelector
+            if let addressQuery {
+                let addr = try parseStrictAddress(addressQuery, language: language)
+                selector = .address(addr)
+            } else if let symbolQuery {
+                let trimmed = symbolQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    throw MachGraphError.invalidCLIArguments(
+                        language.select("Function/symbol name must not be empty.", "函数或符号名称不能为空。")
+                    )
+                }
+                selector = .symbol(trimmed)
+            } else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Specify '--symbol <name>' or '--address <0x...>'.", "请指定 '--symbol <名称>' 或 '--address <0x...>'。")
+                )
+            }
+
+            let snapshot = try coordinator.analyzeCFGOnly(
+                target.image,
+                data: target.data,
+                selector: selector
+            )
+            guard let fn = snapshot.functions.first else {
+                switch selector {
+                case .address:
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "No function found at address '\(addressQuery ?? "")' in '\(target.image.fileName)'.",
+                            "在 '\(target.image.fileName)' 中未找到位于地址 '\(addressQuery ?? "")' 的函数。"
+                        )
+                    )
+                case .symbol(let sym):
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "Function or symbol '\(sym)' not found in '\(target.image.fileName)'.",
+                            "在 '\(target.image.fileName)' 中未找到函数或符号 '\(sym)'。"
+                        )
+                    )
+                }
+            }
+
+            let allFnInsns = fn.blocks.flatMap(\.instructions)
+            let cappedInsns = maxCount.map { Array(allFnInsns.prefix($0)) } ?? allFnInsns
+            let dict: [String: Any] = [
+                "fileName": target.image.fileName,
+                "isDemo": target.isDemo,
+                "function": fn.name,
+                "demangledName": fn.demangledName,
+                "address": fn.address.rawValue,
+                "addressHex": fn.address.hexString,
+                "instructions": cappedInsns.map(Self.encodeInstructionJSON)
+            ]
+            return try Self.encodeJSONObject(dict)
+        }
+
+        let index = try coordinator.analyzeBinary(target.image, data: target.data)
+        let fn = try resolveRequiredFunction(
+            in: index,
+            symbolQuery: symbolQuery,
+            addressQuery: addressQuery,
+            language: language
+        )
+        var out: [String] = []
+        if let banner = demoBannerLine(isDemo: target.isDemo, language: language) {
+            out.append(banner)
+        }
+        out.append("; Function \(fn.demangledName) @ \(fn.address.hexString)")
+        var emitted = 0
+        outer: for block in fn.blocks {
+            out.append("\(block.label):")
+            for insn in block.instructions {
+                if let maxCount, emitted >= maxCount { break outer }
+                let commentSuffix = insn.autoComment.map { " ; \($0)" } ?? ""
+                out.append("  \(insn.address.hexString)  \(insn.rawBytesHex)  \(insn.formattedDisassembly)\(commentSuffix)")
+                emitted += 1
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
     private func runDisasm(args: [String], language: MachLanguage) throws -> String {
         let parsed = try parseArguments(
             args,
@@ -1058,51 +1238,21 @@ public struct MachCLIRunner: Sendable {
             maxCount = nil
         }
 
+        let target = try loadContainerOnly(parsed: parsed, subcommand: "disasm", language: language)
+
         // Targeted function/symbol/address disassembly
         if requestedName != nil || requestedAddr != nil {
-            let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "disasm", language: language)
-            let fn = try resolveRequiredFunction(
-                in: loaded.index,
+            return try formatFunctionDisasm(
+                target: target,
                 symbolQuery: requestedName,
                 addressQuery: requestedAddr,
+                maxCount: maxCount,
+                asJSON: parsed.isJSON,
                 language: language
             )
-            let allFnInsns = fn.blocks.flatMap(\.instructions)
-            let cappedInsns = maxCount.map { Array(allFnInsns.prefix($0)) } ?? allFnInsns
-
-            if parsed.isJSON {
-                let dict: [String: Any] = [
-                    "fileName": loaded.index.image.fileName,
-                    "isDemo": loaded.isDemo,
-                    "function": fn.name,
-                    "demangledName": fn.demangledName,
-                    "address": fn.address.rawValue,
-                    "addressHex": fn.address.hexString,
-                    "instructions": cappedInsns.map(Self.encodeInstructionJSON)
-                ]
-                return try Self.encodeJSONObject(dict)
-            }
-
-            var out: [String] = []
-            if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
-                out.append(banner)
-            }
-            out.append("; Function \(fn.demangledName) @ \(fn.address.hexString)")
-            var emitted = 0
-            outer: for block in fn.blocks {
-                out.append("\(block.label):")
-                for insn in block.instructions {
-                    if let maxCount, emitted >= maxCount { break outer }
-                    let commentSuffix = insn.autoComment.map { " ; \($0)" } ?? ""
-                    out.append("  \(insn.address.hexString)  \(insn.rawBytesHex)  \(insn.formattedDisassembly)\(commentSuffix)")
-                    emitted += 1
-                }
-            }
-            return out.joined(separator: "\n")
         }
 
         // Full linear disassembly of instruction sections ONLY (fast O(N), skips 2D CFG layout!)
-        let target = try loadContainerOnly(parsed: parsed, subcommand: "disasm", language: language)
         let decodedSections = try FunctionDiscoveryEngine().decodeExecutableSections(in: target.image, data: target.data)
         guard !decodedSections.isEmpty else {
             throw MachGraphError.cfgAnalysisError(
@@ -1151,6 +1301,96 @@ public struct MachCLIRunner: Sendable {
         return lines.joined(separator: "\n")
     }
 
+    fileprivate func formatCFG(
+        target: LoadedContainerTarget,
+        symbolQuery: String?,
+        addressQuery: String?,
+        requireSelector: Bool,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
+        if symbolQuery != nil && addressQuery != nil {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Conflicting options: specify either '--symbol' or '--address', not both.",
+                    "参数冲突：请只指定 '--symbol' 或 '--address' 之一，不要同时传入。"
+                )
+            )
+        }
+
+        let selector: CFGFunctionSelector?
+        if let addressQuery {
+            let addr = try parseStrictAddress(addressQuery, language: language)
+            selector = .address(addr)
+        } else if let symbolQuery {
+            let trimmed = symbolQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw MachGraphError.invalidCLIArguments(
+                    language.select("Function/symbol name must not be empty.", "函数或符号名称不能为空。")
+                )
+            }
+            selector = .symbol(trimmed)
+        } else if requireSelector {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Missing target function: mach_cfg requires either 'symbol' or 'address' (full-binary CFG export is CLI-only via 'machgraph cfg <file> --json').",
+                    "缺少目标函数：mach_cfg 必须传入 'symbol' 或 'address' 参数之一（全文件 CFG 导出仅限命令行 'machgraph cfg <file> --json'）。"
+                )
+            )
+        } else {
+            selector = nil
+        }
+
+        let cliOptions = BinaryAnalysisOptions(
+            computeSugiyamaLayouts: false,
+            computePostDominatorTrees: false
+        )
+        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
+        let snapshot = try coordinator.analyzeCFGOnly(
+            target.image,
+            data: target.data,
+            selector: selector
+        )
+
+        if let selector {
+            if snapshot.functions.isEmpty {
+                switch selector {
+                case .address:
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "No function found at address '\(addressQuery ?? "")' in '\(target.image.fileName)'.",
+                            "在 '\(target.image.fileName)' 中未找到位于地址 '\(addressQuery ?? "")' 的函数。"
+                        )
+                    )
+                case .symbol(let sym):
+                    throw MachGraphError.cfgAnalysisError(
+                        language.select(
+                            "Function or symbol '\(sym)' not found in '\(target.image.fileName)'.",
+                            "在 '\(target.image.fileName)' 中未找到函数或符号 '\(sym)'。"
+                        )
+                    )
+                }
+            }
+        } else if snapshot.functions.isEmpty {
+            throw MachGraphError.cfgAnalysisError(
+                language.select(
+                    "No functions recovered in '\(target.image.fileName)'.",
+                    "在 '\(target.image.fileName)' 中未恢复出任何函数。"
+                )
+            )
+        }
+
+        if asJSON {
+            return Self.encodeCFGJSON(snapshot: snapshot, isDemo: target.isDemo)
+        }
+        return formatCFGTextSummary(
+            snapshot: snapshot,
+            isDemo: target.isDemo,
+            isSingleFunctionMode: selector != nil,
+            language: language
+        )
+    }
+
     private func runCFG(args: [String], language: MachLanguage) throws -> String {
         let parsed = try parseArguments(
             args,
@@ -1169,81 +1409,15 @@ public struct MachCLIRunner: Sendable {
             )
         }
 
-        let rawSymbol = parsed.values["--symbol"] ?? parsed.values["--function"]
+        let rawSymbol = parsed.values["--function"] ?? parsed.values["--symbol"]
         let rawAddress = parsed.values["--address"]
-
-        if rawSymbol != nil && rawAddress != nil {
-            throw MachGraphError.invalidCLIArguments(
-                language.select(
-                    "Conflicting options: specify either '--symbol' or '--address', not both.",
-                    "参数冲突：请只指定 '--symbol' 或 '--address' 之一，不要同时传入。"
-                )
-            )
-        }
-
-        let selector: CFGFunctionSelector?
-        if let rawAddress {
-            let addr = try parseStrictAddress(rawAddress, language: language)
-            selector = .address(addr)
-        } else if let rawSymbol {
-            let trimmed = rawSymbol.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                throw MachGraphError.invalidCLIArguments(
-                    language.select("Function/symbol name must not be empty.", "函数或符号名称不能为空。")
-                )
-            }
-            selector = .symbol(trimmed)
-        } else {
-            selector = nil
-        }
-
         let container = try loadContainerOnly(parsed: parsed, subcommand: "cfg", language: language)
-        let cliOptions = BinaryAnalysisOptions(
-            computeSugiyamaLayouts: false,
-            computePostDominatorTrees: false
-        )
-        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
-        let snapshot = try coordinator.analyzeCFGOnly(
-            container.image,
-            data: container.data,
-            selector: selector
-        )
-
-        if let selector {
-            if snapshot.functions.isEmpty {
-                switch selector {
-                case .address:
-                    throw MachGraphError.cfgAnalysisError(
-                        language.select(
-                            "No function found at address '\(rawAddress ?? "")' in '\(container.image.fileName)'.",
-                            "在 '\(container.image.fileName)' 中未找到位于地址 '\(rawAddress ?? "")' 的函数。"
-                        )
-                    )
-                case .symbol(let sym):
-                    throw MachGraphError.cfgAnalysisError(
-                        language.select(
-                            "Function or symbol '\(sym)' not found in '\(container.image.fileName)'.",
-                            "在 '\(container.image.fileName)' 中未找到函数或符号 '\(sym)'。"
-                        )
-                    )
-                }
-            }
-        } else if snapshot.functions.isEmpty {
-            throw MachGraphError.cfgAnalysisError(
-                language.select(
-                    "No functions recovered in '\(container.image.fileName)'.",
-                    "在 '\(container.image.fileName)' 中未恢复出任何函数。"
-                )
-            )
-        }
-
-        if parsed.isJSON {
-            return Self.encodeCFGJSON(snapshot: snapshot, isDemo: container.isDemo)
-        }
-        return formatCFGTextSummary(
-            snapshot: snapshot,
-            isDemo: container.isDemo,
-            isSingleFunctionMode: selector != nil,
+        return try formatCFG(
+            target: container,
+            symbolQuery: rawSymbol,
+            addressQuery: rawAddress,
+            requireSelector: false,
+            asJSON: parsed.isJSON,
             language: language
         )
     }
@@ -1628,25 +1802,20 @@ public struct MachCLIRunner: Sendable {
         return dot
     }
 
-    private func runDecompile(args: [String], language: MachLanguage) throws -> String {
-        let parsed = try parseArguments(
-            args,
-            subcommand: "decompile",
-            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address"],
-            boolFlags: ["--json", "--demo"],
-            language: language
-        )
-        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "decompile", language: language)
+    fileprivate func formatDecompile(
+        loaded: LoadedCFGTarget,
+        symbolQuery: String?,
+        addressQuery: String?,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
         let engine = MachMicroDecompilerEngine()
-        let requestedName = parsed.values["--function"] ?? parsed.values["--symbol"]
-        let requestedAddr = parsed.values["--address"]
-
         let targetFunctions: [RecoveredFunction]
-        if requestedName != nil || requestedAddr != nil {
+        if symbolQuery != nil || addressQuery != nil {
             let fn = try resolveRequiredFunction(
                 in: loaded.index,
-                symbolQuery: requestedName,
-                addressQuery: requestedAddr,
+                symbolQuery: symbolQuery,
+                addressQuery: addressQuery,
                 language: language
             )
             targetFunctions = [fn]
@@ -1666,9 +1835,10 @@ public struct MachCLIRunner: Sendable {
         }
         let warningLine = PseudoCCodeFormatter.experimentalWarningComment(in: language)
 
-        if parsed.isJSON {
+        if asJSON {
             let dict: [String: Any] = [
                 "experimental": true,
+                "unverified": true,
                 "warning": warningLine,
                 "fileName": loaded.index.image.fileName,
                 "isDemo": loaded.isDemo,
@@ -1698,6 +1868,26 @@ public struct MachCLIRunner: Sendable {
             }
         }
         return body
+    }
+
+    private func runDecompile(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "decompile",
+            valueFlags: ["--binary", "--slice", "--function", "--symbol", "--address"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "decompile", language: language)
+        let requestedName = parsed.values["--function"] ?? parsed.values["--symbol"]
+        let requestedAddr = parsed.values["--address"]
+        return try formatDecompile(
+            loaded: loaded,
+            symbolQuery: requestedName,
+            addressQuery: requestedAddr,
+            asJSON: parsed.isJSON,
+            language: language
+        )
     }
 
     private struct CLIXrefRecordPayload: Encodable {
@@ -1753,6 +1943,93 @@ public struct MachCLIRunner: Sendable {
         let xrefs: [CLIXrefRecordPayload]
     }
 
+    fileprivate enum XrefsOutputStyle {
+        case cliText
+        case cliJSON
+        case mcpCompactText
+    }
+
+    fileprivate static func formatIncomingXrefEdge(_ rec: XrefRecord) -> String {
+        "<- \(rec.fromAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)"
+    }
+
+    fileprivate static func formatOutgoingXrefEdge(_ rec: XrefRecord) -> String {
+        "-> \(rec.toAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)"
+    }
+
+    fileprivate func formatTargetXrefs(
+        loaded: LoadedCFGTarget,
+        addressQuery: String?,
+        symbolQuery: String?,
+        style: XrefsOutputStyle,
+        language: MachLanguage
+    ) throws -> String {
+        let targetAddr: VirtualAddress
+        if let addressQuery {
+            targetAddr = try parseStrictAddress(addressQuery, language: language)
+        } else if let symbolQuery {
+            let fn = try resolveRequiredFunction(
+                in: loaded.index,
+                symbolQuery: symbolQuery,
+                addressQuery: nil,
+                language: language
+            )
+            targetAddr = fn.address
+        } else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select("Missing required parameter 'address'.", "缺少必填参数 'address'。")
+            )
+        }
+
+        let incoming = loaded.index.crossReferences.xrefsTo(address: targetAddr)
+        let outgoing = loaded.index.crossReferences.xrefsFrom(address: targetAddr)
+
+        switch style {
+        case .cliJSON:
+            func encodeXref(_ rec: XrefRecord) -> [String: Any] {
+                [
+                    "fromAddress": rec.fromAddress.rawValue,
+                    "fromAddressHex": rec.fromAddress.hexString,
+                    "fromFunction": rec.fromFunction.map { NSNumber(value: $0.rawValue) } ?? NSNull(),
+                    "toAddress": rec.toAddress.rawValue,
+                    "toAddressHex": rec.toAddress.hexString,
+                    "kind": rec.kind.rawValue,
+                    "instructionPreview": rec.instructionPreview
+                ]
+            }
+            let dict: [String: Any] = [
+                "fileName": loaded.index.image.fileName,
+                "isDemo": loaded.isDemo,
+                "address": targetAddr.rawValue,
+                "addressHex": targetAddr.hexString,
+                "incoming": incoming.map(encodeXref),
+                "outgoing": outgoing.map(encodeXref)
+            ]
+            return try Self.encodeJSONObject(dict)
+
+        case .cliText:
+            var lines: [String] = []
+            if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
+                lines.append(banner)
+            }
+            lines.append("XREFS TO \(targetAddr.hexString) (\(incoming.count)):")
+            for rec in incoming {
+                lines.append("  \(Self.formatIncomingXrefEdge(rec))")
+            }
+            lines.append("XREFS FROM \(targetAddr.hexString) (\(outgoing.count)):")
+            for rec in outgoing {
+                lines.append("  \(Self.formatOutgoingXrefEdge(rec))")
+            }
+            return lines.joined(separator: "\n")
+
+        case .mcpCompactText:
+            var lines: [String] = ["to=\(incoming.count) from=\(outgoing.count)"]
+            lines.append(contentsOf: incoming.map(Self.formatIncomingXrefEdge))
+            lines.append(contentsOf: outgoing.map(Self.formatOutgoingXrefEdge))
+            return lines.joined(separator: "\n")
+        }
+    }
+
     private func runXrefs(args: [String], language: MachLanguage) throws -> String {
         let parsed = try parseArguments(
             args,
@@ -1790,55 +2067,13 @@ public struct MachCLIRunner: Sendable {
             return lines.joined(separator: "\n")
         }
 
-        let targetAddr: VirtualAddress
-        if let addrRaw {
-            targetAddr = try parseStrictAddress(addrRaw, language: language)
-        } else if let symRaw {
-            let fn = try resolveRequiredFunction(in: loaded.index, symbolQuery: symRaw, addressQuery: nil, language: language)
-            targetAddr = fn.address
-        } else {
-            targetAddr = .zero
-        }
-
-        let incoming = loaded.index.crossReferences.xrefsTo(address: targetAddr)
-        let outgoing = loaded.index.crossReferences.xrefsFrom(address: targetAddr)
-
-        if parsed.isJSON {
-            func encodeXref(_ rec: XrefRecord) -> [String: Any] {
-                [
-                    "fromAddress": rec.fromAddress.rawValue,
-                    "fromAddressHex": rec.fromAddress.hexString,
-                    "fromFunction": rec.fromFunction.map { NSNumber(value: $0.rawValue) } ?? NSNull(),
-                    "toAddress": rec.toAddress.rawValue,
-                    "toAddressHex": rec.toAddress.hexString,
-                    "kind": rec.kind.rawValue,
-                    "instructionPreview": rec.instructionPreview
-                ]
-            }
-            let dict: [String: Any] = [
-                "fileName": loaded.index.image.fileName,
-                "isDemo": loaded.isDemo,
-                "address": targetAddr.rawValue,
-                "addressHex": targetAddr.hexString,
-                "incoming": incoming.map(encodeXref),
-                "outgoing": outgoing.map(encodeXref)
-            ]
-            return try Self.encodeJSONObject(dict)
-        }
-
-        var lines: [String] = []
-        if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
-            lines.append(banner)
-        }
-        lines.append("XREFS TO \(targetAddr.hexString) (\(incoming.count)):")
-        for rec in incoming {
-            lines.append("  <- \(rec.fromAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
-        }
-        lines.append("XREFS FROM \(targetAddr.hexString) (\(outgoing.count)):")
-        for rec in outgoing {
-            lines.append("  -> \(rec.toAddress.hexString) [\(rec.kind.rawValue)] \(rec.instructionPreview)")
-        }
-        return lines.joined(separator: "\n")
+        return try formatTargetXrefs(
+            loaded: loaded,
+            addressQuery: addrRaw,
+            symbolQuery: symRaw,
+            style: parsed.isJSON ? .cliJSON : .cliText,
+            language: language
+        )
     }
 
     private func runCodeSign(args: [String], language: MachLanguage) throws -> String {
@@ -2392,26 +2627,32 @@ public struct MachCLIRunner: Sendable {
         return "Ad-hoc re-signed \(target.image.fileName) | CDHash=\(reSigned.updatedCDHashHex) | Valid=\(reSigned.verificationReport.isValid)"
     }
 
-    private func runAuditPlugins(args: [String], language: MachLanguage) throws -> String {
-        let parsed = try parseArguments(
-            args,
-            subcommand: "audit-plugins",
-            valueFlags: ["--binary", "--slice"],
-            boolFlags: ["--json", "--demo"],
-            language: language
+    public static func auditExperimentalWarningLine(in language: MachLanguage) -> String {
+        language.select(
+            "# [EXPERIMENTAL / UNVERIFIED] Static heuristic plugin output has not passed acceptance — false positives and false negatives are known.",
+            "# 【实验性・未通过验收】静态启发式安全审计插件尚未通过验收：已知存在误报与漏报。"
         )
-        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "audit-plugins", language: language)
+    }
+
+    fileprivate func formatAuditPlugins(
+        loaded: LoadedCFGTarget,
+        asJSON: Bool,
+        language: MachLanguage
+    ) throws -> String {
         let report = try MachPluginRunner().runSuite(
             against: loaded.index,
             binaryData: loaded.data,
             continueOnError: true
         )
+        let warningLine = Self.auditExperimentalWarningLine(in: language)
 
-        if parsed.isJSON {
+        if asJSON {
             let findingsJSON = try JSONEncoder().encode(report.findings)
             let findingsArray = (try? JSONSerialization.jsonObject(with: findingsJSON)) ?? []
             let dict: [String: Any] = [
                 "experimental": true,
+                "unverified": true,
+                "warning": warningLine,
                 "fileName": loaded.index.image.fileName,
                 "isDemo": loaded.isDemo,
                 "pluginCount": report.results.count,
@@ -2421,13 +2662,7 @@ public struct MachCLIRunner: Sendable {
             return try Self.encodeJSONObject(dict)
         }
 
-        var lines: [String] = []
-        lines.append(
-            language.select(
-                "# EXPERIMENTAL: Static heuristic plugin output — false positives and false negatives are known.",
-                "# 【实验性】静态启发式插件输出：已知存在误报与漏报。"
-            )
-        )
+        var lines: [String] = [warningLine]
         if let banner = demoBannerLine(isDemo: loaded.isDemo, language: language) {
             lines.append(banner)
         }
@@ -2439,6 +2674,18 @@ public struct MachCLIRunner: Sendable {
             }
         }
         return lines.joined(separator: "\n")
+    }
+
+    private func runAuditPlugins(args: [String], language: MachLanguage) throws -> String {
+        let parsed = try parseArguments(
+            args,
+            subcommand: "audit-plugins",
+            valueFlags: ["--binary", "--slice"],
+            boolFlags: ["--json", "--demo"],
+            language: language
+        )
+        let loaded = try loadAndAnalyzeCFG(parsed: parsed, subcommand: "audit-plugins", language: language)
+        return try formatAuditPlugins(loaded: loaded, asJSON: parsed.isJSON, language: language)
     }
 
     private func runExportHTML(args: [String], language: MachLanguage) throws -> String {
@@ -2643,11 +2890,45 @@ public struct MachCLIRunner: Sendable {
         return url
     }
 
+    fileprivate func loadContainerImage(
+        url: URL,
+        sliceIndex: Int?,
+        isDemo: Bool,
+        language: MachLanguage
+    ) throws -> LoadedContainerTarget {
+        if let s = sliceIndex, s < 0 {
+            throw MachGraphError.invalidCLIArguments(
+                language.select("Invalid '--slice' index '\(s)'.", "无效的 '--slice' 切片索引 '\(s)'。")
+            )
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw MachGraphError.ioFailure(
+                language.select(
+                    "Unable to read '\(url.path)': \(error.localizedDescription)",
+                    "无法读取文件 '\(url.path)': \(error.localizedDescription)"
+                )
+            )
+        }
+        guard !data.isEmpty else {
+            throw MachGraphError.unexpectedEOF(offset: 0, requested: 4, available: 0)
+        }
+        let image = try UniversalBinaryDispatcher.load(
+            data: data,
+            filePath: url.path,
+            fileName: url.lastPathComponent,
+            preferredSliceIndex: sliceIndex
+        )
+        return LoadedContainerTarget(data: data, image: image, isDemo: isDemo)
+    }
+
     private func loadContainerOnly(
         parsed: ParsedCLIArguments,
         subcommand: String,
         language: MachLanguage
-    ) throws -> (data: Data, image: LoadedBinaryImage, isDemo: Bool) {
+    ) throws -> LoadedContainerTarget {
         let resolved = try resolveInputFileURL(parsed: parsed, subcommand: subcommand, language: language)
         let sliceIndex: Int?
         if let rawSlice = parsed.values["--slice"] {
@@ -2660,43 +2941,28 @@ public struct MachCLIRunner: Sendable {
         } else {
             sliceIndex = nil
         }
-
-        let data: Data
-        do {
-            data = try Data(contentsOf: resolved.url)
-        } catch {
-            throw MachGraphError.ioFailure(
-                language.select(
-                    "Unable to read '\(resolved.url.path)': \(error.localizedDescription)",
-                    "无法读取文件 '\(resolved.url.path)': \(error.localizedDescription)"
-                )
-            )
-        }
-        guard !data.isEmpty else {
-            throw MachGraphError.unexpectedEOF(offset: 0, requested: 4, available: 0)
-        }
-        let image = try UniversalBinaryDispatcher.load(
-            data: data,
-            filePath: resolved.url.path,
-            fileName: resolved.url.lastPathComponent,
-            preferredSliceIndex: sliceIndex
-        )
-        return (data, image, resolved.isDemo)
+        return try loadContainerImage(url: resolved.url, sliceIndex: sliceIndex, isDemo: resolved.isDemo, language: language)
     }
 
-    private func loadAndAnalyzeCFG(
-        parsed: ParsedCLIArguments,
-        subcommand: String,
-        language: MachLanguage
-    ) throws -> (data: Data, index: BinaryAnalysisIndex, isDemo: Bool) {
-        let container = try loadContainerOnly(parsed: parsed, subcommand: subcommand, language: language)
+    fileprivate func loadAnalyzedBinary(
+        container: LoadedContainerTarget
+    ) throws -> LoadedCFGTarget {
         let cliOptions = BinaryAnalysisOptions(
             computeSugiyamaLayouts: false,
             computePostDominatorTrees: false
         )
         let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
         let index = try coordinator.analyzeBinary(container.image, data: container.data)
-        return (container.data, index, container.isDemo)
+        return LoadedCFGTarget(data: container.data, index: index, isDemo: container.isDemo)
+    }
+
+    private func loadAndAnalyzeCFG(
+        parsed: ParsedCLIArguments,
+        subcommand: String,
+        language: MachLanguage
+    ) throws -> LoadedCFGTarget {
+        let container = try loadContainerOnly(parsed: parsed, subcommand: subcommand, language: language)
+        return try loadAnalyzedBinary(container: container)
     }
 
     private func resolveRequiredFunction(
@@ -3006,49 +3272,204 @@ public struct MachMCPServer: Sendable {
     }
 
     public static var toolDefinitions: [[String: Any]] {
-        [
+        toolDefinitions(in: .en)
+    }
+
+    public static func toolDefinitions(in language: MachLanguage) -> [[String: Any]] {
+        let binPathProp: [String: Any] = [
+            "type": "string",
+            "description": language.select(
+                "Path to the Mach-O or Universal Fat binary file on disk.",
+                "磁盘上的 Mach-O 或 Universal Fat 二进制文件路径。"
+            )
+        ]
+        let sliceProp: [String: Any] = [
+            "type": "integer",
+            "description": language.select(
+                "Optional 0-based architecture slice index for Universal Fat binaries.",
+                "可选的 Universal Fat 架构切片索引（从 0 开始）。"
+            )
+        ]
+        return [
             [
                 "name": "mach_inspect_binary",
-                "description": "Load a Mach-O / Universal binary from disk and return architecture, segment, function, Xref, and CodeSignature summary.",
+                "description": language.select(
+                    "Load a Mach-O / Universal binary container from disk and return format, architecture, function-starts, instruction, symbol, fixup, and CodeSignature CDHash summary.",
+                    "从磁盘加载 Mach-O / Universal 二进制容器并返回格式、架构、函数起点、指令数、符号、重定位链与代码签名 CDHash 摘要。"
+                ),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "binaryPath": ["type": "string", "description": "Path to binary file on disk."]
+                        "binaryPath": binPathProp,
+                        "slice": sliceProp
                     ],
                     "required": ["binaryPath"]
                 ]
             ],
             [
-                "name": "mach_decompile_function",
-                "description": "[Experimental] Emit Pseudo-C for a recovered ARM64/ARM64e function (condition expressions are known to be unreliable).",
+                "name": "mach_list_symbols",
+                "description": language.select(
+                    "List symtab and inferred symbols for a Mach-O / Universal binary in the same JSON schema as 'machgraph symbols --json' (fast container-only path).",
+                    "以与 'machgraph symbols --json' 完全一致的 JSON 结构列出符号表符号与推断入口（仅加载容器快路径）。"
+                ),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "binaryPath": ["type": "string"],
-                        "function": ["type": "string", "description": "Function name or hex address (e.g. _main or 0x100001028)."]
+                        "binaryPath": binPathProp,
+                        "filter": [
+                            "type": "string",
+                            "description": language.select(
+                                "Optional case-insensitive substring filter matched against symbol name or demangled name.",
+                                "可选的不区分大小写子串过滤词，匹配符号名或解混淆名。"
+                            )
+                        ],
+                        "slice": sliceProp
                     ],
-                    "required": ["binaryPath", "function"]
+                    "required": ["binaryPath"]
+                ]
+            ],
+            [
+                "name": "mach_find_strings",
+                "description": language.select(
+                    "Extract printable string literals from a Mach-O / Universal binary in the same JSON schema as 'machgraph strings --json' (fast container-only path).",
+                    "以与 'machgraph strings --json' 完全一致的 JSON 结构提取二进制中的字符串字面量（仅加载容器快路径）。"
+                ),
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "binaryPath": binPathProp,
+                        "filter": [
+                            "type": "string",
+                            "description": language.select(
+                                "Optional case-insensitive substring filter matched against extracted string values.",
+                                "可选的不区分大小写子串过滤词，匹配提取出的字符串内容。"
+                            )
+                        ],
+                        "slice": sliceProp
+                    ],
+                    "required": ["binaryPath"]
+                ]
+            ],
+            [
+                "name": "mach_disasm_function",
+                "description": language.select(
+                    "Disassemble a recovered ARM64/ARM64e function by symbol name or virtual address in the same JSON schema as 'machgraph disasm --json'.",
+                    "按符号名或虚拟地址反汇编单个 ARM64/ARM64e 函数，返回与 'machgraph disasm --json' 完全一致的 JSON。"
+                ),
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "binaryPath": binPathProp,
+                        "symbol": [
+                            "type": "string",
+                            "description": language.select(
+                                "Target function or symbol name (e.g. _main or _entry). Specify symbol or address.",
+                                "目标函数或符号名（如 _main 或 _entry），与 address 二选一传入。"
+                            )
+                        ],
+                        "address": [
+                            "type": "string",
+                            "description": language.select(
+                                "Hexadecimal or decimal virtual address at or inside the target function (e.g. 0x100000960). Specify symbol or address.",
+                                "目标函数入口或内部的十六进制/十进制虚拟地址（如 0x100000960），与 symbol 二选一传入。"
+                            )
+                        ],
+                        "count": [
+                            "type": "integer",
+                            "description": language.select(
+                                "Optional positive maximum number of instructions to return from the start of the function.",
+                                "可选的正整数指令条数上限（从函数开头起截取）。"
+                            )
+                        ],
+                        "slice": sliceProp
+                    ],
+                    "required": ["binaryPath"]
+                ]
+            ],
+            [
+                "name": "mach_cfg",
+                "description": language.select(
+                    "Build the single-function Control-Flow Graph, dominator tree, and natural loops in 'machgraph.cfg/1' JSON schema (pass symbol or address).",
+                    "为单个函数构建控制流图、支配树与自然循环，返回与 'machgraph cfg --json' 完全一致的 'machgraph.cfg/1' JSON（必传 symbol 或 address 之一）。"
+                ),
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "binaryPath": binPathProp,
+                        "symbol": [
+                            "type": "string",
+                            "description": language.select(
+                                "Target function or symbol name (e.g. _entry). Mutually exclusive with address; one of symbol or address is required.",
+                                "目标函数或符号名（如 _entry），与 address 互斥，二者必传其一。"
+                            )
+                        ],
+                        "address": [
+                            "type": "string",
+                            "description": language.select(
+                                "Hexadecimal or decimal virtual address at or inside the target function (e.g. 0x100000960). Mutually exclusive with symbol; one of symbol or address is required.",
+                                "目标函数入口或内部的虚拟地址（如 0x100000960），与 symbol 互斥，二者必传其一。"
+                            )
+                        ],
+                        "slice": sliceProp
+                    ],
+                    "required": ["binaryPath"]
                 ]
             ],
             [
                 "name": "mach_query_xrefs",
-                "description": "Query incoming and outgoing code/string/pointer cross-references for a virtual address.",
+                "description": language.select(
+                    "Query both incoming (<-) and outgoing (->) code/string/pointer cross-references for a virtual address.",
+                    "查询指定虚拟地址的传入（<-）与传出（->）代码、字符串及指针交叉引用。"
+                ),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "binaryPath": ["type": "string"],
-                        "address": ["type": "string", "description": "Hex virtual address (e.g. 0x100001028)."]
+                        "binaryPath": binPathProp,
+                        "address": [
+                            "type": "string",
+                            "description": language.select(
+                                "Hexadecimal or decimal virtual address (e.g. 0x100000fe0).",
+                                "十六进制或十进制虚拟地址（如 0x100000fe0）。"
+                            )
+                        ],
+                        "slice": sliceProp
                     ],
                     "required": ["binaryPath", "address"]
                 ]
             ],
             [
-                "name": "mach_audit_security",
-                "description": "[Experimental] Execute JavaScriptCore static binary audit plugins.",
+                "name": "mach_decompile_function",
+                "description": language.select(
+                    "[EXPERIMENTAL / UNVERIFIED] Experimental, has not passed acceptance: emit Pseudo-C for a recovered ARM64/ARM64e function (condition expressions are known to be unreliable; verify against mach_disasm_function).",
+                    "【实验性・未通过验收】[EXPERIMENTAL / UNVERIFIED] 为恢复的 ARM64/ARM64e 函数生成伪 C 代码（实验性、尚未通过验收：已知条件表达式还原不可靠，请以 mach_disasm_function 反汇编为准）。"
+                ),
                 "inputSchema": [
                     "type": "object",
                     "properties": [
-                        "binaryPath": ["type": "string"]
+                        "binaryPath": binPathProp,
+                        "function": [
+                            "type": "string",
+                            "description": language.select(
+                                "Function name or virtual address (e.g. _main, _entry, or 0x100000960).",
+                                "函数名或虚拟地址（如 _main、_entry 或 0x100000960）。"
+                            )
+                        ],
+                        "slice": sliceProp
+                    ],
+                    "required": ["binaryPath", "function"]
+                ]
+            ],
+            [
+                "name": "mach_audit_security",
+                "description": language.select(
+                    "[EXPERIMENTAL / UNVERIFIED] Experimental, has not passed acceptance: execute JavaScriptCore static binary audit plugins (heuristic output with known false positives and false negatives).",
+                    "【实验性・未通过验收】[EXPERIMENTAL / UNVERIFIED] 运行 JavaScriptCore 静态安全审计插件（实验性、尚未通过验收：启发式规则已知存在误报与漏报）。"
+                ),
+                "inputSchema": [
+                    "type": "object",
+                    "properties": [
+                        "binaryPath": binPathProp,
+                        "slice": sliceProp
                     ],
                     "required": ["binaryPath"]
                 ]
@@ -3100,7 +3521,7 @@ public struct MachMCPServer: Sendable {
             return encodeJSON([
                 "jsonrpc": "2.0",
                 "id": reqID,
-                "result": ["tools": Self.toolDefinitions]
+                "result": ["tools": Self.toolDefinitions(in: language)]
             ])
 
         case "tools/call":
@@ -3122,82 +3543,163 @@ public struct MachMCPServer: Sendable {
         }
     }
 
+    private static func withCLIStdoutNewline(_ text: String) -> String {
+        text.isEmpty || text.hasSuffix("\n") ? text : (text + "\n")
+    }
+
     private func dispatchTool(name: String, arguments: [String: Any]) -> [String: Any] {
+        let cliRunner = MachCLIRunner()
         do {
-            let loaded = try resolveBinary(from: arguments)
             switch name {
             case "mach_inspect_binary":
-                let img = loaded.index.image
-                let summary = "file=\(img.fileName) format=\(img.containerFormat.rawValue) arch=\(img.architecture.displayName) functions=\(loaded.index.functions.count) insns=\(loaded.index.decodedInstructions.count) xrefs=\(loaded.index.crossReferences.allRecords.count) cdhash=\(img.codeSignature.cdHashHex)"
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let snap = cliRunner.buildBinaryInfoSnapshot(target: container)
+                let summary = try cliRunner.formatBinaryInfo(snap, style: .mcpCompactSummary, language: language)
                 return textResult(summary, isError: false)
 
-            case "mach_decompile_function":
-                let query = ((arguments["function"] as? String) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !query.isEmpty else {
-                    return textResult(
-                        language.select("Missing required parameter 'function'.", "缺少必填参数 'function'。"),
-                        isError: true
-                    )
-                }
-                let target: RecoveredFunction?
-                if query.lowercased().hasPrefix("0x"),
-                   let raw = UInt64(query.dropFirst(2), radix: 16) {
-                    let addr = VirtualAddress(raw)
-                    target = loaded.index.functions.first { $0.address == addr || (addr >= $0.address && addr < $0.endAddress) }
-                } else {
-                    target = loaded.index.functions.first {
-                        $0.name.lowercased().contains(query.lowercased())
-                            || $0.demangledName.lowercased().contains(query.lowercased())
-                    }
-                }
-                guard let fn = target else {
-                    return textResult(
+            case "mach_list_symbols":
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let filter = try optionalStringArgument("filter", from: arguments)
+                let json = try cliRunner.formatSymbols(
+                    target: container,
+                    filter: filter,
+                    asJSON: true,
+                    language: language
+                )
+                return textResult(Self.withCLIStdoutNewline(json), isError: false)
+
+            case "mach_find_strings":
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let filter = try optionalStringArgument("filter", from: arguments)
+                let json = try cliRunner.formatStrings(
+                    target: container,
+                    filter: filter,
+                    asJSON: true,
+                    language: language
+                )
+                return textResult(Self.withCLIStdoutNewline(json), isError: false)
+
+            case "mach_disasm_function":
+                let rawSym = try optionalStringArgument("symbol", from: arguments)
+                let rawFnAlias = try optionalStringArgument("function", from: arguments)
+                if rawSym != nil && rawFnAlias != nil {
+                    throw MachGraphError.invalidCLIArguments(
                         language.select(
-                            "Function '\(query)' not found in '\(loaded.index.image.fileName)'.",
-                            "在 '\(loaded.index.image.fileName)' 中未找到函数 '\(query)'。"
-                        ),
-                        isError: true
+                            "Conflicting options: specify either 'symbol' or 'function', not both.",
+                            "参数冲突：请只指定 'symbol' 或 'function' 之一。"
+                        )
                     )
                 }
-                let output = MachMicroDecompilerEngine().decompile(function: fn, in: loaded.index, language: language)
-                return textResult(output.fullSourceText, isError: false)
+                let symbolQuery = rawSym ?? rawFnAlias
+                let addressQuery = try optionalStringArgument("address", from: arguments)
+                if symbolQuery != nil && addressQuery != nil {
+                    throw MachGraphError.invalidCLIArguments(
+                        language.select(
+                            "Conflicting options: specify either 'symbol' or 'address', not both.",
+                            "参数冲突：请只指定 'symbol' 或 'address' 之一，不要同时传入。"
+                        )
+                    )
+                }
+                let maxCount = try optionalIntArgument("count", from: arguments)
+                if let n = maxCount, n <= 0 {
+                    throw MachGraphError.invalidCLIArguments(
+                        language.select(
+                            "Invalid instruction count '\(n)'. Expected a positive integer.",
+                            "无效的指令数量 '\(n)'，应为正整数。"
+                        )
+                    )
+                }
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let json = try cliRunner.formatFunctionDisasm(
+                    target: container,
+                    symbolQuery: symbolQuery,
+                    addressQuery: addressQuery,
+                    maxCount: maxCount,
+                    asJSON: true,
+                    language: language
+                )
+                return textResult(Self.withCLIStdoutNewline(json), isError: false)
+
+            case "mach_cfg":
+                let rawSym = try optionalStringArgument("symbol", from: arguments)
+                let rawFnAlias = try optionalStringArgument("function", from: arguments)
+                if rawSym != nil && rawFnAlias != nil {
+                    throw MachGraphError.invalidCLIArguments(
+                        language.select(
+                            "Conflicting options: specify either 'symbol' or 'function', not both.",
+                            "参数冲突：请只指定 'symbol' 或 'function' 之一。"
+                        )
+                    )
+                }
+                let symbolQuery = rawSym ?? rawFnAlias
+                let addressQuery = try optionalStringArgument("address", from: arguments)
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let json = try cliRunner.formatCFG(
+                    target: container,
+                    symbolQuery: symbolQuery,
+                    addressQuery: addressQuery,
+                    requireSelector: true,
+                    asJSON: true,
+                    language: language
+                )
+                return textResult(Self.withCLIStdoutNewline(json), isError: false)
 
             case "mach_query_xrefs":
-                guard let rawAddr = arguments["address"] as? String, !rawAddr.isEmpty else {
+                let rawAddr = (try optionalStringArgument("address", from: arguments))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let addressQuery = rawAddr, !addressQuery.isEmpty else {
                     return textResult(
                         language.select("Missing required parameter 'address'.", "缺少必填参数 'address'。"),
                         isError: true
                     )
                 }
-                let clean = rawAddr.lowercased().hasPrefix("0x") ? String(rawAddr.dropFirst(2)) : rawAddr
-                guard let parsedVal = UInt64(clean, radix: 16) else {
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let loaded = try cliRunner.loadAnalyzedBinary(container: container)
+                let text = try cliRunner.formatTargetXrefs(
+                    loaded: loaded,
+                    addressQuery: addressQuery,
+                    symbolQuery: nil,
+                    style: .mcpCompactText,
+                    language: language
+                )
+                return textResult(text, isError: false)
+
+            case "mach_decompile_function":
+                let rawQuery = (try optionalStringArgument("function", from: arguments))?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let query = rawQuery, !query.isEmpty else {
                     return textResult(
-                        language.select("Invalid hex address '\(rawAddr)'.", "无效的十六进制地址 '\(rawAddr)'。"),
+                        language.select("Missing required parameter 'function'.", "缺少必填参数 'function'。"),
                         isError: true
                     )
                 }
-                let addr = VirtualAddress(parsedVal)
-                let toList = loaded.index.crossReferences.xrefsTo(address: addr)
-                let fromList = loaded.index.crossReferences.xrefsFrom(address: addr)
-                let text = "to=\(toList.count) from=\(fromList.count)\n" +
-                    toList.map { "<- \($0.fromAddress.hexString) [\($0.kind.rawValue)] \($0.instructionPreview)" }.joined(separator: "\n")
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let loaded = try cliRunner.loadAnalyzedBinary(container: container)
+                let looksLikeAddress = query.lowercased().hasPrefix("0x") || UInt64(query, radix: 10) != nil
+                let text = try cliRunner.formatDecompile(
+                    loaded: loaded,
+                    symbolQuery: looksLikeAddress ? nil : query,
+                    addressQuery: looksLikeAddress ? query : nil,
+                    asJSON: false,
+                    language: language
+                )
                 return textResult(text, isError: false)
 
             case "mach_audit_security":
-                let suite = try MachPluginRunner().runSuite(
-                    against: loaded.index,
-                    binaryData: loaded.data,
-                    continueOnError: true
+                let container = try resolveContainer(from: arguments, runner: cliRunner)
+                let loaded = try cliRunner.loadAnalyzedBinary(container: container)
+                let text = try cliRunner.formatAuditPlugins(
+                    loaded: loaded,
+                    asJSON: false,
+                    language: language
                 )
-                let data = try JSONEncoder().encode(suite.findings)
-                let warning = language.select(
-                    "// EXPERIMENTAL: Static heuristic audit findings\n",
-                    "// 【实验性】静态启发式安全审计发现\n"
-                )
-                return textResult(warning + String(decoding: data, as: UTF8.self), isError: false)
+                return textResult(text, isError: false)
 
             default:
-                return textResult("Unknown tool '\(name)'", isError: true)
+                return textResult(
+                    language.select("Unknown tool '\(name)'", "未知工具 '\(name)'"),
+                    isError: true
+                )
             }
         } catch let mgErr as MachGraphError {
             return textResult(mgErr.localizedMessage(in: language), isError: true)
@@ -3206,8 +3708,53 @@ public struct MachMCPServer: Sendable {
         }
     }
 
-    private func resolveBinary(from arguments: [String: Any]) throws -> (data: Data, index: BinaryAnalysisIndex) {
-        let rawPath = ((arguments["binaryPath"] as? String) ?? defaultBinaryPath)?
+    private func optionalStringArgument(_ key: String, from arguments: [String: Any]) throws -> String? {
+        guard let raw = arguments[key], !(raw is NSNull) else {
+            return nil
+        }
+        guard let str = raw as? String else {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Invalid parameter '\(key)': expected a string.",
+                    "参数 '\(key)' 类型无效：应为字符串。"
+                )
+            )
+        }
+        return str
+    }
+
+    private func optionalIntArgument(_ key: String, from arguments: [String: Any]) throws -> Int? {
+        guard let raw = arguments[key], !(raw is NSNull) else {
+            return nil
+        }
+        if CFGetTypeID(raw as CFTypeRef) == CFBooleanGetTypeID() {
+            throw MachGraphError.invalidCLIArguments(
+                language.select(
+                    "Invalid parameter '\(key)': expected an integer, got boolean.",
+                    "参数 '\(key)' 类型无效：应为整数，不能为布尔值。"
+                )
+            )
+        }
+        if let intVal = raw as? Int {
+            return intVal
+        }
+        if let num = raw as? NSNumber, num.doubleValue == Double(num.intValue) {
+            return num.intValue
+        }
+        throw MachGraphError.invalidCLIArguments(
+            language.select(
+                "Invalid parameter '\(key)': expected an integer.",
+                "参数 '\(key)' 类型无效：应为整数。"
+            )
+        )
+    }
+
+    private func resolveContainer(
+        from arguments: [String: Any],
+        runner: MachCLIRunner
+    ) throws -> MachCLIRunner.LoadedContainerTarget {
+        let explicitPath = try optionalStringArgument("binaryPath", from: arguments)
+        let rawPath = (explicitPath ?? defaultBinaryPath)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let path = rawPath, !path.isEmpty else {
             throw MachGraphError.invalidCLIArguments(
@@ -3217,15 +3764,9 @@ public struct MachMCPServer: Sendable {
                 )
             )
         }
+        let sliceIndex = try optionalIntArgument("slice", from: arguments)
         let url = try MachCLIRunner.validatedRegularInputFileURL(rawPath: path, language: language)
-        let data = try Data(contentsOf: url)
-        let cliOptions = BinaryAnalysisOptions(
-            computeSugiyamaLayouts: false,
-            computePostDominatorTrees: false
-        )
-        let coordinator = BinaryAnalysisCoordinator(options: cliOptions)
-        let idx = try coordinator.analyzeBinary(data: data, filePath: url.path, fileName: url.lastPathComponent)
-        return (data, idx)
+        return try runner.loadContainerImage(url: url, sliceIndex: sliceIndex, isDemo: false, language: language)
     }
 
     private func textResult(_ text: String, isError: Bool) -> [String: Any] {

@@ -397,7 +397,11 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
             "mach_inspect_binary",
             "mach_decompile_function",
             "mach_query_xrefs",
-            "mach_audit_security"
+            "mach_audit_security",
+            "mach_disasm_function",
+            "mach_list_symbols",
+            "mach_cfg",
+            "mach_find_strings"
         ])
 
         // Invalid JSON -> -32700
@@ -410,7 +414,7 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
     }
 
     @Test("MachMCPServer executes all 4 reverse-engineering MCP tools end-to-end on an explicit binaryPath")
-    func mcpServerExecutesInspectDecompileXrefsAndAuditSecurityTools() throws {
+    func mcpServerExecutesInspectDecompileXrefsAndAuditSecurityTools() async throws {
         let tempDir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: tempDir) }
         let targetBin = tempDir.appendingPathComponent("mcp_target.arm64e")
@@ -437,7 +441,9 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
 
         let decomp = try callTool("mach_decompile_function", argsJSON: #"{"binaryPath":"\#(escapedPath)","function":"verify_license"}"#)
         #expect(!decomp.isError)
-        #expect(decomp.text.hasPrefix("// EXPERIMENTAL:"))
+        let decompFirstLine = String(decomp.text.split(separator: "\n", omittingEmptySubsequences: false).first ?? "")
+        #expect(decompFirstLine.hasPrefix("// EXPERIMENTAL:"))
+        #expect(decompFirstLine.contains("UNVERIFIED"))
         #expect(decomp.text.contains("MACHGRAPH-PRO-2026"))
         #expect(!decomp.text.contains("goto "))
 
@@ -447,10 +453,11 @@ struct PluginSDKCLIMCPAndWorkbenchTests {
 
         let audit = try callTool("mach_audit_security", argsJSON: #"{"binaryPath":"\#(escapedPath)"}"#)
         #expect(!audit.isError)
-        #expect(audit.text.hasPrefix("// EXPERIMENTAL:"))
-        let jsonLines = audit.text.split(separator: "\n").dropFirst().joined(separator: "\n")
-        let decodedFindings = try JSONDecoder().decode([SecurityAuditFinding].self, from: Data(jsonLines.utf8))
-        #expect(!decodedFindings.isEmpty)
+        let auditFirstLine = String(audit.text.split(separator: "\n", omittingEmptySubsequences: false).first ?? "")
+        #expect(auditFirstLine.hasPrefix("# [EXPERIMENTAL / UNVERIFIED]"))
+        #expect(audit.text.contains("[HIGH]") || audit.text.contains("[CRITICAL]"))
+        let cliAudit = try await MachCLIRunner().execute(arguments: ["audit-plugins", targetBin.path, "--lang", "en"])
+        #expect(audit.text == cliAudit)
     }
 
     // MARK: - 4. Cold-Tungsten HTML Report Exporter
