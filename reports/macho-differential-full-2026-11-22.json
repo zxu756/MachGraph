@@ -1,0 +1,27 @@
+{
+  "date": "2026-11-22",
+  "generated_at_utc": "2026-11-22T12:03:47Z",
+  "corpus": "full",
+  "verdict": "PASS",
+  "environment": {
+    "machgraph_commit": "fadecfae6cd5f98b28d8802bface294d67cb5cc5",
+    "worktree_clean": true,
+    "machgraph_binary": ".build/release/MachGraph"
+  },
+  "machgraph_binary": ".build/release/MachGraph",
+  "summary": {
+    "candidate_macho_files": 1281,
+    "compared_files": 1278,
+    "skipped_no_arm64_slice": 3,
+    "failures": 0,
+    "mismatched_files": 0,
+    "total_segments": 6176,
+    "total_sections": 21558,
+    "total_imported_libraries": 11516,
+    "total_chained_fixups": 1903277,
+    "signed_files": 1278,
+    "elapsed_seconds": 45.95
+  },
+  "failures": [],
+  "mismatches": []
+}

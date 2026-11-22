@@ -1,15 +1,14 @@
 === MachGraph M0 Quick Acceptance ===
-Date (UTC): 2026-11-14T06:06:48Z
+Date (UTC): 2026-11-22T11:48:47Z
 macOS:      macOS 27.0.1 (26A434) arm64
 Binary:     .build/debug/MachGraph
 
 [PASS] Row 1: info /bin/ls --json matches otool -arch arm64e -l (5 segments, 11 sections, fileName=ls)
-[PASS] Row 2: disasm /bin/ls vs llvm-objdump (after mnemonic normalization: movz/movn->mov, udf->.inst, vector suffix dropped): total=3846 agree=3845 (99.97%) unknown=1 wrong=0
-        unknown (.inst) by reference mnemonic: sub=1
+[PASS] Row 2: disasm /bin/ls vs llvm-objdump (after mnemonic normalization: none): total=3846 agree=3846 (100.00%) unknown=0 ref_long_mg_inst=0 wrong=0 mg_only_inst=0
 [PASS] Row 3: info and disasm without file exit 2 with empty stdout (EN + ZH)
 [PASS] Row 4: disasm /bin/ls --nosuchoption exits 2 with empty stdout (EN + ZH)
 [PASS] Row 5: missing function exits non-zero with empty stdout; decompile emits line-1 warning (EN + ZH)
-[PASS] Row 6: all 16 subcommands in --help (EN + ZH) route headlessly on /usr/bin/true
+[PASS] Row 6: all 20 subcommands in --help (EN + ZH) route headlessly on /usr/bin/true
 [PASS] Row 7: MCP mach_inspect_binary without binaryPath returns isError:true
 [PASS] Row 8: disasm /usr/bin/ssh decoded 115546 instructions with 0 lines from __info_plist
 [PASS] Row 9: /dev/null, 0-byte file, plain text, truncated /bin/ls (8000/30000 B), and ELF ET_REL rejected with empty stdout (EN + ZH)
@@ -20,4 +19,4 @@ Binary:     .build/debug/MachGraph
 [PASS] Row 14 (G28): thin arm64 Mach-O (33552 B) truncated to 200 1200 8000 16776 20000 33152 33551 B: info and disasm exit 1 with empty stdout (EN + ZH)
 [PASS] Row 15 (G30): launch resolution reports a mistyped subcommand as 'Unknown subcommand' (usage error, exit code 2) in EN + ZH
 
-=== ALL 12 M0 ACCEPTANCE CHECKS AND 3 REWORK CHECKS PASSED in 4.39s (< 10.00s budget) ===
+=== ALL 12 M0 ACCEPTANCE CHECKS AND 3 REWORK CHECKS PASSED in 4.03s (<= 10.00s reference budget) ===

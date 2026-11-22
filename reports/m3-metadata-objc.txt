@@ -1,15 +1,15 @@
 === MachGraph M3 Metadata Differential (objc) ===
-Date (UTC):   2026-11-21T04:21:15Z
+Date (UTC):   2026-11-22T11:53:23Z
 System:       macOS 27.0.1 (26A434) arm64
 Ref nm:       Apple LLVM version 21.0.0
 Ref otool:    llvm-otool(1): Apple Inc. version cctools-1040
 Checks:       objc (max_concurrent_subprocesses=6)
-MachGraph:    .build/release/MachGraph @ d67980d4d46d (worktree_clean=True)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=True)
 
-[PASS] /System/Applications/Calculator.app/Contents/MacOS/Calculator (arm64e): objc=OK(62) (0.11s)
-[PASS] /usr/bin/assetutil (arm64e): objc=OK(2378) (0.14s)
+[PASS] /System/Applications/Calculator.app/Contents/MacOS/Calculator (arm64e): objc=OK(62) (0.10s)
+[PASS] /usr/bin/assetutil (arm64e): objc=OK(2378) (0.13s)
 [PASS] /usr/sbin/screencapture (arm64e): objc=OK(42) (0.10s)
 [PASS] /usr/bin/log (arm64e): objc=OK(291) (0.07s)
 
 [PASS] Check 'objc': matched=4/4 mismatched_files=0 total_diffs=0 ref_items=2773 mg_items=2773
-[PASS] Summary (objc): candidates=4 compared=4 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=0.14s
+[PASS] Summary (objc): candidates=4 compared=4 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=0.13s

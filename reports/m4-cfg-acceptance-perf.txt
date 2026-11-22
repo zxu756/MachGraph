@@ -1,17 +1,17 @@
 === MachGraph M4 CFG Acceptance (perf) ===
-Date (UTC):   2026-11-21T15:13:36Z
+Date (UTC):   2026-11-22T11:58:30Z
 System:       macOS 27.0.1 (26A434) arm64
 Ref clang:    Apple clang version 21.0.0 (clang-2100.4.1.1)
 Ref objdump:  Apple LLVM version 21.0.0
 Checks:       perf (max_concurrent_subprocesses=6)
-MachGraph:    .build/release/MachGraph @ 50f1fcfc91c5 (worktree_clean=True)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=True)
 
 
-Perf uptime (before): 4:13  up 11 days, 18:43, 2 users, load averages: 5.13 5.17 4.58
-[PASS] perf cfg /usr/bin/ssh --json (full-file): median=0.3411s runs=[0.3383, 0.3411, 0.3417] (functions=1494, blocks=18941)
-[PASS] perf cfg /usr/bin/vim --json (full-file): median=1.9243s runs=[1.9243, 1.932, 1.8299] (functions=6781, blocks=130335)
-[PASS] perf cfg /usr/bin/ssh --symbol _entry --json (single-function): median=0.2108s runs=[0.2111, 0.2093, 0.2108] (functions=1, blocks=729)
-Perf uptime (after):  4:13  up 11 days, 18:44, 2 users, load averages: 4.88 5.12 4.57
+Perf uptime (before): 0:58  up 12 days, 15:28, 2 users, load averages: 4.24 5.96 5.70
+[PASS] perf cfg /usr/bin/ssh --json (full-file): median=0.3196s runs=[0.319, 0.3196, 0.3198] (functions=1494, blocks=18941)
+[PASS] perf cfg /usr/bin/vim --json (full-file): median=1.711s runs=[1.6906, 1.711, 1.7692] (functions=6781, blocks=130335)
+[PASS] perf cfg /usr/bin/ssh --symbol _entry --json (single-function): median=0.1962s runs=[0.1963, 0.1962, 0.1952] (functions=1, blocks=729)
+Perf uptime (after):  0:58  up 12 days, 15:28, 2 users, load averages: 3.82 5.81 5.65
 
-[PASS] Check 'perf': ssh_full_median=0.3411s vim_full_median=1.9243s ssh_symbol_median=0.2108s warnings=0 failures=0 elapsed=9.93s
-[PASS] Summary (perf): candidates=0 compared=0 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=9.93s
+[PASS] Check 'perf': ssh_full_median=0.3196s vim_full_median=1.711s ssh_symbol_median=0.1962s warnings=0 failures=0 elapsed=9.14s
+[PASS] Summary (perf): candidates=0 compared=0 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=9.15s

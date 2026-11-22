@@ -1,0 +1,50 @@
+=== MachGraph vs Clang Case-by-Case Verification (Fixtures/asm-cases.s) ===
+Date (UTC):   2026-11-22T11:52:08Z
+System:       macOS 27.0.1 (26A434) arm64
+LLVM/Clang:   Apple clang version 21.0.0 (clang-2100.4.1.1)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=False)
+
+[PASS] Summary (Fixtures/asm-cases.s): total=71 match=35 unsupported=35 clang_unverifiable=1 both_rejected=0 failures=0 (mismatch=0 mg_error_clang_ok=0) elapsed=0.72s
+
+Failing lines (0):
+  (none)
+
+Clang unverifiable lines (clang 无法对照) (1):
+  - line 19 (0x14): 'adrp x8, .+4096' -> machgraph=ok (b0000008) | clang rejected: "ADR/ADRP relocations must be GOT relative"
+
+MachGraph unsupported lines (35):
+  - line 44 (0x78): 'ld1 {v0.4s}, [x0]' (form='ld1 {V.Ns}, [X]') | clang=4c407800
+  - line 45 (0x7c): 'add v0.4s, v1.4s, v2.4s' (form='add V.Ns, V.Ns, V.Ns') | clang=4ea28420
+  - line 55 (0x98): 'shadd v1.8b, v2.8b, v3.8b' (form='shadd V.Nb, V.Nb, V.Nb') | clang=0e230441
+  - line 57 (0x9c): 'sqadd b1, b2, b3' (form='sqadd B, B, B') | clang=5e230c41
+  - line 59 (0xa0): 'sdot v1.2s, v2.8b, v3.8b' (form='sdot V.Ns, V.Nb, V.Nb') | clang=0e839441
+  - line 61 (0xa4): 'suqadd b1, b2' (form='suqadd B, B') | clang=5e203841
+  - line 63 (0xa8): 'rev64 v1.8b, v2.8b' (form='rev64 V.Nb, V.Nb') | clang=0e200841
+  - line 65 (0xac): 'sshr v1.8b, v2.8b, #0x8' (form='sshr V.Nb, V.Nb, #N') | clang=0f080441
+  - line 67 (0xb0): 'ushr v1.8b, v2.8b, #0x8' (form='ushr V.Nb, V.Nb, #N') | clang=2f080441
+  - line 69 (0xb4): 'sshr v1.16b, v2.16b, #0x8' (form='sshr V.Nb, V.Nb, #N') | clang=4f080441
+  - line 71 (0xb8): 'ushr v1.16b, v2.16b, #0x8' (form='ushr V.Nb, V.Nb, #N') | clang=6f080441
+  - line 73 (0xbc): 'sqshl b1, b2, #0x0' (form='sqshl B, B, #N') | clang=5f087441
+  - line 75 (0xc0): 'sqshlu b1, b2, #0x0' (form='sqshlu B, B, #N') | clang=7f086441
+  - line 77 (0xc4): 'scvtf s1, w2, #0x20' (form='scvtf S, W, #N') | clang=1e028041
+  - line 79 (0xc8): 'pacdza x1' (form='pacdza X') | clang=dac12be1
+  - line 81 (0xcc): 'ldaprb w1, [x2]' (form='ldaprb W, [X]') | clang=38bfc041
+  - line 83 (0xd0): 'fcvtns w1, s2' (form='fcvtns W, S') | clang=1e200041
+  - line 85 (0xd4): 'frinta s1, s2' (form='frinta S, S') | clang=1e264041
+  - line 89 (0xd8): 'saddlv h1, v2.8b' (form='saddlv H, V.Nb') | clang=0e303841
+  - line 91 (0xdc): 'ext v1.8b, v2.8b, v3.8b, #0x0' (form='ext V.Nb, V.Nb, V.Nb, #N') | clang=2e030041
+  - line 93 (0xe0): 'st4 { v1.8b, v2.8b, v3.8b, v4.8b }, [x2]' (form='st4 { V.Nb, V.Nb, V.Nb, V.Nb }, [X]') | clang=0c000041
+  - line 95 (0xe4): 'st1 { v1.b }[0], [x2]' (form='st1 { V.b }[N], [X]') | clang=0d000041
+  - line 97 (0xe8): 'orr v1.2s, #0x0' (form='orr V.Ns, #N') | clang=0f001401
+  - line 99 (0xec): 'uzp1 v1.8b, v2.8b, v3.8b' (form='uzp1 V.Nb, V.Nb, V.Nb') | clang=0e031841
+  - line 101 (0xf0): 'fmla h1, h2, v3.h[0]' (form='fmla H, H, V.h[N]') | clang=5f031041
+  - line 103 (0xf4): 'mov b1, v2.b[0]' (form='mov B, V.b[N]') | clang=5e010441
+  - line 105 (0xf8): 'fmaxnmp h1, v2.2h' (form='fmaxnmp H, V.Nh') | clang=5e30c841
+  - line 107 (0xfc): 'tbl v1.8b, { v2.16b }, v3.8b' (form='tbl V.Nb, { V.Nb }, V.Nb') | clang=0e030041
+  - line 109 (0x100): 'saddl v1.8h, v2.8b, v3.8b' (form='saddl V.Nh, V.Nb, V.Nb') | clang=0e230041
+  - line 111 (0x104): 'fmla v1.4h, v2.4h, v3.h[0]' (form='fmla V.Nh, V.Nh, V.h[N]') | clang=0f031041
+  - line 113 (0x108): 'msr S0_3_C3_C0_0, xzr' (form='msr sN_N_cN_cN_N, xzr') | clang=d503301f
+  - line 115 (0x10c): 'aese v1.16b, v2.16b' (form='aese V.Nb, V.Nb') | clang=4e284841
+  - line 117 (0x110): 'sha1c q1, s2, v3.4s' (form='sha1c Q, S, V.Ns') | clang=5e030041
+  - line 119 (0x114): 'eor3 v1.16b, v2.16b, v3.16b, v4.16b' (form='eor3 V.Nb, V.Nb, V.Nb, V.Nb') | clang=ce031041
+  - line 121 (0x118): 'fnmadd s1, s2, s3, s4' (form='fnmadd S, S, S, S') | clang=1f231041

@@ -1,0 +1,9 @@
+=== MachGraph Mach-O Differential Check (standard) ===
+Date (UTC):  2026-11-22T11:50:18Z
+MachGraph:   .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=False)
+
+[PASS] /bin/ls (arm64e): segments=5 sections=11 libraries=3 fixups=113 signed=True cs_flags=0x0 (0.08s)
+[PASS] /usr/bin/ssh (arm64e): segments=5 sections=19 libraries=15 fixups=1051 signed=True cs_flags=0x10000 (0.24s)
+[PASS] /usr/bin/vim (arm64e): segments=5 sections=18 libraries=8 fixups=9737 signed=True cs_flags=0x0 (0.87s)
+
+[PASS] Summary (standard): candidates=3 compared=3 skipped_no_arm64=0 failures=0 mismatched_files=0 segments=15 sections=48 libraries=26 fixups=10901 signed=3 elapsed=0.88s

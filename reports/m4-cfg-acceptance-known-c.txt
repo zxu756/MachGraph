@@ -1,10 +1,10 @@
 === MachGraph M4 CFG Acceptance (known-c) ===
-Date (UTC):   2026-11-21T15:13:35Z
+Date (UTC):   2026-11-22T11:58:29Z
 System:       macOS 27.0.1 (26A434) arm64
 Ref clang:    Apple clang version 21.0.0 (clang-2100.4.1.1)
 Ref objdump:  Apple LLVM version 21.0.0
 Checks:       known-c (max_concurrent_subprocesses=6)
-MachGraph:    .build/release/MachGraph @ 50f1fcfc91c5 (worktree_clean=True)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=True)
 
 [PASS] known-c _fn_seq: blocks=1 edges=0 loops=0(depths=[]) jumpTables=0(targets=0)
 [PASS] known-c _fn_if_else: blocks=5 edges=5 loops=0(depths=[]) jumpTables=0(targets=0)
@@ -15,5 +15,5 @@ MachGraph:    .build/release/MachGraph @ 50f1fcfc91c5 (worktree_clean=True)
 [PASS] known-c _fn_switch10_jumptable: blocks=14 edges=23 loops=0(depths=[]) jumpTables=1(targets=10)
 [PASS] known-c _fn_loop_break_continue: blocks=12 edges=14 loops=1(depths=[1]) jumpTables=0(targets=0)
 
-[PASS] Check 'known-c': matched=8/8 total_diffs=0 invariants_noreturn_direct_calls=0 invariants_noreturn_completeness_violations={"NORETURN_CALL_NOT_BLOCK_END": 0, "NORETURN_CALL_HAS_SUCCESSOR": 0} elapsed=0.30s
-[PASS] Summary (known-c): candidates=0 compared=0 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=0.30s
+[PASS] Check 'known-c': matched=8/8 total_diffs=0 invariants_noreturn_direct_calls=0 invariants_noreturn_completeness_violations={"NORETURN_CALL_NOT_BLOCK_END": 0, "NORETURN_CALL_HAS_SUCCESSOR": 0} elapsed=0.32s
+[PASS] Summary (known-c): candidates=0 compared=0 skipped_no_arm64=0 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=0.32s

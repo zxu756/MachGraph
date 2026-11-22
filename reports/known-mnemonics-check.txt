@@ -1,0 +1,1 @@
+[PASS] Sources/MachA64Decoder/A64KnownMnemonics.swift: byte-identical (13184 bytes, 727 mnemonics)

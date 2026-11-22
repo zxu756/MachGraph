@@ -1,0 +1,10 @@
+=== MachGraph M5 Library Examples & Public API Boundary Acceptance ===
+Timestamp (UTC): 2026-11-22T12:06:03Z
+Docs:            docs/library-examples.md | docs/library-examples.zh-CN.md
+Examples:        3/3 built & verified
+Negative probes: 14/14 rejected as expected
+Elapsed:         52.35s
+  [EXAMPLE] MachBinaryFormats: lines=14/20 build_rc=0 (7.8114s) run_rc=0 (0.3417s)
+  [EXAMPLE] MachA64Decoder: lines=16/20 build_rc=0 (7.3131s) run_rc=0 (0.33s)
+  [EXAMPLE] MachCFGEngine: lines=16/20 build_rc=0 (8.3421s) run_rc=0 (0.4103s)
+[PASS] m5-lib-examples: examples=3/3 probes=14/14 diffs=0 elapsed=52.35s

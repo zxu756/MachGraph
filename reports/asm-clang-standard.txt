@@ -1,0 +1,17 @@
+=== MachGraph Disassembly vs Clang Verification (standard) ===
+Date (UTC):   2026-11-22T11:52:00Z
+System:       macOS 27.0.1 (26A434) arm64
+LLVM/Clang:   Apple clang version 21.0.0 (clang-2100.4.1.1)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=False)
+
+[DISASM] /bin/ls (arm64e): text=3846 decoded=3846 inst_skip=0 (0.02s)
+[DISASM] /usr/bin/ssh (arm64e): text=113906 decoded=113905 inst_skip=1 (0.30s)
+[DISASM] /usr/bin/vim (arm64e): text=589795 decoded=589693 inst_skip=102 (1.45s)
+
+[PASS] Summary (standard): files_compared=3 file_failures=0 total_forms=912 adrp_skipped=1 compared=911 matched=911 mismatched=0 clang_rejected=0 clang_elapsed=0.10s total_elapsed=7.96s
+
+Mismatched forms (0):
+  (none)
+
+Clang-rejected forms (0):
+  (none)

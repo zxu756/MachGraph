@@ -1,0 +1,29 @@
+{
+  "schema": "machgraph.m5.mcp_acceptance/1",
+  "date": "2026-11-22",
+  "generated_at_utc": "2026-11-22T12:05:02Z",
+  "mode": "legacy",
+  "selected_checks": [
+    "legacy"
+  ],
+  "verdict": "PASS",
+  "environment": {
+    "macos_product_name": "macOS",
+    "macos_version": "27.0.1",
+    "macos_build": "26A434",
+    "machine": "arm64",
+    "machgraph_commit": "fadecfae6cd5f98b28d8802bface294d67cb5cc5",
+    "worktree_clean": false,
+    "machgraph_binary": ".build/release/MachGraph"
+  },
+  "elapsed_seconds": 0.9496,
+  "checks": {
+    "legacy": {
+      "status": "pass",
+      "diff_count": 0,
+      "bidirectional_xref_address": "0x10000073c",
+      "seconds": 0.9482,
+      "examples": []
+    }
+  }
+}

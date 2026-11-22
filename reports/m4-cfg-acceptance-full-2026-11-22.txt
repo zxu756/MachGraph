@@ -1,0 +1,55 @@
+=== MachGraph M4 CFG Acceptance (full) ===
+Date (UTC):   2026-11-22T11:58:40Z
+System:       macOS 27.0.1 (26A434) arm64
+Ref clang:    Apple clang version 21.0.0 (clang-2100.4.1.1)
+Ref objdump:  Apple LLVM version 21.0.0
+Checks:       function-starts, invariants (max_concurrent_subprocesses=6)
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=True)
+Full sample:  fixed_seed_uniform_without_replacement(seed=20261121, sample_size=40, pinned_standard=3,roots=['/bin', '/usr/bin', '/usr/sbin', '/usr/libexec']) -> selected=40 / arm64_pool=1278 (discovered_macho=1281)
+
+[PASS] /bin/csh (arm64e): function-starts=OK(828+10=838) invariants=OK(fns=976,blks=15346,edges=21072) (1.22s)
+[PASS] /bin/dd (arm64e): function-starts=OK(89+0=89) invariants=OK(fns=139,blks=670,edges=750) (0.13s)
+[PASS] /bin/ls (arm64e): function-starts=OK(49+1=50) invariants=OK(fns=133,blks=871,edges=1110) (0.13s)
+[PASS] /usr/bin/agentxtrap (arm64e): function-starts=OK(20+0=20) invariants=OK(fns=71,blks=238,edges=234) (0.08s)
+[PASS] /usr/bin/dsexport (arm64e): function-starts=OK(11+0=11) invariants=OK(fns=93,blks=232,edges=202) (0.09s)
+[PASS] /usr/bin/expand (arm64e): function-starts=OK(6+0=6) invariants=OK(fns=20,blks=94,edges=108) (0.07s)
+[PASS] /usr/bin/false (arm64e): function-starts=OK(1+0=1) invariants=OK(fns=1,blks=1,edges=0) (0.11s)
+[PASS] /usr/bin/fm (arm64e): function-starts=OK(1908+4=1912) invariants=OK(fns=2686,blks=18783,edges=21553) (3.78s)
+[PASS] /usr/bin/heap (arm64e): function-starts=OK(175+0=175) invariants=OK(fns=509,blks=1582,edges=1551) (0.24s)
+[PASS] /usr/bin/leaks (arm64e): function-starts=OK(415+0=415) invariants=OK(fns=1030,blks=2973,edges=2778) (0.42s)
+[PASS] /usr/bin/ocspcheck (arm64e): function-starts=OK(24+0=24) invariants=OK(fns=120,blks=583,edges=681) (0.11s)
+[PASS] /usr/bin/pl (arm64e): function-starts=OK(2+0=2) invariants=OK(fns=31,blks=66,edges=47) (0.12s)
+[PASS] /usr/bin/ppdi (arm64e): function-starts=OK(183+1=184) invariants=OK(fns=248,blks=2786,edges=3669) (0.49s)
+[PASS] /usr/bin/readlink (arm64e): function-starts=OK(6+2=8) invariants=OK(fns=36,blks=293,edges=398) (0.31s)
+[PASS] /usr/bin/say (arm64e): function-starts=OK(70+1=71) invariants=OK(fns=227,blks=1028,edges=1157) (0.53s)
+[PASS] /usr/bin/shazam (arm64e): function-starts=OK(951+1=952) invariants=OK(fns=1311,blks=6624,edges=7036) (1.73s)
+[PASS] /usr/bin/ssh (arm64e): function-starts=OK(1094+3=1097) invariants=OK(fns=1494,blks=18941,edges=26513) (2.99s)
+[PASS] /usr/bin/timesyncanalyse (arm64e): function-starts=OK(554+0=554) invariants=OK(fns=835,blks=2799,edges=2511) (0.99s)
+[PASS] /usr/bin/uucp (arm64e): function-starts=OK(188+1=189) invariants=OK(fns=289,blks=2806,edges=3776) (0.89s)
+[PASS] /usr/bin/vim (arm64e): function-starts=OK(6528+95=6623) invariants=OK(fns=6781,blks=130335,edges=192692) (9.66s)
+[PASS] /usr/bin/xmlcatalog (arm64e): function-starts=OK(3+0=3) invariants=OK(fns=41,blks=304,edges=410) (0.85s)
+[PASS] /usr/libexec/apache2/mod_authn_core.so (arm64e): function-starts=OK(13+0=13) invariants=OK(fns=37,blks=144,edges=135) (0.54s)
+[PASS] /usr/libexec/apache2/mod_substitute.so (arm64e): function-starts=OK(7+0=7) invariants=OK(fns=43,blks=1032,edges=1237) (0.96s)
+[PASS] /usr/libexec/attach_automation_image (arm64e): function-starts=OK(10+0=10) invariants=OK(fns=65,blks=162,edges=129) (0.76s)
+[PASS] /usr/libexec/biomesyncd (arm64e): function-starts=OK(1680+2=1682) invariants=OK(fns=2964,blks=9404,edges=8854) (2.48s)
+[PASS] /usr/libexec/cameraispdarwinsimd (arm64e): function-starts=OK(294+1=295) invariants=OK(fns=506,blks=3201,edges=4012) (1.30s)
+[PASS] /usr/libexec/chkpasswd (arm64e): function-starts=OK(21+0=21) invariants=OK(fns=69,blks=249,edges=267) (0.56s)
+[PASS] /usr/libexec/clocksyncd (arm64e): function-starts=OK(1569+0=1569) invariants=OK(fns=2481,blks=8893,edges=8799) (1.52s)
+[PASS] /usr/libexec/cups/apple/ipp (arm64e): function-starts=OK(29+0=29) invariants=OK(fns=213,blks=1783,edges=2460) (0.27s)
+[PASS] /usr/libexec/cups/backend/socket (arm64e): function-starts=OK(11+0=11) invariants=OK(fns=79,blks=688,edges=964) (0.18s)
+[PASS] /usr/libexec/cups/filter/cgbannertopdf (arm64e): function-starts=OK(22+0=22) invariants=OK(fns=114,blks=623,edges=774) (0.92s)
+[PASS] /usr/libexec/findmydeviced (arm64e): function-starts=OK(4015+2=4017) invariants=OK(fns=6241,blks=17472,edges=15173) (3.22s)
+[PASS] /usr/libexec/ippusbd (arm64e): function-starts=OK(95+0=95) invariants=OK(fns=226,blks=919,edges=1047) (0.86s)
+[PASS] /usr/libexec/mount_url (arm64e): function-starts=OK(3+0=3) invariants=OK(fns=21,blks=58,edges=52) (0.26s)
+[PASS] /usr/libexec/relatived (arm64e): function-starts=OK(624+0=624) invariants=OK(fns=1159,blks=3608,edges=3310) (1.46s)
+[PASS] /usr/libexec/uarppersonalizationd (arm64e): function-starts=OK(144+0=144) invariants=OK(fns=293,blks=789,edges=693) (0.20s)
+[PASS] /usr/libexec/warmd_agent (arm64e): function-starts=OK(27+0=27) invariants=OK(fns=120,blks=297,edges=253) (0.18s)
+[PASS] /usr/sbin/repairHomePermissions (arm64e): function-starts=OK(1+0=1) invariants=OK(fns=19,blks=24,edges=5) (0.20s)
+[PASS] /usr/sbin/setkey (arm64e): function-starts=OK(131+4=135) invariants=OK(fns=203,blks=1738,edges=2335) (0.89s)
+[PASS] /usr/sbin/sysctl (arm64e): function-starts=OK(15+1=16) invariants=OK(fns=57,blks=467,edges=632) (0.78s)
+
+[PASS] Check 'function-starts': matched=40/40 mismatched_files=0 total_diffs=0 ref_items=21945 mg_items=21945
+  totals: text_functions=21816 inline_jump_tables=129 objc_stubs=5251
+[PASS] Check 'invariants': matched=40/40 mismatched_files=0 total_diffs=0 ref_items=31981 mg_items=31981
+  totals: functions=31981 blocks=258906 edges=339379 loops=9274 inline_jts=129 noreturn_exits=4035 noreturn_direct_calls=4035 noreturn_completeness_violations={"NORETURN_CALL_NOT_BLOCK_END": 0, "NORETURN_CALL_HAS_SUCCESSOR": 0} violations={"I1": 0, "I2": 0, "I3": 0, "I4": 0}
+[PASS] Summary (full): candidates=40 compared=40 skipped_no_arm64=3 crashes_or_failures=0 mismatched_files=0 non_utf8_files=0 elapsed=10.91s

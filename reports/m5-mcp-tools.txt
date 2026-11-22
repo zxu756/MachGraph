@@ -1,0 +1,3 @@
+==> M5 MCP Acceptance (tools): checks=tools bin=.build/release/MachGraph commit=fadecfae6cd5f98b28d8802bface294d67cb5cc5
+[PASS] Check 'tools': matched=14/14 ls_entry=0x100000960 ssh_entry=0x100017898 diffs=0 elapsed=1.89s
+[PASS] Summary (tools): checks=1 elapsed=1.89s

@@ -1,0 +1,18 @@
+=== MachGraph Random Word Differential Fuzz (seed=20261117, count=100000) ===
+Date (UTC):   2026-11-22T11:51:46Z
+System:       macOS 27.0.1 (26A434) arm64
+Reference:    Apple LLVM version 21.0.0
+Ref command:  xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=False)
+Mnemonic rules (0): none
+Operand rules (4):  O1 whitespace/case, O2 numeric value, O3 adrp comment addr, O4 pc-relative offset
+
+[PASS] Summary: count=100000 agree=31180 both_unrecognized=68456 unknown=364 wrong=0 operands=31180/31180 (100.0000%, mismatch=0) elapsed=0.66s
+  unknown (reference decoded, MachGraph .inst) by encoding group (7 groups, total=364):
+    - Load/store register (unprivileged): count=159 e.g. [0x7890ea5d] llvm='ldtrsh x29, [x18, #-0xf2]' vs machgraph='.inst 0x7890ea5d'
+    - LDAPR/STLR (unscaled immediate): count=157 e.g. [0x19dde173] llvm='ldapursb w19, [x11, #-0x22]' vs machgraph='.inst 0x19dde173'
+    - System register move (MRS/MSR): count=32 e.g. [0xd505548f] llvm='msr S0_5_C5_C4_4, x15' vs machgraph='.inst 0xd505548f'
+    - AdvSIMD scalar three-register different: count=6 e.g. [0x5e63d35c] llvm='sqdmull s28, h26, h3' vs machgraph='.inst 0x5e63d35c'
+    - Exception generation: count=6 e.g. [0xd4a66983] llvm='dcps3 #0x334c' vs machgraph='.inst 0xd4a66983'
+    - Crypto SHA512/SM3/SM4: count=3 e.g. [0xce788f84] llvm='rax1 v4.2d, v28.2d, v24.2d' vs machgraph='.inst 0xce788f84'
+    - Rotate right / Evaluate into flags: count=1 e.g. [0xba0204a8] llvm='rmif x5, #0x4, #0x8' vs machgraph='.inst 0xba0204a8'

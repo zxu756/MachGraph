@@ -1,0 +1,5 @@
+==> M5 MCP Acceptance (perf): checks=perf bin=.build/release/MachGraph commit=fadecfae6cd5f98b28d8802bface294d67cb5cc5
+[PASS] Check 'perf': ssh_list_symbols=0.0334s ssh_find_strings=0.0225s ssh_cfg_entry=0.1947s ssh_disasm_entry=0.2369s vim_list_symbols=0.0942s vim_find_strings=0.0513s vim_cfg_entry=0.8729s vim_disasm_entry=0.8736s failures=0 elapsed=7.32s
+  uptime_before: 1:05  up 12 days, 15:35, 2 users, load averages: 3.56 4.66 5.12
+  uptime_after:  1:05  up 12 days, 15:35, 2 users, load averages: 3.44 4.62 5.10
+[PASS] Summary (perf): checks=1 elapsed=7.32s

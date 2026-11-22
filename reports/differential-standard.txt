@@ -1,0 +1,16 @@
+=== MachGraph Differential Disassembly (standard) ===
+Date (UTC):   2026-11-22T11:51:38Z
+System:       macOS 27.0.1 (26A434) arm64
+Reference:    Apple LLVM version 21.0.0
+Ref command:  xcrun llvm-objdump --macho -d --no-show-raw-insn --no-symbolic-operands --arch=<slice> --mcpu=apple-m1 --mattr=+bti -mllvm=-aarch64-neon-syntax=generic --section=__TEXT,__text <file>
+MachGraph:    .build/release/MachGraph @ fadecfae6cd5 (worktree_clean=False)
+Rules (0):    none
+Operand rules (4): O1 whitespace/case, O2 numeric value, O3 adrp comment addr, O4 pc-relative offset
+
+[PASS] /bin/ls (arm64e): total=3846 agree=3846 (100.00%) operand_equal=3846/3846 (100.00%) unknown=0 ref_long_mg_inst=0 wrong=0 missing=0 mg_only_inst=0 (0.04s)
+[PASS] /usr/bin/ssh (arm64e): total=113905 agree=113905 (100.00%) operand_equal=113905/113905 (100.00%) unknown=0 ref_long_mg_inst=0 wrong=0 missing=0 mg_only_inst=1 (0.80s)
+[PASS] /usr/bin/vim (arm64e): total=589693 agree=589693 (100.00%) operand_equal=589693/589693 (100.00%) unknown=0 ref_long_mg_inst=0 wrong=0 missing=0 mg_only_inst=102 (1.44s)
+
+[PASS] Summary (standard): candidates=3 compared=3 skipped_no_arm64=0 crashes_or_failures=0 missing=0 elapsed=3.49s
+       instructions=707444 agree=707444 (100.0000% overall | 100.0000% of 707444 recognized) unknown=0 (0.0000%) reference_long_machgraph_inst=0 (files=0) wrong=0 machgraph_only_inst=103 (files=2)
+       operands=707444/707444 (100.0000%) mismatch=0 (files=0)
