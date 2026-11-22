@@ -9,8 +9,7 @@ Usage:
 Checks performed:
   1. Extracts the three `<= 20`-line `swift` library example code blocks (and their adjacent
      expected-output `text` blocks) from the English and Simplified Chinese Markdown files
-     (defaults: `docs/library-examples.md` and `docs/library-examples.zh-CN.md`; Stage 3 may
-     pass `README.md` and `README.zh-CN.md`), verifying exact verbatim equality across both
+     (defaults: `README.md` and `README.zh-CN.md`), verifying exact verbatim equality across both
      languages, `<= 20` lines per block, and that each block imports only its target library
      module (`MachBinaryFormats`, `MachA64Decoder`, `MachCFGEngine`) without explicitly
      importing `MachGraphModels`.
@@ -380,6 +379,15 @@ def validate_markdown_example_pair(
             diffs.append(
                 {
                     "kind": "DOC_CODE_MISMATCH",
+                    "example_index": idx + 1,
+                    "expected_module": expected_mod,
+                }
+            )
+
+        if b_en.get("expected_output") and b_zh.get("expected_output") and b_en["expected_output"] != b_zh["expected_output"]:
+            diffs.append(
+                {
+                    "kind": "DOC_EXPECTED_OUTPUT_MISMATCH_EN_ZH",
                     "example_index": idx + 1,
                     "expected_module": expected_mod,
                 }
@@ -907,10 +915,13 @@ def run_acceptance_suite(
     if diffs:
         return {
             "passed": False,
+            "en_doc": sanitize_display_path(en_doc_path, repo_root),
+            "zh_doc": sanitize_display_path(zh_doc_path, repo_root),
             "diffs": diffs,
             "examples": example_reports,
             "negative_probes": probe_reports,
             "elapsed_s": round(time.monotonic() - start_ts, 3),
+            "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
     with open(en_doc_path, "r", encoding="utf-8") as fh:
@@ -924,10 +935,13 @@ def run_acceptance_suite(
     if diffs:
         return {
             "passed": False,
+            "en_doc": sanitize_display_path(en_doc_path, repo_root),
+            "zh_doc": sanitize_display_path(zh_doc_path, repo_root),
             "diffs": diffs,
             "examples": example_reports,
             "negative_probes": probe_reports,
             "elapsed_s": round(time.monotonic() - start_ts, 3),
+            "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
 
     with tempfile.TemporaryDirectory(prefix="machgraph-m5-lib-examples-") as work_root:
@@ -1102,8 +1116,8 @@ def _build_parser() -> argparse.ArgumentParser:
         description="Verify MachGraph M5 bilingual library examples and public API boundary in isolated Swift packages.",
     )
     p.add_argument("docs", nargs="*", help="optional positional [en_doc] [zh_doc] markdown paths")
-    p.add_argument("--en-doc", default=None, help="English markdown file (default: docs/library-examples.md)")
-    p.add_argument("--zh-doc", default=None, help="Chinese markdown file (default: docs/library-examples.zh-CN.md)")
+    p.add_argument("--en-doc", default=None, help="English markdown file (default: README.md)")
+    p.add_argument("--zh-doc", default=None, help="Chinese markdown file (default: README.zh-CN.md)")
     p.add_argument("--repo-root", default=REPO_ROOT, help="MachGraph repository root to copy and test")
     p.add_argument("--json-out", default=None, help="optional path to write structured JSON report")
     p.add_argument("--txt-out", default=None, help="optional path to write plain-text summary report")
@@ -1119,8 +1133,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if len(args.docs) > 2:
         parser.error("at most two positional markdown files ([en_doc] [zh_doc]) may be provided")
 
-    en_doc = args.en_doc or (args.docs[0] if len(args.docs) >= 1 else os.path.join(repo_root, "docs", "library-examples.md"))
-    zh_doc = args.zh_doc or (args.docs[1] if len(args.docs) >= 2 else os.path.join(repo_root, "docs", "library-examples.zh-CN.md"))
+    en_doc = args.en_doc or (args.docs[0] if len(args.docs) >= 1 else os.path.join(repo_root, "README.md"))
+    zh_doc = args.zh_doc or (args.docs[1] if len(args.docs) >= 2 else os.path.join(repo_root, "README.zh-CN.md"))
 
     report = run_acceptance_suite(
         repo_root=repo_root,

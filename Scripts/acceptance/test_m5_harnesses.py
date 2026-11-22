@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Unit tests for `m5-mcp-acceptance.py` using handcrafted synthetic fixtures."""
 
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 import os
 import sys
 import unittest
 from typing import Any, Dict, List
+from unittest import mock
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -791,6 +794,57 @@ class TestLibExamplesMarkdownAndChecks(unittest.TestCase):
         )
         self.assertTrue(any(d["kind"] == "NEGATIVE_PROBE_WRONG_DIAGNOSTIC" for d in syntax_diffs))
 
+    def test_default_doc_paths_are_bilingual_readmes_and_expected_outputs_match_verbatim(self) -> None:
+        captured: Dict[str, Any] = {}
+
+        def fake_suite(repo_root: str, en_doc_path: str, zh_doc_path: str, verbose: bool = False) -> Dict[str, Any]:
+            captured["repo_root"] = repo_root
+            captured["en_doc_path"] = en_doc_path
+            captured["zh_doc_path"] = zh_doc_path
+            return {
+                "passed": True,
+                "en_doc": "README.md",
+                "zh_doc": "README.zh-CN.md",
+                "examples": [
+                    {
+                        "module": mod,
+                        "line_count": 12,
+                        "build_returncode": 0,
+                        "build_elapsed_s": 0.1,
+                        "run_returncode": 0,
+                        "run_elapsed_s": 0.01,
+                        "actual_output": "ok",
+                        "reference_output": "ok",
+                    }
+                    for mod in ("MachBinaryFormats", "MachA64Decoder", "MachCFGEngine")
+                ],
+                "negative_probes": [],
+                "diffs": [],
+                "elapsed_s": 0.3,
+                "timestamp_utc": "2026-11-22T12:00:00Z",
+            }
+
+        with tempfile.TemporaryDirectory(prefix="test-m5-default-readme-") as tmp:
+            with mock.patch.object(m5_lib, "run_acceptance_suite", side_effect=fake_suite), contextlib.redirect_stdout(
+                io.StringIO()
+            ):
+                rc = m5_lib.main(["--repo-root", tmp])
+            self.assertEqual(rc, 0)
+            self.assertEqual(captured["en_doc_path"], os.path.join(os.path.abspath(tmp), "README.md"))
+            self.assertEqual(captured["zh_doc_path"], os.path.join(os.path.abspath(tmp), "README.zh-CN.md"))
+
+        # Verbatim equality across EN and ZH READMEs must also hold for adjacent expected-output blocks
+        md_en = _make_sample_lib_markdown("en")
+        md_zh_out_diff = _make_sample_lib_markdown("zh").replace("functions=133", "functions=134")
+        diffs_out = m5_lib.validate_markdown_example_pair(
+            m5_lib.extract_swift_example_blocks(md_en),
+            m5_lib.extract_swift_example_blocks(md_zh_out_diff),
+        )
+        self.assertTrue(
+            any(d["kind"] == "DOC_EXPECTED_OUTPUT_MISMATCH_EN_ZH" for d in diffs_out),
+            f"Expected DOC_EXPECTED_OUTPUT_MISMATCH_EN_ZH when EN/ZH expected outputs differ, got {diffs_out}",
+        )
+
 
 import subprocess  # noqa: E402
 import tempfile  # noqa: E402
@@ -1037,6 +1091,55 @@ class TestReleaseGateAndStepScheduler(unittest.TestCase):
             )
             self.assertNotEqual(r_both_b.returncode, 0)
             self.assertNotEqual(r_both_b.returncode, 77)
+
+    def test_stub_mode_prints_warnings_at_start_and_summary_and_never_claims_release_passed(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="test-m5-release-stub-warn-") as tmp:
+            stub_path, _ = self._make_stub_script(tmp)
+            r_stub = self._run_release(
+                ["--only", "m0-quick,known-mnemonics"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": stub_path,
+                    "MACHGRAPH_CORPUS": "full",
+                    "STUB_FAIL_STEP": None,
+                },
+            )
+            self.assertEqual(r_stub.returncode, 0, f"Stub self-test should still exit 0:\n{r_stub.stdout}\n{r_stub.stderr}")
+            lines = [ln.strip() for ln in r_stub.stdout.splitlines() if ln.strip()]
+            self.assertGreaterEqual(len(lines), 4, r_stub.stdout)
+
+            # 1) Prominent warning at the very start (before step execution)
+            first_step_idx = next(i for i, ln in enumerate(lines) if ln.startswith("==> [release:"))
+            header_lines = "\n".join(lines[:first_step_idx])
+            self.assertIn("STUB", header_lines.upper())
+            self.assertIn("自测用的替身", header_lines)
+            self.assertIn("不是真的发版检查", header_lines)
+
+            # 2) Prominent warning in the summary block
+            summary_idx = next(i for i, ln in enumerate(lines) if ln.startswith("=== Release Step Summary"))
+            summary_lines = "\n".join(lines[summary_idx:])
+            self.assertIn("STUB", summary_lines.upper())
+            self.assertIn("自测用的替身", summary_lines)
+            self.assertIn("不是真的发版检查", summary_lines)
+
+            # 3) Final line must NOT claim release passed
+            last_line = lines[-1]
+            self.assertNotIn("[PASS]", last_line)
+            self.assertNotIn("passed", last_line.lower())
+            self.assertNotIn("通过", last_line)
+            self.assertIn("STUB", last_line.upper())
+
+            # 4) Without MACHGRAPH_RELEASE_STUB_SCRIPT, a real fast step prints [PASS] and no stub warning
+            r_real = self._run_release(
+                ["--only", "known-mnemonics"],
+                {
+                    "MACHGRAPH_RELEASE_STUB_SCRIPT": None,
+                    "MACHGRAPH_CORPUS": "full",
+                },
+            )
+            self.assertEqual(r_real.returncode, 0, f"Real known-mnemonics step failed:\n{r_real.stdout}\n{r_real.stderr}")
+            self.assertNotIn("自测用的替身", r_real.stdout)
+            real_lines = [ln.strip() for ln in r_real.stdout.splitlines() if ln.strip()]
+            self.assertTrue(real_lines[-1].startswith("[PASS] All 1 release step(s) passed"), real_lines[-1])
 
 
 if __name__ == "__main__":

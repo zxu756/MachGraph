@@ -621,6 +621,10 @@ case "$MODE" in
         FIRST_FAIL_RC=0
         SUITE_T0="$(python3 -I -c 'import time; print(f"{time.time():.6f}")')"
 
+        if [ -n "${MACHGRAPH_RELEASE_STUB_SCRIPT:-}" ]; then
+            echo "[WARNING][STUB] MACHGRAPH_RELEASE_STUB_SCRIPT is active (${MACHGRAPH_RELEASE_STUB_SCRIPT}): running self-test stub commands — NOT a real release check (警告：当前使用自测用的替身，不是真的发版检查)!"
+        fi
+
         for step_id in "${SELECTED_STEPS[@]}"; do
             spec_entry="$(find_release_spec "$step_id")"
             rest="${spec_entry#*|}"
@@ -667,6 +671,9 @@ case "$MODE" in
 
         echo ""
         echo "=== Release Step Summary (MACHGRAPH_CORPUS=$RELEASE_CORPUS) ==="
+        if [ -n "${MACHGRAPH_RELEASE_STUB_SCRIPT:-}" ]; then
+            echo "[WARNING][STUB] Summary is from self-test stub (${MACHGRAPH_RELEASE_STUB_SCRIPT}) — NOT a real release check (警告：本汇总来自自测用的替身，不是真的发版检查)!"
+        fi
         printf "%-28s %-9s %5s %11s\n" "Step" "Status" "Exit" "Elapsed(s)"
         printf "%-28s %-9s %5s %11s\n" "----------------------------" "---------" "-----" "-----------"
         idx=0
@@ -698,7 +705,11 @@ case "$MODE" in
             exit 77
         fi
 
-        echo "[PASS] All ${#STEP_IDS[@]} release step(s) passed (exit 0)."
+        if [ -n "${MACHGRAPH_RELEASE_STUB_SCRIPT:-}" ]; then
+            echo "[WARNING][STUB] Self-test stub run finished (${#STEP_IDS[@]} step(s), exit 0) — self-test stub only, NOT a real release check (警告：自测用的替身运行结束，不是真的发版检查)."
+        else
+            echo "[PASS] All ${#STEP_IDS[@]} release step(s) passed (exit 0)."
+        fi
         ;;
     *)
         usage
