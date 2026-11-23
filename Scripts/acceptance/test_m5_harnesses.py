@@ -180,7 +180,7 @@ def _make_valid_protocol_bundle(lang: str = "en") -> Dict[str, Any]:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "machgraph-mcp", "version": "1.4.0"},
+                "serverInfo": {"name": "machgraph-mcp", "version": "1.7.0"},
             },
         },
         "tools_list": {

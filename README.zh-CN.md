@@ -64,7 +64,7 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(path: "../MachGraph")
-        // 或: .package(url: "https://github.com/zxu756/MachGraph.git", from: "1.4.0")
+        // 或: .package(url: "https://github.com/zxu756/MachGraph.git", from: "1.7.0")
     ],
     targets: [
         .executableTarget(

@@ -36,7 +36,7 @@ public enum BuiltInMachPluginCatalog: Sendable {
     public static let hardcodedSecretKeyScanner = MachPluginManifest(
         id: hardcodedSecretKeyScannerID,
         name: "Hardcoded Credentials, API Keys & License Token Scanner",
-        version: "1.4.0",
+        version: "1.7.0",
         author: "MachGraph Security Audit Team",
         summary: "Scans extracted string literals and cross-references for cloud/AI API keys, PEM private keys, JWTs, Bearer tokens, and embedded static tokens, correlating each hit to referencing functions.",
         capabilities: [
@@ -56,7 +56,7 @@ public enum BuiltInMachPluginCatalog: Sendable {
     public static let dangerousCSinkReachability = MachPluginManifest(
         id: dangerousCSinkReachabilityID,
         name: "Memory-Unsafe & Command-Injection Sink Auditor",
-        version: "1.4.0",
+        version: "1.7.0",
         author: "MachGraph Security Audit Team",
         summary: "Audits imported symbols and whole-program BFS call paths for unbounded memory copies, command execution APIs, dynamic loader sinks, variadic format strings, and non-constant-time auth comparisons.",
         capabilities: [
@@ -75,7 +75,7 @@ public enum BuiltInMachPluginCatalog: Sendable {
     public static let arm64ePACGadgetAuditor = MachPluginManifest(
         id: arm64ePACGadgetAuditorID,
         name: "ARM64E Pointer Authentication & JOP/ROP Gadget Inspector",
-        version: "1.4.0",
+        version: "1.7.0",
         author: "MachGraph Security Audit Team",
         summary: "Audits recovered ARM64/ARM64e functions and basic blocks for unsigned indirect branches (br/blr vs braa/blraa), unprotected stack-frame returns (ret vs retaa/retab), and split PAC authentication windows.",
         capabilities: [
@@ -94,7 +94,7 @@ public enum BuiltInMachPluginCatalog: Sendable {
     public static let entitlementPrivilegeAuditor = MachPluginManifest(
         id: entitlementPrivilegeAuditorID,
         name: "macOS Entitlements, Task-for-PID & Dyld Injection Auditor",
-        version: "1.4.0",
+        version: "1.7.0",
         author: "MachGraph Security Audit Team",
         summary: "Audits embedded Mach-O code signatures, Hardened Runtime flags, RWX segments, and entitlements (get-task-allow, disable-library-validation, allow-dyld-environment-variables, allow-unsigned-executable-memory, cs.debugger, and private TCC entitlements).",
         capabilities: [

@@ -6,7 +6,7 @@ import MachStudioViews
 import MachWorkbenchShell
 import SwiftUI
 
-// MARK: - Unified MachGraph Native macOS Desktop IDE, Retina Exporter & Headless CLI/MCP Entry Point (`v1.4.0`)
+// MARK: - Unified MachGraph Native macOS Desktop IDE, Retina Exporter & Headless CLI/MCP Entry Point (`v1.7.0`)
 
 @MainActor
 @main
